@@ -1,0 +1,137 @@
+
+> <ide_selection>The user selected the lines 19 to 19 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md:
+  mvn spring-boot:run
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Why did Flyway ran V1__init.sql when starting the spring boot project in
+  services/order-service with mvn spring-boot:run?
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● Flyway ran V1__init.sql because of Spring Boot auto-configuration. You didn't
+  have to configure anything.
+
+  1. Flyway is on the classpath. pom.xml:22-23
+     (services/order-service/pom.xml#L22-L23) declares flyway-core and
+     flyway-database-postgresql.
+  2. Spring Boot's FlywayAutoConfiguration switches on by default. It activates
+     when Flyway is on the classpath and a DataSource exists.
+     spring.flyway.enabled defaults to true, and application.yml
+     (services/order-service/src/main/resources/application.yml) never sets it
+     to false.
+  3. It uses your datasource. The settings in spring.datasource
+     (jdbc:postgresql://localhost:5432/orders) tell Flyway which database to
+     connect to.
+  4. It scans the default migration location. That location is
+     classpath:db/migration, and V1__init.sql
+     (services/order-service/src/main/resources/db/migration/V1__init.sql) sits
+     there. The V<version>__<description>.sql filename is what Flyway looks for.
+  5. The migration runs before JPA starts. Spring Boot makes the
+     EntityManagerFactory depend on Flyway. On startup Flyway checks its
+     flyway_schema_history table. If it doesn't exist or V1 isn't recorded,
+     Flyway runs V1__init.sql and records it.
+
+  The ordering matters because of ddl-auto: validate (application.yml:12
+  (services/order-service/src/main/resources/application.yml#L12)). Hibernate
+  only checks that the tables match your entities. Flyway has to create them
+  first.
+
+  You'll see it run on the first start against a fresh orders database. Later
+  starts skip V1, because Flyway sees it's already applied and only checks its
+  checksum. If you edit V1 after it has run, startup fails with a checksum
+  mismatch.
+
+  To turn this off, set spring.flyway.enabled: false. To change the scripts'
+  location, set spring.flyway.locations.
+
+> <ide_selection>The user selected the lines 8 to 8 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-service\
+  src\main\java\com\orderflow\order\domain\Order.java:
+  record
+
+  This may or may not be related to the current task.</ide_selection>
+
+> What is the next record modifier in the class definition of Line?
+
+  Read 1 file (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+> What is the record modifier in the class definition of Line?
+
+● The only explicit modifier on Line is public, in Order.java:8 (services/order-
+  service/src/main/java/com/orderflow/order/domain/Order.java#L8):
+
+  public record Line(String sku, int quantity) {
+
+  record is not a modifier. It's the keyword that declares the type, like class
+  or interface.
+
+  Java also gives a nested record two modifiers implicitly, so you don't write
+  them:
+  - static: you can create a Line without an Order instance (new Order.Line("A",
+    1)).
+  - final: nothing can extend it.
+
+> <ide_selection>The user selected the lines 8 to 8 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-service\
+  src\main\java\com\orderflow\order\domain\OrderStatus.java:
+  allowedNext()
+
+  This may or may not be related to the current task.</ide_selection>
+
+> How do enums work in Java and how does the allowedNext() method function?
+
+  Read 1 file (ctrl+o to expand)
+
+● How Java enums work
+
+  An enum is a special class with a fixed set of instances. PENDING, CONFIRMED,
+  REJECTED, CANCELLED are the only four OrderStatus objects that will ever
+  exist.
+
+  - Each constant is a public static final instance of the enum, created once
+    when the class loads.
+  - You can't call new OrderStatus(). The constructor is implicitly private.
+  - Because there is exactly one instance of each constant, you can compare them
+    with ==.
+  - An enum is a full class. It can have fields, constructors and methods, and
+    it can implement interfaces. allowedNext() is one of those methods.
+  - The compiler gives you values(), valueOf(String), name() and ordinal().
+    Order uses this when it prints status in its error message.
+  - The semicolon on line 6 is required because members follow the constants.
+
+  How allowedNext() works
+
+  OrderStatus.java:8-14 (services/order-service/src/main/java/com/orderflow/orde
+  r/domain/OrderStatus.java#L8-L14) is a state machine written as a switch
+  expression on this. this is whichever constant the method was called on.
+
+  ┌─────────────────────┬────────────────────────────────┐
+  │   Current status    │          Allowed next          │
+  ├─────────────────────┼────────────────────────────────┤
+  │ PENDING             │ CONFIRMED, REJECTED, CANCELLED │
+  ├─────────────────────┼────────────────────────────────┤
+  │ CONFIRMED           │ CANCELLED                      │
+  ├─────────────────────┼────────────────────────────────┤
+  │ REJECTED, CANCELLED │ none (Set.of())                │
+  └─────────────────────┴────────────────────────────────┘
+
+  - -> arms don't fall through, so no break is needed.
+  - return switch: the switch is an expression that produces a value.
+  - No default is needed, because the compiler knows every enum constant is
+    covered. If you add a new constant like SHIPPED and forget to handle it
+    here, this stops compiling. That's the main advantage over a default branch.
+  - Set.of(...) returns an immutable set, so callers can't change the rules.
+    Set.of() is an empty set, which marks REJECTED and CANCELLED as terminal
+    states.
+
+  How Order uses it
+
+  Order.transitionTo() (Order.java:33-38 (services/order-service/src/main/java/c
+  om/orderflow/order/domain/Order.java#L33-L38)) calls
+  status.allowedNext().contains(next). If the target isn't allowed, it throws
+  IllegalStateException. So reject() on a CONFIRMED order fails, and nothing can
+  leave a terminal state.
