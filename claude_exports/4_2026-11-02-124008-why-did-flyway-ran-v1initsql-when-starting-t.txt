@@ -1,0 +1,592 @@
+
+> <ide_selection>The user selected the lines 19 to 19 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md:
+  mvn spring-boot:run
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Why did Flyway ran V1__init.sql when starting the spring boot project in
+  services/order-service with mvn spring-boot:run?
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● Flyway ran V1__init.sql because of Spring Boot auto-configuration. You didn't
+  have to configure anything.
+
+  1. Flyway is on the classpath. pom.xml:22-23
+     (services/order-service/pom.xml#L22-L23) declares flyway-core and
+     flyway-database-postgresql.
+  2. Spring Boot's FlywayAutoConfiguration switches on by default. It activates
+     when Flyway is on the classpath and a DataSource exists.
+     spring.flyway.enabled defaults to true, and application.yml
+     (services/order-service/src/main/resources/application.yml) never sets it
+     to false.
+  3. It uses your datasource. The settings in spring.datasource
+     (jdbc:postgresql://localhost:5432/orders) tell Flyway which database to
+     connect to.
+  4. It scans the default migration location. That location is
+     classpath:db/migration, and V1__init.sql
+     (services/order-service/src/main/resources/db/migration/V1__init.sql) sits
+     there. The V<version>__<description>.sql filename is what Flyway looks for.
+  5. The migration runs before JPA starts. Spring Boot makes the
+     EntityManagerFactory depend on Flyway. On startup Flyway checks its
+     flyway_schema_history table. If it doesn't exist or V1 isn't recorded,
+     Flyway runs V1__init.sql and records it.
+
+  The ordering matters because of ddl-auto: validate (application.yml:12
+  (services/order-service/src/main/resources/application.yml#L12)). Hibernate
+  only checks that the tables match your entities. Flyway has to create them
+  first.
+
+  You'll see it run on the first start against a fresh orders database. Later
+  starts skip V1, because Flyway sees it's already applied and only checks its
+  checksum. If you edit V1 after it has run, startup fails with a checksum
+  mismatch.
+
+  To turn this off, set spring.flyway.enabled: false. To change the scripts'
+  location, set spring.flyway.locations.
+
+> <ide_selection>The user selected the lines 8 to 8 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-service\
+  src\main\java\com\orderflow\order\domain\Order.java:
+  record
+
+  This may or may not be related to the current task.</ide_selection>
+
+> What is the next record modifier in the class definition of Line?
+
+  Read 1 file (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+> What is the record modifier in the class definition of Line?
+
+● The only explicit modifier on Line is public, in Order.java:8 (services/order-
+  service/src/main/java/com/orderflow/order/domain/Order.java#L8):
+
+  public record Line(String sku, int quantity) {
+
+  record is not a modifier. It's the keyword that declares the type, like class
+  or interface.
+
+  Java also gives a nested record two modifiers implicitly, so you don't write
+  them:
+  - static: you can create a Line without an Order instance (new Order.Line("A",
+    1)).
+  - final: nothing can extend it.
+
+> <ide_selection>The user selected the lines 8 to 8 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-service\
+  src\main\java\com\orderflow\order\domain\OrderStatus.java:
+  allowedNext()
+
+  This may or may not be related to the current task.</ide_selection>
+
+> How do enums work in Java and how does the allowedNext() method function?
+
+  Read 1 file (ctrl+o to expand)
+
+● How Java enums work
+
+  An enum is a special class with a fixed set of instances. PENDING, CONFIRMED,
+  REJECTED, CANCELLED are the only four OrderStatus objects that will ever
+  exist.
+
+  - Each constant is a public static final instance of the enum, created once
+    when the class loads.
+  - You can't call new OrderStatus(). The constructor is implicitly private.
+  - Because there is exactly one instance of each constant, you can compare them
+    with ==.
+  - An enum is a full class. It can have fields, constructors and methods, and
+    it can implement interfaces. allowedNext() is one of those methods.
+  - The compiler gives you values(), valueOf(String), name() and ordinal().
+    Order uses this when it prints status in its error message.
+  - The semicolon on line 6 is required because members follow the constants.
+
+  How allowedNext() works
+
+  OrderStatus.java:8-14 (services/order-service/src/main/java/com/orderflow/orde
+  r/domain/OrderStatus.java#L8-L14) is a state machine written as a switch
+  expression on this. this is whichever constant the method was called on.
+
+  ┌─────────────────────┬────────────────────────────────┐
+  │   Current status    │          Allowed next          │
+  ├─────────────────────┼────────────────────────────────┤
+  │ PENDING             │ CONFIRMED, REJECTED, CANCELLED │
+  ├─────────────────────┼────────────────────────────────┤
+  │ CONFIRMED           │ CANCELLED                      │
+  ├─────────────────────┼────────────────────────────────┤
+  │ REJECTED, CANCELLED │ none (Set.of())                │
+  └─────────────────────┴────────────────────────────────┘
+
+  - -> arms don't fall through, so no break is needed.
+  - return switch: the switch is an expression that produces a value.
+  - No default is needed, because the compiler knows every enum constant is
+    covered. If you add a new constant like SHIPPED and forget to handle it
+    here, this stops compiling. That's the main advantage over a default branch.
+  - Set.of(...) returns an immutable set, so callers can't change the rules.
+    Set.of() is an empty set, which marks REJECTED and CANCELLED as terminal
+    states.
+
+  How Order uses it
+
+  Order.transitionTo() (Order.java:33-38 (services/order-service/src/main/java/c
+  om/orderflow/order/domain/Order.java#L33-L38)) calls
+  status.allowedNext().contains(next). If the target isn't allowed, it throws
+  IllegalStateException. So reject() on a CONFIRMED order fails, and nothing can
+  leave a terminal state.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+
+> How do I perform step 4?
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● Step 4 has three pieces: an entity for orders, an embeddable for the line
+  rows, and a repository. The table columns (from V1__init.sql
+  (services/order-service/src/main/resources/db/migration/V1__init.sql)) are id,
+  customer_id, status, created_at, updated_at, plus order_lines(order_id,
+  line_no, sku, quantity).
+
+  I haven't created these files. Here is how I'd write them. Put them in a new
+  package, com.orderflow.order.persistence.
+
+  1. OrderLineEmbeddable
+
+  @Embeddable
+  public class OrderLineEmbeddable {
+      @Column(nullable = false) private String sku;
+      @Column(nullable = false) private int quantity;
+
+      protected OrderLineEmbeddable() {}            // JPA needs a no-arg
+  constructor
+      public OrderLineEmbeddable(String sku, int quantity) { this.sku = sku;
+  this.quantity = quantity; }
+
+      public String getSku() { return sku; }
+      public int getQuantity() { return quantity; }
+  }
+
+  An @Embeddable has no id of its own. Its columns live in the order_lines
+  table, and the parent supplies order_id.
+
+  2. OrderEntity
+
+  @Entity
+  @Table(name = "orders")
+  public class OrderEntity {
+      @Id private UUID id;
+
+      @Column(name = "customer_id", nullable = false) private String customerId;
+
+      @Enumerated(EnumType.STRING)                  // stored as 'PENDING', not
+  0
+      @Column(nullable = false) private OrderStatus status =
+  OrderStatus.PENDING;
+
+      @Column(name = "created_at", nullable = false) private Instant createdAt =
+  Instant.now();
+      @Column(name = "updated_at", nullable = false) private Instant updatedAt =
+  Instant.now();
+
+      @ElementCollection
+      @CollectionTable(name = "order_lines", joinColumns = @JoinColumn(name =
+  "order_id"))
+      @OrderColumn(name = "line_no")
+      private List<OrderLineEmbeddable> lines = new ArrayList<>();
+
+      protected OrderEntity() {}
+      public OrderEntity(UUID id, String customerId, List<OrderLineEmbeddable>
+  lines) { ... }
+
+      public void confirm() { transitionTo(OrderStatus.CONFIRMED); }
+      public void cancel()  { transitionTo(OrderStatus.CANCELLED); }
+
+      private void transitionTo(OrderStatus next) {
+          if (!status.allowedNext().contains(next))
+              throw new IllegalStateException("Illegal transition " + status + "
+  -> " + next);
+          status = next;
+          updatedAt = Instant.now();
+      }
+      // getters
+  }
+
+  - The state rules are reused. confirm() and cancel() call
+    status.allowedNext(), the same check as in Order.transitionTo(). This is
+    what the plan means by "reuse the rules in OrderStatus".
+  - Enum mapping: @Enumerated(EnumType.STRING) matches the TEXT column. Without
+    it, Hibernate writes the ordinal number and validate fails.
+  - Timestamps: Instant maps to TIMESTAMPTZ.
+  - Line order: @OrderColumn makes Hibernate fill line_no (0, 1, 2…) from the
+    list index. The column is in your primary key, so you need it.
+
+  3. Repository
+
+  public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {}
+
+  4. Check the dependency
+
+  Make sure pom.xml (services/order-service/pom.xml) has
+  spring-boot-starter-data-jpa. It's probably there already, since ddl-auto is
+  configured.
+
+  Done check
+
+  Run mvn spring-boot:run against the running Postgres. With ddl-auto: validate,
+  any mismatch fails startup. Typical errors:
+  - missing column [line_no] means @OrderColumn is missing or misnamed.
+  - wrong column type on status means @Enumerated(STRING) is missing.
+  - missing table means a @Table or @CollectionTable name is wrong.
+
+  Do you want me to create these files and run the startup check?
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\services\order-service\src\main\java\com\orderfl
+  ow\order\domain\Order.java in the IDE. This may or may not be related to the
+  current task.</ide_opened_file>
+
+> Is this the way to represent one-to-many relationships between tables in
+  JPA/Hibernate?
+  @ElementCollection
+      @CollectionTable(name = "order_lines", joinColumns = @JoinColumn(name =
+  "order_id"))
+      @OrderColumn(name = "line_no")
+      private List<OrderLineEmbeddable> lines = new ArrayList<>();
+
+● It's one way, and it fits this case. The usual way is @OneToMany with a
+  separate @Entity.
+
+  Two ways to map one-to-many
+
+  @OneToMany / @ManyToOne is the standard way. The child is a full entity with
+  its own @Id, and the two sides are linked as entities:
+
+  @OneToMany(mappedBy = "order", cascade = ALL, orphanRemoval = true)
+  private List<OrderLineEntity> lines;      // child has @ManyToOne OrderEntity
+  order
+
+  Use it when the child has its own identity or lifecycle. Examples are querying
+  children directly, referencing them from other tables, or giving them their
+  own relationships.
+
+  @ElementCollection is what you pasted. The child is a value type
+  (@Embeddable), not an entity. It has no id and no repository, and it exists
+  only as part of its parent. Hibernate always loads, saves and deletes the
+  children through the parent.
+
+  Why @ElementCollection suits order_lines
+
+  - The table's primary key is (order_id, line_no), so a line has no identity
+    apart from its order and position.
+  - A line is just sku and quantity. Nothing else points at it.
+  - You never need to fetch or save a line on its own.
+  - It needs fewer classes and no two-way order / lines bookkeeping.
+
+  Trade-off
+
+  Hibernate handles changes to an element collection coarsely. Changing a list
+  that has no @OrderColumn makes Hibernate delete all the child rows and
+  re-insert them. With @OrderColumn it can do smaller updates, but inserting or
+  removing in the middle still shifts indexes. That doesn't matter here, because
+  order lines are written once and rarely edited.
+
+  If lines later get their own id, status or relationships (for example a
+  per-line shipment), switch to @OneToMany with an OrderLineEntity. Your schema
+  would need a surrogate key for that.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\services\order-service\src\main\resources\db\mig
+  ration\V1__init.sql in the IDE. This may or may not be related to the current
+  task.</ide_opened_file>
+
+> What are the needed changes if I want OrderLine to be an Entity as well?
+
+● Three things change: the schema, the new child entity, and the parent's
+  mapping.
+
+  1. Schema: add V2__order_lines_id.sql
+
+  An entity needs its own @Id, and order_lines currently has only the composite
+  key (order_id, line_no). The simplest fix is a surrogate key. Don't edit
+  V1__init.sql. Flyway has already applied it, so changing it causes a checksum
+  mismatch. Add a new migration instead:
+
+  ALTER TABLE order_lines DROP CONSTRAINT order_lines_pkey;
+  ALTER TABLE order_lines ADD COLUMN id BIGINT GENERATED ALWAYS AS IDENTITY
+  PRIMARY KEY;
+  ALTER TABLE order_lines ADD CONSTRAINT uq_order_lines_order_line UNIQUE
+  (order_id, line_no);
+
+  Existing rows get ids automatically, and the unique constraint keeps one
+  line_no per order.
+
+  The plan's step 12 uses phase2/order-service/V2__idempotency_and_outbox.sql.
+  This new file takes version 2, so that one has to be renamed to V3__... when
+  you get there.
+
+  2. New OrderLineEntity, replacing the @Embeddable
+
+  @Entity
+  @Table(name = "order_lines")
+  public class OrderLineEntity {
+      @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+      private Long id;
+
+      @ManyToOne(fetch = FetchType.LAZY, optional = false)
+      @JoinColumn(name = "order_id")
+      private OrderEntity order;
+
+      @Column(name = "line_no", nullable = false) private int lineNo;
+      @Column(nullable = false) private String sku;
+      @Column(nullable = false) private int quantity;
+
+      protected OrderLineEntity() {}
+      OrderLineEntity(OrderEntity order, int lineNo, String sku, int quantity) {
+  ... }
+      // getters
+  }
+
+  GenerationType.IDENTITY matches the GENERATED ALWAYS AS IDENTITY column.
+  Delete OrderLineEmbeddable.
+
+  3. OrderEntity: swap the mapping
+
+  Replace @ElementCollection, @CollectionTable and @OrderColumn with:
+
+  @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval =
+  true)
+  @OrderBy("lineNo ASC")
+  private List<OrderLineEntity> lines = new ArrayList<>();
+
+  public void addLine(String sku, int quantity) {
+      lines.add(new OrderLineEntity(this, lines.size(), sku, quantity));
+  }
+
+  - mappedBy = "order": the child owns the foreign key through its @ManyToOne,
+    so the parent doesn't write the join column.
+  - cascade = ALL: saving the order saves its lines, and deleting the order
+    deletes them.
+  - orphanRemoval = true: a line removed from the list is deleted from the
+    table.
+  - @OrderBy("lineNo ASC"): replaces @OrderColumn. lineNo is now an ordinary
+    field you set yourself. @OrderColumn would also work with mappedBy, but it
+    is easy to get wrong. Setting lineNo in addLine is more explicit.
+  - Both sides are set: the helper makes sure the child's order reference is
+    filled. If it is null, the insert fails on order_id NOT NULL.
+
+  Things to watch
+
+  - Repository: you still only need JpaRepository<OrderEntity, UUID>. Add an
+    OrderLineRepository only if you query lines on their own.
+  - N+1 queries: listing orders and then reading lines runs one extra query per
+    order. Use @EntityGraph(attributePaths = "lines") or a join fetch query on
+    the list endpoint.
+  - equals / hashCode: if you put lines in a Set or compare them, base equality
+    on the id or a business key, not on the default object identity.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+
+> Update PLAN_with_two_phases.md to reflect my preference of wanting OrderLine
+  to be an Entity instead of an Embeddable
+
+● Update(PLAN_with_two_phases.md)
+  ⎿  Added 3 lines, removed 1 line
+      23     The :: Method Reference operator can be replaced with a Lamb
+          da Expression  when passing in Executable functional interface 
+          as second argument when executing assertThrows. The tests in `O
+          rderTest` are mainly to make sure order transitions by executin
+          g allowedNext() work as expected.
+      24     Done when: the 6 tests in `OrderTest` pass and you can expla
+          in which status changes are allowed.
+      25  4. **Map the tables to Java (persistence).**
+      26 -   Do: create an `OrderEntity` for the `orders` table and a `Jp
+         -aRepository<OrderEntity, UUID>`. The easiest way to map the lin
+         -es is `@ElementCollection` with `@CollectionTable(name = "order
+         -_lines", joinColumns = @JoinColumn(name = "order_id"))` and `@O
+         -rderColumn(name = "line_no")` on a small `@Embeddable` (sku, qu
+         -antity). Store `status` as a string. Let the entity's `confirm(
+         -)` / `cancel()` methods reuse the rules in `OrderStatus`.      
+      26 +   Do: first add the migration `V2__order_lines_id.sql` (never 
+         +edit `V1__init.sql`, Flyway has already applied it): drop the `
+         +order_lines` primary key, add `id BIGINT GENERATED ALWAYS AS ID
+         +ENTITY PRIMARY KEY`, and add `UNIQUE (order_id, line_no)`.     
+      27 +   Then create an `OrderEntity` for the `orders` table, an `Ord
+         +erLineEntity` for the `order_lines` table (`@Id @GeneratedValue
+         +(strategy = IDENTITY) Long id`, `@ManyToOne(fetch = LAZY, optio
+         +nal = false) @JoinColumn(name = "order_id") OrderEntity order`,
+         + `lineNo`, `sku`, `quantity`), and a `JpaRepository<OrderEntity
+         +, UUID>`. Map the lines on the parent with `@OneToMany(mappedBy
+         + = "order", cascade = ALL, orphanRemoval = true)` and `@OrderBy
+         +("lineNo ASC")`, and add an `addLine(sku, quantity)` helper tha
+         +t sets both sides and `lineNo`. Store `status` as a string (`@E
+         +numerated(EnumType.STRING)`). Let the entity's `confirm()` / `c
+         +ancel()` methods reuse the rules in `OrderStatus`.             
+      28 +   Watch for: the list endpoint loading lines one order at a ti
+         +me (N+1); fix it with `@EntityGraph(attributePaths = "lines")`.
+      29     Done when: the app still starts (`ddl-auto: validate` means 
+          any mismatch with the tables is reported at startup).
+      30  5. **Implement the endpoints, one at a time, in `OrderControlle
+          r`.**
+      31     Order: create, list, get one, confirm, cancel.
+
+● Update(PLAN_with_two_phases.md)
+  ⎿  Added 1 line, removed 1 line
+      62  
+      63  11. **Full local stack.** Use `phase2/infra/docker-compose.full
+          .yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana). Mo
+          ve `phase2/inventory-service` to `services/inventory-service`, 
+          and add `CREATE DATABASE inventory;` to `infra/postgres-init/01
+          -create-dbs.sql`.
+      64      Done when: all containers start.
+      65 -12. **Outbox write.** Copy `phase2/order-service/V2__idempotenc
+         -y_and_outbox.sql` into the migrations folder, bring back the ou
+         -tbox classes from `phase2/order-service/src-additions/outbox`, 
+         -add the Kafka dependency from `pom-additions.xml`, and make ord
+         -er creation insert an outbox row in the same transaction.      
+      65 +12. **Outbox write.** Copy `phase2/order-service/V2__idempotenc
+         +y_and_outbox.sql` into the migrations folder, renamed to `V3__i
+         +dempotency_and_outbox.sql` (`V2` is taken by the `order_lines` 
+         +id migration from step 4), bring back the outbox classes from `
+         +phase2/order-service/src-additions/outbox`, add the Kafka depen
+         +dency from `pom-additions.xml`, and make order creation insert 
+         +an outbox row in the same transaction.                         
+      66      Done when: a Testcontainers (PostgreSQL) test proves that o
+          n rollback neither the order nor the outbox row exists.
+      67  13. **Outbox publisher.** Implement `OutboxPublisher` (send, wa
+          it for ack, mark published).
+      68      Done when: a Kafka Testcontainers test shows an event arriv
+          es once the order commits, and unpublished rows are retried aft
+          er Kafka was down.
+
+● I made two edits to PLAN_with_two_phases.md.
+
+  - Step 4: it now says to add V2__order_lines_id.sql first, which gives
+    order_lines a surrogate id and a unique (order_id, line_no). It then
+    describes OrderLineEntity with @ManyToOne, and the parent's
+    @OneToMany(mappedBy, cascade, orphanRemoval) with @OrderBy("lineNo ASC") and
+    an addLine helper. I added a note about the N+1 problem and @EntityGraph.
+    The @ElementCollection and @Embeddable instructions are gone.
+  - Step 12: the outbox migration is now renamed to
+    V3__idempotency_and_outbox.sql, because V2 is now the order_lines id
+    migration. Two files with the same version number would make Flyway fail at
+    startup.
+
+  I didn't change the "Done when" lines, since they still apply.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\services\order-service\src\main\resources\db\mig
+  ration\V2__order_lines_id.sql in the IDE. This may or may not be related to
+  the current task.</ide_opened_file>
+
+> Make these changes:
+  2. New OrderLineEntity, replacing the @Embeddable
+  3. OrderEntity: swap the mapping
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\persistence\Ord
+       erLineEntity.java)
+  ⎿  User rejected     services\order-service\src\main\java\com\orderflow\order\
+     write to          persistence\OrderLineEntity.java
+       1 package com.orderflow.order.persistence;
+       2
+       3 import jakarta.persistence.Column;
+       4 import jakarta.persistence.Entity;
+       5 import jakarta.persistence.FetchType;
+       6 import jakarta.persistence.GeneratedValue;
+       7 import jakarta.persistence.GenerationType;
+       8 import jakarta.persistence.Id;
+       9 import jakarta.persistence.JoinColumn;
+      10 import jakarta.persistence.ManyToOne;
+     … +37 lines
+  ⎿  Interrupted · What should Claude do instead?
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\services\order-service\src\main\resources\db\mig
+  ration\V2__order_lines_id.sql in the IDE. This may or may not be related to
+  the current task.</ide_opened_file>
+> continue
+
+● Write(services\order-service\src\main\java\com\orderflow\order\persistence\Ord
+       erLineEntity.java)
+  ⎿  Wrote 46 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\persistence\OrderLineEntity.java
+       1 package com.orderflow.order.persistence;
+       2
+       3 import jakarta.persistence.Column;
+       4 import jakarta.persistence.Entity;
+       5 import jakarta.persistence.FetchType;
+       6 import jakarta.persistence.GeneratedValue;
+       7 import jakarta.persistence.GenerationType;
+       8 import jakarta.persistence.Id;
+       9 import jakarta.persistence.JoinColumn;
+      10 import jakarta.persistence.ManyToOne;
+     … +37 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\persistence\Ord
+       erEntity.java)
+  ⎿  Wrote 69 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\persistence\OrderEntity.java
+       1 package com.orderflow.order.persistence;
+       2
+       3 import com.orderflow.order.domain.OrderStatus;
+       4 import jakarta.persistence.CascadeType;
+       5 import jakarta.persistence.Column;
+       6 import jakarta.persistence.Entity;
+       7 import jakarta.persistence.EnumType;
+       8 import jakarta.persistence.Enumerated;
+       9 import jakarta.persistence.Id;
+      10 import jakarta.persistence.OneToMany;
+     … +63 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\persistence\Ord
+       erRepository.java)
+  ⎿  Wrote 6 lines to services\order-service\src\main\java\com\orderflow\or
+     der\persistence\OrderRepository.java
+      1 package com.orderflow.order.persistence;
+      2
+      3 import java.util.UUID;
+      4 import org.springframework.data.jpa.repository.JpaRepository;
+      5
+      6 public interface OrderRepository extends JpaRepository<OrderEntit
+        y, UUID> {}
+
+● I created three files in a new persistence package.
+
+  - OrderLineEntity.java (services/order-service/src/main/java/com/orderflow/ord
+    er/persistence/OrderLineEntity.java) has an identity Long id, a lazy
+    @ManyToOne to the order, lineNo, sku and quantity. Its constructor is
+    package-private, so lines can only be created through the parent.
+  - OrderEntity.java (services/order-service/src/main/java/com/orderflow/order/p
+    ersistence/OrderEntity.java) maps orders with status stored as a string. It
+    has @OneToMany(mappedBy = "order", cascade = ALL, orphanRemoval = true) with
+    @OrderBy("lineNo ASC"). addLine() sets both sides and lineNo, and confirm()
+    / cancel() reuse OrderStatus.allowedNext(). getLines() returns an immutable
+    copy so callers have to go through addLine.
+  - OrderRepository.java (services/order-service/src/main/java/com/orderflow/ord
+    er/persistence/OrderRepository.java) is JpaRepository<OrderEntity, UUID>.
+
+  The editor flagged "OrderEntity cannot be resolved" in OrderLineEntity. That
+  came from checking the file before OrderEntity existed, so it should clear
+  now. I haven't compiled or started the app.
+
+  V2__order_lines_id.sql (services/order-service/src/main/resources/db/migration
+  /V2__order_lines_id.sql) currently contains only comments, so it changes
+  nothing. With ddl-auto: validate, startup will fail on the missing
+  order_lines.id column. The SQL it needs is:
+
+  ALTER TABLE order_lines DROP CONSTRAINT order_lines_pkey;
+  ALTER TABLE order_lines ADD COLUMN id BIGINT GENERATED ALWAYS AS IDENTITY
+  PRIMARY KEY;
+  ALTER TABLE order_lines ADD CONSTRAINT uq_order_lines_order_line UNIQUE
+  (order_id, line_no);
+
+  If you've already started the app with the comment-only V2, Flyway has
+  recorded it as applied. Editing the file now would cause a checksum mismatch.
+  In that case, drop and recreate the dev database, or run flyway repair. Do you
+  want me to add the SQL to V2?
