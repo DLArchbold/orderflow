@@ -29,14 +29,14 @@ class OrderTest {
     @Test void rejectedIsTerminal() {
         Order o = newOrder();
         o.reject();
-        assertThrows(IllegalStateException.class, o::confirm);
-        assertThrows(IllegalStateException.class, o::cancel);
+        assertThrows(IllegalStateException.class, () -> o.confirm());
+        assertThrows(IllegalStateException.class, () -> o.cancel());
     }
 
     @Test void cannotConfirmTwice() {
         Order o = newOrder();
         o.confirm();
-        assertThrows(IllegalStateException.class, o::confirm);
+        assertThrows(IllegalStateException.class, () -> o.confirm());
     }
 
     @Test void rejectsEmptyOrBadLines() {
