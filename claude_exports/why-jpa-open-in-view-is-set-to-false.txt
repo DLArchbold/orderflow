@@ -1,0 +1,78 @@
+====
+What does this do in application.yml in a spring boot project
+
+  jpa:
+    open-in-view: false
+====
+jpa.open-in-view: false disables the Open Session in View (OSIV) pattern in Spring Boot. [1] (/goto?url=CAESqwEB6zswFUL6_kTQABv5eR7YO1ANj_NS6bAWN1gDUC4KyUxgnj2_ahYfhuCVGiI7ubxNEJ__xuio2EeytSRqpFxk5De5AtsCc6s2HfwrRij7oGwErh_YvSuPkGgGxv9jxcFh3xBMCWELmjk-8Y8Ts9-CPg918_Z9VObbTanmEM0PnebVbC9LELIz7tTSm4i9SM4xLKycjoehShWZBrKyVOb8l_45nPbrxGHP4dk), [2] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g)
+By default, Spring Boot sets this to true, which keeps the JPA EntityManager (the Hibernate Session) open for the entire duration of an HTTP request lifecycle. Setting it to false changes this behavior drastically. [1] (/goto?url=CAESowEB6zswFekOY0q1x9Pe1drIIkFiT5vD7cO619qbxvjbkdSchRZnv09XvejD1P9CxizAG6XEuGkj-I3_DdfY_6n5I-3429pl0HNmu0xarX79pmg7aXvNdeNOZY-Qk7yXRutaclsB__HXaKiPuyMSEEivSdrkXHJKAuZWkMcJPZq6TeO8YxeKr92ZEA9rF85nYVOWwRd5g6-Q7nm1NhRmEd-SO8ip), [2] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g)
+
+What Happens When You Set It to false?
+
+
+With OSIV Enabled (true / Default)	With OSIV Disabled (false)
+Session Lifetime: Stays open until the HTTP response is fully sent to the client.	Session Lifetime: Closes immediately when the @Transactional service layer finishes.
+Database Connections: Held onto for a prolonged time, even during controller execution or JSON serialization.	Database Connections: Returned to the connection pool much faster, improving application throughput.
+Lazy Loading: Works anywhere, including the Controller or Thymeleaf templates.	Lazy Loading: Fails outside of @Transactional contexts with a LazyInitializationException.
+
+
+Why You Should Keep It false (The Benefits)
+
+Enabling OSIV is widely considered a production anti-pattern for large applications due to several side effects: [1] (/goto?url=CAESmwEB6zswFdRraHPKypVgwyo5qgnSVVt6X-B7bmMR-VNAc8JM95ADAYUCEQ0x3EZ1zG4GV9wO8K6RVma_SYn9gZgF9G420wa0bgakRtQC7lYxLsSq9QAJIWOWGlaO1lVW6cCX4-A8hCNlpUm8OB6ZsadVGmPII2CQGZYRJBd10qxiwg8mRNun6QC0RH-M_YCioviImGNCXQ7h3cpkGA), [2] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g)
+• Prevents Connection Pool Exhaustion: If your application relies on an external API or performs heavy business logic in the Controller, keeping OSIV true ties up a database connection for that entire time. Turning it false frees up connections instantly. [1] (/goto?url=CAESkQEB6zswFeadGjByuwKKXExBNlp2lv8InJG6lH4TMn8WEgGfHX0MVVUWW9K-cDNVSofoHeE8I7PwdH8-apzCZ-yH8sRtKP7wkZjVkkqm1Qq7oo2XjDcss4MEHH7_SPQXmhxSHv6O9gTuDKWjqS3pxFdX0QL5TtYR-PHIdEFXccWnz9XdmhnneBXrdlWg-qwy0Eob), [2] (/goto?url=CAESowEB6zswFekOY0q1x9Pe1drIIkFiT5vD7cO619qbxvjbkdSchRZnv09XvejD1P9CxizAG6XEuGkj-I3_DdfY_6n5I-3429pl0HNmu0xarX79pmg7aXvNdeNOZY-Qk7yXRutaclsB__HXaKiPuyMSEEivSdrkXHJKAuZWkMcJPZq6TeO8YxeKr92ZEA9rF85nYVOWwRd5g6-Q7nm1NhRmEd-SO8ip), [3] (/goto?url=CAEShgEB6zswFWM-fIKoTpcmb50Xv_1QB_EeyGoQVxTgxKfIMjpVN13hYvATTv6X_YOOcrklByVI4sIKZEvE6Qh-nOV_bVRol2RvkyW9KypmhZCqhmdKC6isRHDHVtRrDo2CInOIsuyTdR66GINu1PGuj_TSH-kUzcaUqw0lnxgqrOFv-RVT1wrNBg)
+• Exposes Performance Flaws Early: OSIV can mask the notorious N+1 query problem. With OSIV disabled, you are forced to design optimized fetching strategies in your data layer. [1] (/goto?url=CAEShgEB6zswFWM-fIKoTpcmb50Xv_1QB_EeyGoQVxTgxKfIMjpVN13hYvATTv6X_YOOcrklByVI4sIKZEvE6Qh-nOV_bVRol2RvkyW9KypmhZCqhmdKC6isRHDHVtRrDo2CInOIsuyTdR66GINu1PGuj_TSH-kUzcaUqw0lnxgqrOFv-RVT1wrNBg), [2] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g), [3] (/goto?url=CAESkAEB6zswFSm6QxaStY_2Zzh18b2OTR8JesZnOsYoRbVGgq2Y2vXAoP6eriaUPy4izqhwdNUkn2jl1ismOZxhvBFoEl5bV3o5jcwnLG5nJyhFHzhxAz1kW9YychlZppOVA2_d3nue7FnI61EvNgbtTq9oKk7c8-jJIGWjFiP0HLIrWYfMYt7X81sXiUcbEyUA0CY)
+• Clears Transaction Boundaries: It eliminates the risk of accidental query executions inside the view/serialization layer, keeping your database interactions strictly inside the service layer. [1] (/goto?url=CAESkQEB6zswFeadGjByuwKKXExBNlp2lv8InJG6lH4TMn8WEgGfHX0MVVUWW9K-cDNVSofoHeE8I7PwdH8-apzCZ-yH8sRtKP7wkZjVkkqm1Qq7oo2XjDcss4MEHH7_SPQXmhxSHv6O9gTuDKWjqS3pxFdX0QL5TtYR-PHIdEFXccWnz9XdmhnneBXrdlWg-qwy0Eob), [2] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g)
+
+The Side Effect: Dealing with LazyInitializationException
+
+When you switch this property to false, you will likely hit errors if your controllers try to serialize an entity that has @ManyToOne or @OneToMany relationships marked as FetchType.LAZY. [1] (/goto?url=CAESowEB6zswFekOY0q1x9Pe1drIIkFiT5vD7cO619qbxvjbkdSchRZnv09XvejD1P9CxizAG6XEuGkj-I3_DdfY_6n5I-3429pl0HNmu0xarX79pmg7aXvNdeNOZY-Qk7yXRutaclsB__HXaKiPuyMSEEivSdrkXHJKAuZWkMcJPZq6TeO8YxeKr92ZEA9rF85nYVOWwRd5g6-Q7nm1NhRmEd-SO8ip), [2] (/goto?url=CAEShgEB6zswFWM-fIKoTpcmb50Xv_1QB_EeyGoQVxTgxKfIMjpVN13hYvATTv6X_YOOcrklByVI4sIKZEvE6Qh-nOV_bVRol2RvkyW9KypmhZCqhmdKC6isRHDHVtRrDo2CInOIsuyTdR66GINu1PGuj_TSH-kUzcaUqw0lnxgqrOFv-RVT1wrNBg)
+To safely bypass LazyInitializationException when OSIV is turned off, you should: [1] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g)
+1. Use JOIN FETCH in your JPQL/HQL repositories to grab the child associations in a single query.
+2. Use Entity Graphs (@EntityGraph) to explicitly load fields when needed.
+3. Map Entities to DTOs inside the @Transactional service layer before returning data to your controllers. [1] (/goto?url=CAESgAEB6zswFalXJfwDJO4nMLDteXRvuUE_yBGz9sEVFitpfhUJMRoh4wdi7zMrM6Rx_CrtxztjsUrt8GWAo7wqsey_-nO0YpE5clMhO-8HvfaUPB9HEYs4axbG4yjInvIydyzBLfA_HQMgan4v0BxWYhFccJ-3XRZS6P1MJsxZFPF9Kg), [2] (/goto?url=CAESxQEB6zswFUmgr4fIms7O9fT87CyT0qs_5p8W33eGg0FHE4Vygh5n0j1vKKyhu5NQgNNO1zHq8aIt7VPU_tmKdbjuAqtMTmXZNRmRzSKIs9F1rDCxjFa-6Pm32-puD5BmWMQaHv_DokBAQsWj6A3RbalFdLfhuPhPnSHELUAMm8kF3nv0mjmx1rJgYa05LtcWhRoU9GJZzQWypPaR-9R1uAk_AolhdsJyrbbxuzZyqepkEF0QGXyfVAaH_PAN4Nf19mOGPU5x0g)
+Are you trying to resolve performance/connection issues in your app, or are you currently trying to fix a LazyInitializationException that popped up after adding this? I can provide code examples for either situation.
+
+==========
+What is Lazy Loading in the context of what we're discussing here?
+==========
+
+In the context of JPA and Hibernate, Lazy Loading is an optimization technique where associated data is not fetched from the database until you explicitly ask for it in your code.
+Instead of grabbing a main entity and all its related tables at the exact same time, Hibernate creates a temporary placeholder (a proxy object). It only runs the secondary SQL query to grab the actual data when you call a getter method on that relationship.
+
+How It Works: An Analogy
+
+Imagine a blog database containing a Post entity and a Comment entity (where one post has many comments).
+• Eager Loading (The Alternative): When you ask for a Post, the database immediately forces the system to fetch the Post and all 500 of its Comments right away. This happens even if you only wanted to display the post's title.
+• Lazy Loading: When you ask for a Post, the database fetches only the Post details. The comments field is left as an empty placeholder.
+java
+// 1. This triggers a SQL query to the 'Post' table only.
+Post post = postRepository.findById(1L); 
+
+// 2. The database connection is untouched here.
+System.out.println(post.getTitle()); 
+
+// 3. THIS triggers a second SQL query to the 'Comment' table.
+System.out.println(post.getComments().size()); 
+Use code with caution.
+
+The Collision Between Lazy Loading and open-in-view: false
+
+This is where our previous discussion about open-in-view: false comes directly into play.
+To execute that second database query on line 3, Hibernate must have an active database session open.
+[ HTTP Request Starts ]
+       │
+       ▼
+┌──────────────────────────────┐
+│  Service Layer (@Transactional)│
+│  • Post is loaded lazily      │
+└──────────────────────────────┘
+       │
+       ▼  <--- If open-in-view is FALSE, the Session CLOSES right here!
+┌──────────────────────────────┐
+│  Controller Layer / JSON     │
+│  • Jackson tries to serialize │
+│    post.getComments()        │  ❌ CRASH: LazyInitializationException!
+└──────────────────────────────┘
+1. With open-in-view: true: The session stays alive all the way through the Controller. When your application tries to turn the Post into JSON to send to the browser, the JSON serializer triggers post.getComments(). Because the session is still open, Hibernate quietly makes a last-minute query to the database, gets the comments, and everything works smoothly (though slowly).
+2. With open-in-view: false: The database session closes the absolute millisecond your Service layer finishes running. When the JSON serializer triggers post.getComments() in the Controller, Hibernate looks for an open session to fetch the data, realizes the door is locked, and throws a LazyInitializationException.
+Would you like to see how to write a JOIN FETCH query or use an Entity Graph to cleanly pull in lazy data before the session closes? Let me know which Repository style you prefer (e.g., Spring Data JPA interfaces or specification criteria).
