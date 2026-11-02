@@ -1,0 +1,50 @@
+## What a bean is
+
+A bean is an object that the Spring container creates, configures and manages, as opposed to one you create with `new`. The container is called the `ApplicationContext`. Beans are singletons by default, so there is one shared instance.
+
+Being a bean gives an object things a plain object doesn't get:
+- Spring builds it and supplies its dependencies.
+- Spring can wrap it in a proxy to add behavior. `@Transactional` works this way: the proxy opens a transaction before your method runs and commits or rolls back after.
+- Its lifecycle (startup, shutdown) is managed.
+
+## How Spring ties it together
+
+At startup Spring does roughly this:
+
+1. **Scans for components.** `@SpringBootApplication` on `OrderServiceApplication` includes component scanning of `com.orderflow.order` and everything below it.
+2. **Registers beans.** It finds `@Service`, `@RestController`, `@RestControllerAdvice`, `@Configuration` and similar classes. Spring Data JPA also finds the `OrderRepository` interface and generates an implementation for it.
+3. **Wires dependencies.** For each bean's constructor, it finds beans of the needed types and passes them in. The chain here is `OrderController` → `OrderService` → `OrderRepository` → `EntityManager` → `DataSource`.
+4. **Starts the app.** HTTP requests then reach the controller bean, which calls the service bean, which calls the repository bean.
+
+This is inversion of control. Your classes declare what they need, and the framework decides how to build and connect everything.
+
+## Why OrderService must be a bean
+
+- **`@Transactional` only works on beans.** Spring implements it with a proxy around the bean. If you wrote `new OrderService(repo)`, no proxy would exist, and `confirm()` would run with no transaction. Dirty checking wouldn't save the status change, and lazy `lines` couldn't be loaded.
+- **The controller can't get it otherwise.** `OrderController` is built by Spring, so it receives an `OrderService` from the container. If you called `new`, you'd have to build the repository by hand, which isn't possible.
+- **One shared instance** is used across requests, and it's easy to swap for a mock in tests.
+
+## What to add so a class can be injected
+
+You need two things.
+
+**1. Mark it for Spring** with a stereotype annotation on the class, in a package under the application class:
+
+| Annotation | Use for |
+|---|---|
+| `@Service` | business logic, such as `OrderService` |
+| `@Repository` | data access (already implied for Spring Data interfaces) |
+| `@RestController` | web endpoints |
+| `@Component` | anything else |
+| `@Configuration` with `@Bean` methods | objects you can't annotate, such as third-party classes |
+
+**2. Ask for it by declaring a constructor parameter** in the class that needs it:
+
+```java
+private final OrderService service;
+public OrderController(OrderService service) { this.service = service; }
+```
+
+With one constructor, `@Autowired` isn't needed.
+
+The common mistakes are forgetting the annotation (startup fails with `No qualifying bean of type ...`), putting the class outside the scanned packages, or calling `new` on a bean. In the last case you get a plain object with no injection and no transactions.

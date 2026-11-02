@@ -1,0 +1,116 @@
+## What `@Transactional` does
+
+A database transaction groups several operations into one all-or-nothing unit. `@Transactional` on a method (or a class) tells Spring: open a transaction before this method, run it, then commit if it returns normally or roll back if it throws a `RuntimeException`.
+
+In JPA terms there's a second effect. The transaction also opens a persistence context (Hibernate's `Session`) that lives until the method ends. Entities loaded inside it are managed, and Hibernate tracks them.
+
+## How a proxy makes it work
+
+Your `OrderService` code has no transaction logic in it. Spring adds that by wrapping the bean. The controller isn't given your `OrderService` object. It's given a generated subclass (the proxy) that holds your real object inside it.
+
+```
+OrderController ──calls──▶ [Proxy] ──▶ real OrderService.confirm()
+                            │ 1. begin transaction
+                            │ 2. call the real method
+                            │ 3. commit (or roll back on exception)
+```
+
+Roughly, the proxy does this:
+
+```java
+tx = txManager.begin();
+try { result = realService.confirm(id); txManager.commit(tx); return result; }
+catch (RuntimeException e) { txManager.rollback(tx); throw e; }
+```
+
+Only Spring can build this wrapper, and only for beans it creates. If you write `new OrderService(repo)`, you get the bare class with no wrapper, so the annotation is just text that nothing reads. The same applies when a method inside the class calls another `@Transactional` method of the same class. That call goes straight to the real object and skips the proxy, so the annotation is ignored there.
+
+## What breaks in `confirm()` with no transaction
+
+```java
+OrderEntity order = find(id);   // repository loads it
+order.confirm();                // changes status in memory
+return OrderResponse.from(order);
+```
+
+The repository's own methods are transactional, so with no service-level transaction `findById` runs in its own short transaction. It then commits and closes the session before returning. That causes two problems:
+
+!!!!!!!!!!!!!!!!!!!
+1. **The status change is never saved.** The entity is now detached, so nobody is tracking it. `order.confirm()` changes only the Java object. Dirty checking happens at commit by comparing a managed entity with its loaded snapshot, and that commit has already happened. You'd return `CONFIRMED` in the JSON while the row in Postgres still says `PENDING`.
+!!!!!!!!!!!!!!!!!!!
+2. **Lazy loading fails.** `lines` is a lazy collection, loaded on first access and only while the session is open. After the session closes, `OrderResponse.from` calling `getLines()` throws `LazyInitializationException`. With `open-in-view: false` in [application.yml](services/order-service/src/main/resources/application.yml), nothing keeps a session open for you.
+
+With `@Transactional` on the service, the session stays open for the whole `confirm()` call. `find` returns a managed entity, `confirm()` changes it, `from()` can load the lines, and at commit Hibernate sees the status difference and issues the `UPDATE`. That's why there's no `save` call.
+
+## Other details
+
+- **Atomicity.** `create` writes one `orders` row and several `order_lines` rows. If an insert fails halfway, the rollback undoes all of them.
+- **Rollback rules.** By default only unchecked exceptions (`RuntimeException`, `Error`) roll back. This is why `IllegalStateException` from an illegal transition aborts the transaction.
+- **`readOnly = true`** on `list` and `get` is a hint. Hibernate skips dirty checking and can use cheaper settings, and Postgres can treat the transaction as read-only.
+- **Which annotation.** Spring's `org.springframework.transaction.annotation.Transactional` has `readOnly`, `propagation` and `rollbackFor`. The Jakarta one doesn't have `readOnly`. That's why I switched it in the service.
+
+
+
+
+
+
+## !!!!!!!!!!!!!!!!!!!What dirty checking is!!!!!!!!!!!!!!!!!!!
+
+Hibernate doesn't watch your fields as you change them. It works by comparison, in three steps.
+
+**1. Snapshot on load.** When an entity is loaded inside a session (the persistence context), Hibernate keeps two things: the entity object you get, and a hidden copy of its column values at load time.
+
+```
+persistence context
+  OrderEntity@abc  (the live object you modify)
+  snapshot of abc:  status=PENDING, updatedAt=10:00:00, customerId=c1, ...
+```
+
+**2. You change the object.** `order.confirm()` runs `status = CONFIRMED; updatedAt = Instant.now()`. These are plain Java field assignments, and Hibernate isn't notified. Only the live object differs from the snapshot now.
+
+**3. Compare at flush.** Hibernate flushes at commit (and sometimes before a query). It walks every managed entity and compares current values with the snapshot. For each entity that differs, it queues an `UPDATE`, here:
+
+```sql
+UPDATE orders SET customer_id=?, status='CONFIRMED', created_at=?, updated_at=? WHERE id=?
+```
+
+By default it writes all columns, not just the changed ones. `@DynamicUpdate` would change that. Then the SQL runs and the transaction commits. This is why `confirm()` has no `save()` call. The entity is managed, so the change is detected on its own.
+
+## The timeline with `@Transactional`
+
+```
+begin tx ─ find(id) ─ confirm() ─ OrderResponse.from() ─ [flush: compare → UPDATE] ─ commit
+           │ snapshot taken       │ live object changed                              │
+           └──────────────── session open the whole time ──────────────────────────────┘
+```
+
+## The timeline without it
+
+```
+find(id):   begin tx ─ SELECT ─ commit, session closed      ← repository's own tiny transaction
+confirm():  live object changed to CONFIRMED                 ← session already gone
+from():     builds JSON from the live object → "CONFIRMED"
+(end)       nothing compares anything, no UPDATE is issued
+```
+
+The sentence I wrote means two things:
+
+- **"That commit has already happened":** the only flush opportunity was at the end of `find`'s transaction, which came before you changed anything. So Hibernate compared an unchanged entity and found nothing to update.
+- **"You'd return CONFIRMED… while the row says PENDING":** the JSON is built from the in-memory object, which says `CONFIRMED`. Postgres was never told, so a later `GET` would return `PENDING`. Nothing throws an exception, so this bug is silent.
+
+After the session closes, the entity is detached. It's a plain Java object that Hibernate no longer tracks. The `lines` lazy-loading failure comes from the same closed session.
+
+## Related points
+
+- **An explicit `save()` would fix the status bug without a transaction.** On a detached entity it does a `merge`, which copies the state into a fresh managed copy and updates the row in its own transaction. But you'd still have the lazy-loading problem, and operations that need to be atomic (like `create` with its lines) would no longer be.
+- **Entities created with `new` are not tracked until saved.** In `create`, `orders.save(order)` is what makes Hibernate track the new entity, and it issues the `INSERT`.
+- **`readOnly = true`** tells Hibernate to skip this snapshot comparison, which is a small saving on `list` and `get`.
+- **The change must happen inside the session.** Modifying an entity from a request thread after the service method returns has no effect on the database, for the same reason.
+
+
+
+//Entities created with new are not tracked until saved. In create, orders.save(order) is what makes Hibernate track the new entity, and it issues the INSERT.
+//However, running .save() would still have the lazy-loading problem for .getLines() in OrderEntity
+// as it throws LazyInitializationException because session is closed as soon as committed due to
+// open-in-view: false in application.yml,
+// and operations that need to be atomic (like create with its lines) would no longer be

@@ -1,0 +1,8 @@
+OrderRepository
+OrderRepository.java is the data access layer. It is one line:
+
+
+public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {}
+Extending JpaRepository<OrderEntity, UUID> (entity type, id type) gives you save, findById, findAll, deleteById, count, paging and more, without writing any SQL or implementation. You can add methods like findByCustomerId(String id), and Spring Data derives the query from the name.
+
+It's important because it's the only place the rest of the app talks to the database. OrderService says "save this order" and doesn't know about connections, SQL or Hibernate sessions.
