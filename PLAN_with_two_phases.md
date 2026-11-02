@@ -20,6 +20,7 @@ Not in Phase 1: Kafka, Redis, security/login, Docker images, CI extras, Kubernet
    Done when: Swagger UI opens at http://localhost:8080/swagger-ui.html and lists 5 endpoints (they return 501 for now), `http://localhost:8080/actuator/health` says `UP`, and Postgres now has the tables `orders`, `order_lines` and `flyway_schema_history` (Flyway ran `V1__init.sql`).
 3. **Read the domain code and run its test.**
    Do: read `domain/Order.java` and `domain/OrderStatus.java` (the order lifecycle), then run `mvn test`.
+   The :: Method Reference operator can be replaced with a Lambda Expression  when passing in Executable functional interface as second argument when executing assertThrows. The tests in `OrderTest` are mainly to make sure order transitions by executing allowedNext() work as expected.
    Done when: the 6 tests in `OrderTest` pass and you can explain which status changes are allowed.
 4. **Map the tables to Java (persistence).**
    Do: create an `OrderEntity` for the `orders` table and a `JpaRepository<OrderEntity, UUID>`. The easiest way to map the lines is `@ElementCollection` with `@CollectionTable(name = "order_lines", joinColumns = @JoinColumn(name = "order_id"))` and `@OrderColumn(name = "line_no")` on a small `@Embeddable` (sku, quantity). Store `status` as a string. Let the entity's `confirm()` / `cancel()` methods reuse the rules in `OrderStatus`.
