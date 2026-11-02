@@ -1,0 +1,19 @@
+$gap: 1rem;
+
+.app {
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 $gap;
+  font-family: system-ui, sans-serif;
+
+  .form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: $gap;
+  }
+
+  ul { padding-left: 0; list-style: none; }
+  li { padding: 0.5rem 0; border-bottom: 1px solid #ddd; }
+  li button { margin-left: 0.5rem; }
+  .error { color: #b00020; }
+}

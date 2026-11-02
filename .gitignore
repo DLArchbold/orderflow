@@ -1,0 +1,13 @@
+target/
+node_modules/
+dist/
+.idea/
+.vscode/
+*.iml
+.env
+playwright-report/
+test-results/
+.DS_Store
+*.tfstate
+*.tfstate.*
+.terraform/

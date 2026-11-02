@@ -1,0 +1,17 @@
+# Phase 1: just Postgres. The full stack (Kafka, Redis, monitoring...) is in phase2/infra/docker-compose.full.yml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: orderflow
+      POSTGRES_PASSWORD: orderflow
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderflow"]
+      interval: 5s
+      retries: 10
+volumes:
+  pgdata:
