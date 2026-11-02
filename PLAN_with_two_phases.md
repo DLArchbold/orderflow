@@ -23,7 +23,9 @@ Not in Phase 1: Kafka, Redis, security/login, Docker images, CI extras, Kubernet
    The :: Method Reference operator can be replaced with a Lambda Expression  when passing in Executable functional interface as second argument when executing assertThrows. The tests in `OrderTest` are mainly to make sure order transitions by executing allowedNext() work as expected.
    Done when: the 6 tests in `OrderTest` pass and you can explain which status changes are allowed.
 4. **Map the tables to Java (persistence).**
-   Do: create an `OrderEntity` for the `orders` table and a `JpaRepository<OrderEntity, UUID>`. The easiest way to map the lines is `@ElementCollection` with `@CollectionTable(name = "order_lines", joinColumns = @JoinColumn(name = "order_id"))` and `@OrderColumn(name = "line_no")` on a small `@Embeddable` (sku, quantity). Store `status` as a string. Let the entity's `confirm()` / `cancel()` methods reuse the rules in `OrderStatus`.
+   Do: first add the migration `V2__order_lines_id.sql` (never edit `V1__init.sql`, Flyway has already applied it): drop the `order_lines` primary key, add `id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`, and add `UNIQUE (order_id, line_no)`.
+   Then create an `OrderEntity` for the `orders` table, an `OrderLineEntity` for the `order_lines` table (`@Id @GeneratedValue(strategy = IDENTITY) Long id`, `@ManyToOne(fetch = LAZY, optional = false) @JoinColumn(name = "order_id") OrderEntity order`, `lineNo`, `sku`, `quantity`), and a `JpaRepository<OrderEntity, UUID>`. Map the lines on the parent with `@OneToMany(mappedBy = "order", cascade = ALL, orphanRemoval = true)` and `@OrderBy("lineNo ASC")`, and add an `addLine(sku, quantity)` helper that sets both sides and `lineNo`. Store `status` as a string (`@Enumerated(EnumType.STRING)`). Let the entity's `confirm()` / `cancel()` methods reuse the rules in `OrderStatus`.
+   Watch for: the list endpoint loading lines one order at a time (N+1); fix it with `@EntityGraph(attributePaths = "lines")`.
    Done when: the app still starts (`ddl-auto: validate` means any mismatch with the tables is reported at startup).
 5. **Implement the endpoints, one at a time, in `OrderController`.**
    Order: create, list, get one, confirm, cancel.
@@ -60,7 +62,7 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
 
 11. **Full local stack.** Use `phase2/infra/docker-compose.full.yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana). Move `phase2/inventory-service` to `services/inventory-service`, and add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql`.
     Done when: all containers start.
-12. **Outbox write.** Copy `phase2/order-service/V2__idempotency_and_outbox.sql` into the migrations folder, bring back the outbox classes from `phase2/order-service/src-additions/outbox`, add the Kafka dependency from `pom-additions.xml`, and make order creation insert an outbox row in the same transaction.
+12. **Outbox write.** Copy `phase2/order-service/V2__idempotency_and_outbox.sql` into the migrations folder, renamed to `V3__idempotency_and_outbox.sql` (`V2` is taken by the `order_lines` id migration from step 4), bring back the outbox classes from `phase2/order-service/src-additions/outbox`, add the Kafka dependency from `pom-additions.xml`, and make order creation insert an outbox row in the same transaction.
     Done when: a Testcontainers (PostgreSQL) test proves that on rollback neither the order nor the outbox row exists.
 13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published).
     Done when: a Kafka Testcontainers test shows an event arrives once the order commits, and unpublished rows are retried after Kafka was down.
