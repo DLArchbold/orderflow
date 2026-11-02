@@ -1,0 +1,43 @@
+`@EntityGraph` tells JPA which associations to load together with an entity, for one specific query. It overrides the fetch strategy you set on the mapping, for that query only.
+
+## The problem it solves
+
+`OrderEntity.lines` is a `@OneToMany`, which is **lazy** by default. Hibernate doesn't load the lines with the order. It loads them the first time you call `getLines()`.
+
+Without the annotation, `list()` would do this:
+
+```
+SELECT * FROM orders                          -- 1 query for N orders
+SELECT * FROM order_lines WHERE order_id = ?  -- once per order, when OrderResponse.from() touches getLines()
+SELECT * FROM order_lines WHERE order_id = ?
+... N times
+```
+
+That's the N+1 problem: 1 query plus N more, so 100 orders cost 101 round trips.
+
+## What it does here
+
+```java
+@EntityGraph(attributePaths = "lines")
+List<OrderEntity> findAll();
+```
+
+`attributePaths = "lines"` names the association (the field `lines` on `OrderEntity`) to load eagerly for this method. Hibernate adds a join and fetches everything in one query:
+
+```sql
+SELECT o.*, l.* FROM orders o LEFT JOIN order_lines l ON l.order_id = o.id
+```
+
+Hibernate then builds each `OrderEntity` once and fills its `lines` from the joined rows. You still have `lines` as lazy on the entity, so other methods like `findById` are unaffected. Only `findAll()` pays for the join.
+
+## Why use it rather than other options
+
+- **`fetch = FetchType.EAGER` on the mapping** would load lines for every query, even when you don't need them.
+- **A custom `@Query("select o from OrderEntity o join fetch o.lines")`** gives the same result, but you write the JPQL yourself. `@EntityGraph` is shorter and works with derived methods like `findAllByOrderByCreatedAtDesc()`.
+- **`@Override`** is needed because `findAll()` already exists on `JpaRepository`. You're replacing its default behavior with the graph attached.
+
+## Limitations
+
+- It loads all the lines for every order. For a large table you'd paginate, and paging with a collection join is awkward because Hibernate can end up paginating in memory.
+- You can list several paths (`attributePaths = {"lines", "other"}`), but fetching more than one collection in a single join can multiply rows. Hibernate may reject a fetch of two `List` collections with a `MultipleBagFetchException`.
+- `@EntityGraph` also supports nested paths like `"lines.product"`, for entities reached through the association.

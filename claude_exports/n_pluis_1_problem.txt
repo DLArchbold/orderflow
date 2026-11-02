@@ -1,0 +1,5 @@
+The N+1 query problem is a severe database performance bottleneck where an application executes one initial query to fetch a list of parent records, followed by N separate, individual queries to fetch related child data for every single record in that list
+
+This problem is heavily associated with Object-Relational Mappers (ORMs) like Hibernate, Django ORM, Entity Framework, or ActiveRecord.
+• Lazy Loading: By default, ORMs try to be efficient by utilizing "lazy loading". They won't load related data (like the author) until your code specifically asks for it (e.g., calling post.getAuthor().getName()).
+• The Loop Trap: When you access that related field inside a standard for-each loop, the ORM is forced to stealthily fire off a brand-new SQL query on every single iteration of the loop. This hides the "SQL chaos" beneath clean-looking code.
