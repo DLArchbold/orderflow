@@ -11,6 +11,8 @@ spring:
     hibernate:
       ddl-auto: validate      # Flyway creates the tables; Hibernate only checks they match your entities
     open-in-view: false
+  kafka:
+    bootstrap-servers: localhost:9092
 management:
   endpoints:
     web:
