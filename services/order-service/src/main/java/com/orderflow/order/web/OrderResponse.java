@@ -7,7 +7,7 @@ import com.orderflow.order.persistence.OrderEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 //Instead of writing a normal class with private fields, a constructor, getters, equals(), hashCode(), and toString() methods by hand, a record lets you declare all of that in a single line
-//For why this class of type record is needed, see claude_exports\why-order-response-class-of-type-record-is-needed.txt
+//For why this class of type record is needed, see notes\why-order-response-class-of-type-record-is-needed.txt
 public record OrderResponse(
         @Schema(description = "Unique order ID", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
         UUID id,

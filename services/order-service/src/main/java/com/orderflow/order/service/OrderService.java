@@ -11,9 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service 
 //@Service makes OrderService a bean too
-//Why must it be a Bean? See claude_exports\bean-and-spring-dependency-injection.txt
+//Why must it be a Bean? See notes\bean-and-spring-dependency-injection.txt
 @Transactional
-//For why @Transactional is needed, see claude_exports\why_transasctional_is_important_in_order_service.txt
+//For why @Transactional is needed, see notes\why_transasctional_is_important_in_order_service.txt
 //Basically to ensure transaction session is open for during entire execution of method here 
 //and not just in OrderRepository methods to ensure changes in entities here are reflectted in DB as well.
 public class OrderService {
@@ -25,7 +25,7 @@ public class OrderService {
 
     public OrderService(OrderRepository orders) {
         // For why OrderRepository is instantiated and can be used automatically without new keyword
-        // , see claude_exports\bean-and-spring-dependency-injection.txt
+        // , see notes\bean-and-spring-dependency-injection.txt
         // Using new keyword here will cause a plain object with no injection and no transactions
         // like supporting implementations like getAll(), etc to be defined.
         this.orders = orders;
@@ -33,7 +33,7 @@ public class OrderService {
 
     public OrderResponse create(CreateOrderRequest request) {
         //For why .save() is still needed even when OrderService is annotated with @Transactional, 
-        // see claude_exports\why_transasctional_is_important_in_order_service.txt
+        // see notes\why_transasctional_is_important_in_order_service.txt
         OrderEntity order = new OrderEntity(UUID.randomUUID(), request.customerId());
         request.items().forEach(item -> order.addLine(item.sku(), item.quantity()));
         return OrderResponse.from(orders.save(order));
