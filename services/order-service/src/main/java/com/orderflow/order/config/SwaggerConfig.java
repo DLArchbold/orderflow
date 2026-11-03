@@ -13,6 +13,9 @@ public class SwaggerConfig {
         return new OpenAPI().info(new Info()
             .title("OrderFlow Order API")
             .version("0.1.0")
-            .description("Create, view, confirm and cancel orders."));
+            .description("Create, view, confirm and cancel orders. "
+                + "An order starts as PENDING; PENDING can become CONFIRMED, REJECTED or CANCELLED, "
+                + "CONFIRMED can become CANCELLED, and REJECTED/CANCELLED are final. "
+                + "Errors are returned as {\"message\": \"...\"} with status 400, 404 or 409."));
     }
 }
