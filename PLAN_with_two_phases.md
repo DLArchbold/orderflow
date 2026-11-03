@@ -68,7 +68,7 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
 11. **Full local stack.**
     11a. **Inventory-service standalone.**
     Do: move `phase2/inventory-service` to `services/inventory-service`. Add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql` (that script only runs on a fresh Postgres volume, so run `docker compose down -v` first or create the database by hand). Point its `application.yml` at the `inventory` database and give it port 8081 so it doesn't clash with order-service. Run `mvn spring-boot:run`.
-    Done when: `http://localhost:8081/actuator/health` says `UP` and its Flyway tables exist in the `inventory` database.
+    Done when: `http://localhost:8081/actuator/health` says `UP` and its Flyway tables exist in the `inventory` database. See [docs/images/11a.PNG](docs/images/11a.PNG)
     11b. **Full compose.**
     Do: start `phase2/infra/docker-compose.full.yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana). List Kafka topics from inside the container, run `PING` against Redis, open Jaeger (16686), Prometheus (9090) and Grafana (3000). Check Kafka's advertised listeners: apps on the host and apps in containers need different addresses.
     Done when: every UI loads, Kafka and Redis answer, and both services still start against the full stack.
