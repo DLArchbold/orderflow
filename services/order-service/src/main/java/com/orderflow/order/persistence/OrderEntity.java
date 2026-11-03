@@ -1,5 +1,6 @@
 package com.orderflow.order.persistence;
 
+import com.orderflow.order.domain.InvalidTransitionException;
 import com.orderflow.order.domain.OrderStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -54,7 +55,7 @@ public class OrderEntity {
 
     private void transitionTo(OrderStatus next) {
         if (!status.allowedNext().contains(next)) {
-            throw new IllegalStateException("Illegal transition " + status + " -> " + next);
+            throw new InvalidTransitionException(status, next);
         }
         status = next;
         updatedAt = Instant.now();
