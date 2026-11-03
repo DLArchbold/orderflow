@@ -1,0 +1,39 @@
+==========================
+1. In services\order-service and services\inventory-service
+to compile and run Spring Boot microservices and run Flyway DB migration to create tables after running docker-compose.yml
+in .\infra and .\phase2\infra to create databases if docker compose -f .\infra\docker-compose.yml down -v
+was executed to delete Docker Postgres containers because of new scripts and tables to be added and run
+, like those in services\order-service\src\main\resources\db\migration and phase2\order-service\V2__idempotency_and_outbox.sql
+
+mvn spring-boot:run
+==========================
+
+
+==========================
+Execute to delete Docker Postgres containers because of new scripts and tables to be added and run 
+, like those in services\order-service\src\main\resources\db\migration and phase2\order-service\V2__idempotency_and_outbox.sql
+
+
+docker compose -f .\infra\docker-compose.yml down -v
+
+==========================
+
+==========================
+To restart Docker containers only
+
+docker compose -f .\infra\docker-compose.yml up -d
+==========================
+
+
+==========================
+To restart Docker containers as well as containers for all other services (Promethus, Grafana, Kafka, etc.)
+
+docker compose -f .\phase2\infra\docker-compose.full.yml up -d
+==========================
+
+
+
+
+
+
+
