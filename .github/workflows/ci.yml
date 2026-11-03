@@ -1,21 +1,43 @@
+# Display name shown in the GitHub Actions tab and in `gh run list`
 name: ci
+
+# Triggers: run on every push to any branch, and on every pull request opened/updated
 on: [push, pull_request]
+
+# Jobs run in parallel by default, each on its own fresh machine
 jobs:
+  # Builds and tests the Spring Boot API
   backend:
+    # GitHub-hosted Linux virtual machine, wiped after the job
     runs-on: ubuntu-latest
+    # Steps run in order; if one fails, the rest are skipped and the job fails
     steps:
+      # Clone the repository onto the runner (without this the machine has no code)
       - uses: actions/checkout@v4
+      # Install a JDK on the runner
       - uses: actions/setup-java@v4
+        # temurin = Eclipse Temurin JDK build; version 21 matches the project;
+        # cache: maven saves downloaded dependencies between runs to speed up later builds
         with: { distribution: temurin, java-version: '21', cache: maven }
+      # Compile, run the tests and build the jar; -B (batch mode) removes colors/progress bars from logs.
+      # A compile error or failing test makes this step, and the job, fail.
       - run: mvn -B package
+        # Run the command in the folder that contains pom.xml
         working-directory: services/order-service
+
+  # Builds the React/TypeScript frontend
   frontend:
     runs-on: ubuntu-latest
     steps:
+      # Jobs don't share files, so this job clones the repository again
       - uses: actions/checkout@v4
+      # Install Node.js
       - uses: actions/setup-node@v4
+        # Node 22 matches the local version
         with: { node-version: '22' }
+      # Install the dependencies listed in package.json
       - run: npm install
         working-directory: frontend
+      # Run the "build" script in package.json (type-checks and bundles with Vite); type errors fail the job
       - run: npm run build
         working-directory: frontend
