@@ -62,34 +62,91 @@ The three resumes with the longer OrderFlow entry assume Phase 2 is finished. Do
 Read `phase2/README.md` first: it says what each folder is and when to bring it back.
 **Test-first rule (steps 12 to 16):** commit the failing test before the implementation. Only claim test-driven development if you really worked that way.
 
-11. **Full local stack.** Use `phase2/infra/docker-compose.full.yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana). Move `phase2/inventory-service` to `services/inventory-service`, and add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql`.
-    Done when: all containers start.
+**Migration numbers:** `V1` is the initial schema, `V2` is the `order_lines` id (step 4), `V3` is the outbox (step 12). Any later migration (for example step 18c) takes the next free number.
+**Order constraints:** step 15 before 20a (SSE is fed from the Kafka consumer); step 18 before 20c (Playwright needs a login).
+
+11. **Full local stack.**
+    11a. **Inventory-service standalone.**
+    Do: move `phase2/inventory-service` to `services/inventory-service`. Add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql` (that script only runs on a fresh Postgres volume, so run `docker compose down -v` first or create the database by hand). Point its `application.yml` at the `inventory` database and give it port 8081 so it doesn't clash with order-service. Run `mvn spring-boot:run`.
+    Done when: `http://localhost:8081/actuator/health` says `UP` and its Flyway tables exist in the `inventory` database.
+    11b. **Full compose.**
+    Do: start `phase2/infra/docker-compose.full.yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana). List Kafka topics from inside the container, run `PING` against Redis, open Jaeger (16686), Prometheus (9090) and Grafana (3000). Check Kafka's advertised listeners: apps on the host and apps in containers need different addresses.
+    Done when: every UI loads, Kafka and Redis answer, and both services still start against the full stack.
+    11c. **Read the Phase 2 code before using it.**
+    Do: read `phase2/order-service/src-additions` (outbox, config), `pom-additions.xml`, `V2__idempotency_and_outbox.sql`, and the inventory-service consumer code. Draw the event flow on paper: order created, outbox row, Kafka, inventory reserve, result event, order status.
+    Done when: you can explain, without looking, what the outbox and `processed_messages` tables are for and why each insert must share a transaction with the business change.
 12. **Outbox write.** Copy `phase2/order-service/V2__idempotency_and_outbox.sql` into the migrations folder, renamed to `V3__idempotency_and_outbox.sql` (`V2` is taken by the `order_lines` id migration from step 4), bring back the outbox classes from `phase2/order-service/src-additions/outbox`, add the Kafka dependency from `pom-additions.xml`, and make order creation insert an outbox row in the same transaction.
     Done when: a Testcontainers (PostgreSQL) test proves that on rollback neither the order nor the outbox row exists.
 13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published).
-    Done when: a Kafka Testcontainers test shows an event arrives once the order commits, and unpublished rows are retried after Kafka was down.
+    Done when (two separate tests, commit each failing test first):
+    - a Kafka Testcontainers test shows an event arrives once the order commits;
+    - a second test stops Kafka, creates an order, restarts Kafka, and shows the unpublished row is retried and delivered.
 14. **Inventory consumer.** Idempotent processing: `processed_messages` insert + stock reservation + result event in one transaction.
     Done when: delivering the same message twice reserves stock only once (test), and stock never goes negative.
 15. **Close the loop.** Order-service consumes the inventory result and moves the order to CONFIRMED or REJECTED (this replaces the manual `/confirm` endpoint).
-    Done when: an end-to-end test (two services, real Kafka and Postgres) takes an order from PENDING to CONFIRMED, and to REJECTED when stock is insufficient.
+    Decide what happens to the manual flow and write it down: either remove `/confirm` (then also remove the Confirm button in `App.tsx`, update its Swagger description and `OrderControllerTest`/service tests, and fix the README), or keep it as an admin-only override. Keep `/cancel`, but note that cancelling an order after stock was reserved needs a release event, or you must forbid it once CONFIRMED.
+    Done when: an end-to-end test (two services, real Kafka and Postgres) takes an order from PENDING to CONFIRMED, and to REJECTED when stock is insufficient; and Swagger UI, the UI buttons and the README match the new behaviour.
 16. **Failure handling.** Consumer retries with backoff and a dead-letter topic, plus a way to replay dead letters.
     Done when: a poison message lands in the DLT without blocking the partition, and replaying it after a fix succeeds.
-17. **Resilience and caching.** Add one synchronous call (order-service asks inventory-service for stock availability), wrapped with a Resilience4j timeout, circuit breaker and bulkhead, with a fallback. Cache that read in Redis.
-    Done when: with inventory-service stopped you see the breaker open, the fallback response, and recovery after restart; a repeated read is served from Redis.
-18. **Security.** OAuth2/JWT resource server (`phase2/order-service/src-additions/config/SecurityConfig.java`; Keycloak in compose or another OIDC provider), roles, customers see only their own orders, CORS for the frontend. Fill in `phase2/docs/security.md`.
+17. **Resilience and caching.**
+    17a. **Synchronous call.**
+    Do: add `GET /stock/{sku}` to inventory-service. Add a client in order-service (`RestClient` or Feign) with the base URL in config.
+    Done when: a test calls it against a stub and the real endpoint returns stock for a known sku.
+    17b. **Resilience4j.**
+    Do: add the dependency. Add a timeout, a circuit breaker (window, failure threshold, wait duration) and a bulkhead around the client. Write a fallback and decide what it returns ("unknown, assume available" or "unavailable").
+    Done when: with inventory-service stopped you see the breaker open (`/actuator/circuitbreakers`) and the fallback response, and after restart the breaker recovers.
+    17c. **Redis cache.**
+    Do: add `spring-boot-starter-data-redis` and `@EnableCaching`. Put `@Cacheable` with a TTL on the stock read. Decide how it goes stale when a reservation changes stock (`@CacheEvict` or just a short TTL) and write the decision down.
+    Done when: `redis-cli` shows the key, and a repeated read does not reach inventory-service.
+18. **Security.**
+    18a. **Keycloak.**
+    Do: add Keycloak to compose with a realm import file so it is reproducible. Create a public client for the frontend (PKCE), roles `customer` and `admin`, and two users (alice, bob).
+    Done when: you can fetch a token for each user with curl.
+    18b. **Resource server.**
+    Do: add `spring-boot-starter-oauth2-resource-server` and the issuer URI. Copy `phase2/order-service/src-additions/config/SecurityConfig.java` and adjust it. Permit Swagger UI and `/actuator/health`. Add a `SecurityScheme` to `SwaggerConfig` so Swagger UI gets an "Authorize" button.
+    Done when: a test shows 401 without a token and 200 with one, and Swagger UI still works with a token.
+    18c. **Ownership.**
+    Do: add a migration (next free number, see above) adding `customer_id` to `orders`. Set it from the JWT `sub` on create and drop `customerId` from the request body so a client can't spoof it. Filter the list by owner. Return 403 on get, confirm and cancel for someone else's order, with an admin exception.
     Done when: tests show 401 without a token, 403 for another customer's order, 200 for your own.
+    18d. **CORS and frontend login.**
+    Do: add CORS for `http://localhost:5173`. Add `oidc-client-ts` or `keycloak-js` to the frontend, a login/logout button, the `Authorization` header in `api.ts`, and handling of 401 and 403 in the UI. Fill in `phase2/docs/security.md`.
+    Done when: you can log in as alice in the browser, see only alice's orders, and the UI shows a clear message on 403.
 19. **Database tuning.** Seed a few million order rows, find your slowest realistic query, run `EXPLAIN ANALYZE`, add or change an index.
     Done when: before/after plans and timings are recorded in `phase2/docs/perf.md`.
-20. **Frontend extras and tests.** Add live status via SSE (endpoint in order-service, hook in `phase2/frontend/hooks`), React Testing Library tests, and a Playwright test of the main flow.
-    Done when: you can watch an order change status without refreshing, and the tests pass.
-21. **Observability.** Actuator health/readiness, Micrometer metrics (orders created, outbox lag, DLT count) scraped by Prometheus, a Grafana dashboard, one alert rule, OpenTelemetry traces in Jaeger across both services, a correlation id in logs and Kafka headers.
-    Done when: you can follow one order through a single trace, and the alert fires when you stop the publisher.
+20. **Frontend extras and tests.**
+    20a. **Live status via SSE.**
+    Do: add an `SseEmitter` endpoint in order-service, fed from the Kafka consumer that changes status (step 15). Copy the hook from `phase2/frontend/hooks` and use it in `App.tsx`; handle reconnects. Browser `EventSource` can't send an `Authorization` header, so with security on (step 18) use a fetch-based SSE client or a short-lived token.
+    Done when: you can watch an order change status without refreshing.
+    20b. **React Testing Library.**
+    Do: install and configure Vitest, jsdom and RTL. Mock `api.ts`. Test the form, the list rendering and the 409 error display.
+    Done when: `npm test` passes.
+    20c. **Playwright.**
+    Do: install Playwright and run it against the full stack. Script the main flow: log in, create an order, see it appear, see it become CONFIRMED. Add it to CI, or write down why it isn't there.
+    Done when: the Playwright test passes from a clean start.
+21. **Observability.**
+    21a. **Metrics and dashboard.**
+    Do: add Actuator health/readiness and `micrometer-registry-prometheus`, expose `/actuator/prometheus`, and add a Prometheus scrape config for both services. Add custom meters: orders created, outbox lag (age of the oldest unpublished row) and DLT count. Build a Grafana dashboard and export it as JSON into the repo.
+    Done when: the dashboard shows live values for all three meters while you create orders.
+    21b. **Alert rule.**
+    Do: add a Prometheus rule for outbox lag over N seconds for M minutes and load it.
+    Done when: the alert fires when you stop the publisher.
+    21c. **Tracing and correlation id.**
+    Do: add Micrometer Tracing with the OTel bridge and OTLP exporter pointed at Jaeger. Check one HTTP request gives one trace. Carry the trace context across Kafka: the outbox must store the trace headers, because the publisher runs later on another thread; enable observation on the Kafka template and listener. Add a correlation id to the MDC, the log pattern and the Kafka headers.
+    Done when: you can follow one order through a single trace across both services.
 22. **CI/CD and scanning.** Move `phase2/github/*` into `.github/`; build and push Docker images, run the integration tests; keep CodeQL and Dependabot on; fix real findings and log each one in `security.md`.
     Done when: a push to main produces tested images with a green pipeline.
 23. **Kubernetes (light).** Finish the manifests in `phase2/infra/k8s`; CI creates a `kind` cluster, applies them and waits for readiness.
     Done when: CI shows both services Ready on kind.
-24. **AWS with Terraform.** Build `phase2/infra/terraform` step by step (network, ECR, RDS, Kafka option, ECS Fargate behind an ALB with rolling deployment, secrets); see `phase2/infra/aws/README.md`.
-    Done when: the app runs at a public URL and a deploy was done while k6 traffic ran with zero failed requests (keep the output). Then `terraform destroy`.
+24. **AWS with Terraform.** Build `phase2/infra/terraform` step by step; see `phase2/infra/aws/README.md`. This is the only step that can cost money: set a billing alarm first and destroy everything when you finish.
+    24a. **Foundations.**
+    Do: set up the AWS account, a billing alarm and an IAM user or SSO. Set up Terraform state (S3 bucket and lock, or knowingly use local state). Add the VPC, subnets and security groups, ECR, and RDS (the slowest and costliest piece). Push an image to ECR by hand.
+    Done when: `terraform apply` succeeds, the image is in ECR and you can connect to RDS from inside the VPC.
+    24b. **Compute.**
+    Do: add the ECS cluster, task definitions, IAM roles for task execution, the ALB with target group and health check, and the service. Decide how to run Kafka (MSK is expensive; consider a cheaper option) and write the decision down.
+    Done when: the app answers at the public ALB URL.
+    24c. **Secrets, deploy under load, destroy.**
+    Do: store the DB password in Secrets Manager or SSM and inject it into the task. Run k6 against the ALB, push a new image and update the service during the run.
+    Done when: the deploy happened while k6 traffic ran with zero failed requests (keep the output). Then run `terraform destroy` and check in the console that nothing is left (NAT gateways, ALB, RDS snapshots).
 25. **Load test.** Run `phase2/load-tests/k6/create-orders.js` (adjust it to your final API).
     Done when: `perf.md` records throughput, p95 latency and error rate with the exact setup.
 26. **Destructive resiliency drill.** Kill inventory-service and Kafka in turn while traffic runs; restart them.
