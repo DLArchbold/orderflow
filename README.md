@@ -4,6 +4,7 @@ Order management web app: **React + TypeScript** UI, **Java 21 / Spring Boot** R
 Later phases (Kafka messaging, Redis, security, Kubernetes, Terraform/AWS, load tests) are kept in [`phase2/`](phase2/README.md).
 
 **Status 11/01: skeleton.** Build order and "done when" checks: [docs/PLAN.md](docs/PLAN.md) (start with Phase 1).
+
 **Status 11/02: Phase 1 done.** Build order and "done when" checks: [docs/PLAN.md](docs/PLAN.md) (I used [PLAN_with_two_phases.md](PLAN_with_two_phases.md)) (Continue on with Phase 2).
 
 
