@@ -70,7 +70,45 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
     Do: move `phase2/inventory-service` to `services/inventory-service`. Add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql` (that script only runs on a fresh Postgres volume, so run `docker compose down -v` first or create the database by hand). Point its `application.yml` at the `inventory` database and give it port 8081 so it doesn't clash with order-service. Run `mvn spring-boot:run`.
     Done when: `http://localhost:8081/actuator/health` says `UP` and its Flyway tables exist in the `inventory` database. See [docs/images/11a.PNG](docs/images/11a.PNG)
     11b. **Full compose.**
-    Do: start `phase2/infra/docker-compose.full.yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana). List Kafka topics from inside the container, run `PING` against Redis, open Jaeger (16686), Prometheus (9090) and Grafana (3000). Check Kafka's advertised listeners: apps on the host and apps in containers need different addresses.
+    Do: 
+    Port clash: the full compose also defines Postgres on 5432. If your Phase 1 Postgres is already running, stop it first with docker compose -f infra/docker-compose.yml down, or the full stack will fail to bind.
+    start `phase2/infra/docker-compose.full.yml` (Postgres, Kafka, Redis, Jaeger, Prometheus, Grafana).
+    
+    From the project root:
+    `docker compose -f phase2/infra/docker-compose.full.yml up -d`
+    That starts everything: Postgres, Kafka, Redis, Jaeger, Prometheus and Grafana. To start just Kafka:
+    `docker compose -f phase2/infra/docker-compose.full.yml up -d kafka`
+    Then check it:
+    `docker ps`
+    `docker logs <kafka-container-name> --tail 20`
+    eg: `docker logs b358928c3581aa4bc9b374dab9294bf31d68639e955f5497505837919eef895c --tail 20`
+    
+    List Kafka topics from inside the container: `docker compose -f .\phase2\infra\docker-compose.full.yml exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`
+    A fresh broker prints nothing, and that's fine. A successful empty list means the broker answered. An error such as "Connection refused" or a timeout means it isn't ready, so check `docker compose ... logs kafka`.
+    To prove messages flow, create the topic your inventory listener uses, then list again:
+    `docker compose -f .\phase2\infra\docker-compose.full.yml exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic orders.events --partitions 1 --replication-factor 1`
+    Response should be: "Created topic orders.events."
+    `docker compose -f .\phase2\infra\docker-compose.full.yml exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`
+    Response should be: "order.events"
+    or `/opt/kafka/bin $ ./kafka-topics.sh --bootstrap-server localhost:9092 --list in infra-kafka container terminal` in Docker Desktop
+
+    Run `PING` against Redis: `docker compose -f .\phase2\infra\docker-compose.full.yml exec redis redis-cli ping`
+    Response should be: "PONG"
+
+    
+    Open Jaeger (16686), Prometheus (9090) and Grafana (3000). 
+    start http://localhost:16686   # Jaeger
+    start http://localhost:9090    # Prometheus
+    start http://localhost:3000    # Grafana (login admin / admin; it may ask you to change the password, you can skip); see ./docs/images for initial startup
+    What to look for:
+    Jaeger: the search page loads. The Service dropdown is empty until a service sends traces.
+    Prometheus: go to Status → Targets. Your Spring services show as DOWN if they aren't running or aren't being scraped yet. That's fine for this step. Prometheus itself should be UP.
+    Grafana: the home page loads. Check Connections → Data sources, which should list Prometheus if the provisioning files are correct.
+    
+    Check Kafka's advertised listeners: apps on the host and apps in containers need different addresses.
+
+    Run this in powershell, it should temporarily create a Docker container and have the created container try to connect to the one under the Docker infra_default network (the prior existing Docker container) and fail `docker run --rm --network infra_default apache/kafka:3.8.0 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka<or localhost>:9092 --list` though running this `docker compose -f .\phase2\infra\docker-compose.full.yml exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost<or kafka>:9092 --list` from powershell  will succeed as now we're trying to connect from an app in the HOST machine.
+
     Done when: every UI loads, Kafka and Redis answer, and both services still start against the full stack.
     11c. **Read the Phase 2 code before using it.**
     Do: read `phase2/order-service/src-additions` (outbox, config), `pom-additions.xml`, `V2__idempotency_and_outbox.sql`, and the inventory-service consumer code. Draw the event flow on paper: order created, outbox row, Kafka, inventory reserve, result event, order status.
