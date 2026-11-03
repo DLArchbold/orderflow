@@ -130,6 +130,11 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
     - Testcontainers uses a random host port, so it doesn't clash with the compose Postgres on 5432, and it uses a separate, disposable database: your real `orders` data isn't touched. If a run is killed, remove leftovers with `docker ps` and `docker rm -f <id>`.
     Done when: `mvn test` still passes the 6 `OrderTest` tests and the app still starts with `ddl-auto: validate`. (If `OutboxPublisher` has `@Scheduled`, it does nothing until you add `@EnableScheduling` in step 13.)
     12d. **Failing test first.**
+    Do: write `OrderServiceOutboxTest` in `src/test/java/com/orderflow/order/service/` and commit it while it still fails. Use `@SpringBootTest`, `@Testcontainers`, and a `@Container @ServiceConnection static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16")`. It needs two tests:
+    - Rollback: inside `new TransactionTemplate(txManager).execute(...)`, call `orderService.create(request)` and then throw a `RuntimeException`. Catch it outside, then assert `orderRepository.count() == 0` and `outboxRepository.count() == 0`. Because `create` joins the outer transaction, this proves the order and the outbox row share one transaction.
+    - Commit (so the first test cannot pass trivially): call `orderService.create(request)` normally and assert one order and one outbox row exist, with `type = "OrderCreated"` and `aggregateId` equal to the order id.
+    Add `@BeforeEach` cleanup (`outboxRepository.deleteAll(); orderRepository.deleteAll();`) so tests don't see each other's rows.
+    Done when: the test runs against a real PostgreSQL container and fails with the commit test reporting 0 outbox rows (not a compile error or a startup error).
 13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published).
     Done when (two separate tests, commit each failing test first):
     - a Kafka Testcontainers test shows an event arrives once the order commits;
