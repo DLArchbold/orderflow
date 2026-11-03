@@ -1,0 +1,17 @@
+CI (continuous integration) automatically builds and tests your code on a clean machine every time you push. GitHub Actions is GitHub's service for running it, and [ci.yml](.github/workflows/ci.yml) is the file that tells it what to run.
+
+**What it gives you**
+
+- **A check that doesn't depend on your machine.** Your laptop has your installed tools, your local Postgres, and files that might not be committed. CI starts from a blank Linux machine and uses only what's in the repo. If it's green, the project builds from a fresh clone. This is the real test of the plan's "a stranger could follow the README" goal.
+- **Early warning on breakage.** If you push a compile error, a failing test, or a frontend type error, you find out within minutes. You also get a clear record of which commit broke it.
+- **A guard on pull requests.** On a team, a PR shows a red or green check, so reviewers know it builds before reading the code. Many teams block merging until it's green.
+- **Proof for your project.** A green badge or check on your repo shows that the project builds and tests pass. A recruiter who opens the repo can see that at a glance.
+- **A foundation for later steps.** Phase 2 step 22 extends this same file to build Docker images, run integration tests, and scan for vulnerabilities, and step 23 uses it to test on Kubernetes.
+
+**Is it required?**
+
+No. The app runs fine without it. Your plan requires it because step 10's "Done when" lists a green CI check. For a personal project, it mostly matters as a quality signal and as practice with a skill employers expect.
+
+**What this particular file covers**
+
+It only checks that the backend builds and its tests pass, and that the frontend builds. It doesn't deploy anything or test against a real database.
