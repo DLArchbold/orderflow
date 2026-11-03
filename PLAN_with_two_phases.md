@@ -67,7 +67,7 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
 
 11. **Full local stack.**
     11a. **Inventory-service standalone.**
-    Do: move `phase2/inventory-service` to `services/inventory-service`. Add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql` (that script only runs on a fresh Postgres volume, so run `docker compose down -v` first or create the database by hand). Point its `application.yml` at the `inventory` database and give it port 8081 so it doesn't clash with order-service. Run `mvn spring-boot:run`.
+    Do: move `phase2/inventory-service` to `services/inventory-service`. Add `CREATE DATABASE inventory;` to `infra/postgres-init/01-create-dbs.sql` (that script only runs on a fresh Postgres volume, so run `docker compose -f .\infra\docker-compose.yml down -v` first or create the database by hand). Point its `application.yml` at the `inventory` database and give it port 8081 so it doesn't clash with order-service. Run `mvn spring-boot:run`.
     Done when: `http://localhost:8081/actuator/health` says `UP` and its Flyway tables exist in the `inventory` database. See [docs/images/11a.PNG](docs/images/11a.PNG)
     11b. **Full compose.**
     Do: 
@@ -113,8 +113,23 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
     11c. **Read the Phase 2 code before using it.**
     Do: read `phase2/order-service/src-additions` (outbox, config), `pom-additions.xml`, `V2__idempotency_and_outbox.sql`, and the inventory-service consumer code. Draw the event flow on paper: order created, outbox row, Kafka, inventory reserve, result event, order status.
     Done when: you can explain, without looking, what the outbox and `processed_messages` tables are for and why each insert must share a transaction with the business change.
-12. **Outbox write.** Copy `phase2/order-service/V2__idempotency_and_outbox.sql` into the migrations folder, renamed to `V3__idempotency_and_outbox.sql` (`V2` is taken by the `order_lines` id migration from step 4), bring back the outbox classes from `phase2/order-service/src-additions/outbox`, add the Kafka dependency from `pom-additions.xml`, and make order creation insert an outbox row in the same transaction.
-    Done when: a Testcontainers (PostgreSQL) test proves that on rollback neither the order nor the outbox row exists.
+12. **Outbox write.** All of this happens in `services/order-service`: the `outbox` table lives in the `orders` database, so the outbox classes belong there, not in inventory-service.
+    12a. **Migration.**
+    Do: copy `phase2/order-service/V2__idempotency_and_outbox.sql` into `services/order-service/src/main/resources/db/migration/`, renamed to `V3__idempotency_and_outbox.sql` (`V2` is taken by the `order_lines` id migration from step 4). Delete the stale first comment line ("Phase 2: copy to…"). Don't edit the file after Flyway has applied it. Note that `idempotency_keys` is created here but nothing uses it yet.
+    Done when: after `mvn spring-boot:run`, the `orders` database has the tables `outbox` and `idempotency_keys`, and `flyway_schema_history` lists V3 as successful.
+    12b. **Outbox classes.**
+    Do: copy `OutboxEvent.java`, `OutboxRepository.java` and `OutboxPublisher.java` from `phase2/order-service/src-additions/outbox` to `services/order-service/src/main/java/com/orderflow/order/outbox/`. Check the `package` line in each is `com.orderflow.order.outbox`. If you already put copies in `services/inventory-service/.../inventory/outbox/`, delete them (inventory-service has no `outbox` table, so they cannot work there).
+    Done when: `mvn compile` in order-service succeeds and `git status` shows no `outbox` folder in inventory-service.
+    12c. **Dependencies.**
+    Do: from `phase2/order-service/pom-additions.xml`, add to order-service's `pom.xml`: `spring-kafka`, plus (test scope) `spring-kafka-test`, `spring-boot-testcontainers`, `org.testcontainers:junit-jupiter`, `org.testcontainers:postgresql` and `org.testcontainers:kafka`. Copy the exact lines from `services/inventory-service/pom.xml`, which already has them. Add `spring.kafka.bootstrap-servers: localhost:9092` under `spring:` in order-service's `services/order-service/src/main/resources/application.yml` (not inventory-service's, which already has it; step 13 needs it in order-service).
+    Docker must be running before `mvn test`, because Testcontainers starts its containers through the Docker API:
+    - Run `docker info`. If it prints server details, Docker is up; "cannot connect to the Docker daemon" means it isn't.
+    - If it isn't, start Docker Desktop and wait until it says "Engine running" (on Windows 10 Home the WSL2 backend can take a minute).
+    - Optional end-to-end check: `docker run --rm hello-world`.
+    - The first Testcontainers run is slow because it pulls `postgres:16` and a helper container (Ryuk); later runs are fast. `Could not find a valid Docker environment` means Docker isn't reachable.
+    - Testcontainers uses a random host port, so it doesn't clash with the compose Postgres on 5432, and it uses a separate, disposable database: your real `orders` data isn't touched. If a run is killed, remove leftovers with `docker ps` and `docker rm -f <id>`.
+    Done when: `mvn test` still passes the 6 `OrderTest` tests and the app still starts with `ddl-auto: validate`. (If `OutboxPublisher` has `@Scheduled`, it does nothing until you add `@EnableScheduling` in step 13.)
+    12d. **Failing test first.**
 13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published).
     Done when (two separate tests, commit each failing test first):
     - a Kafka Testcontainers test shows an event arrives once the order commits;
