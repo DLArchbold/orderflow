@@ -1,0 +1,144 @@
+# Kafka and Spring Boot microservices
+
+## 1. What Kafka is
+
+Kafka is a **distributed, append-only, partitioned commit log**. It is often called a message broker, but it behaves differently from RabbitMQ or ActiveMQ.
+
+| Concept | Meaning |
+|---|---|
+| **Record** | Key (optional), value, timestamp, headers. This is the unit of data. |
+| **Topic** | A named stream of records, such as `order-created`. |
+| **Partition** | A topic is split into N ordered logs. Ordering is guaranteed only within a partition. |
+| **Offset** | A record's sequential position within a partition. |
+| **Broker** | A Kafka server. A cluster has several. |
+| **Replication** | Each partition has a leader and followers (`replication.factor`). Followers in the ISR (in-sync replica set) can take over if the leader dies. |
+| **Producer** | Writes records. The key's hash picks the partition, so the same key always lands in the same partition. |
+| **Consumer group** | Consumers sharing a `group.id`. Each partition is assigned to **exactly one** consumer in the group. |
+| **Committed offset** | The group's saved position, stored in the internal `__consumer_offsets` topic. |
+
+### Why Kafka differs from a traditional queue
+- **Records aren't deleted when consumed.** They are kept for a retention period (for example 7 days) or size limit, or indefinitely with compaction. Consumers just move their offset. This means you can **replay** history, add new consumers later, and rewind to fix bugs.
+- **Pub/sub and queue semantics at once.** Different groups each get every message (pub/sub). Consumers inside one group split the work (queue).
+- **High throughput.** It uses sequential disk I/O, the OS page cache, zero-copy `sendfile`, batching and compression. It handles hundreds of thousands of messages per second per broker.
+- **The broker is dumb and the consumer is smart.** The consumer pulls and tracks its own position. The broker doesn't track per-message acks.
+- **Scaling is by partitions.** Parallelism is capped by the partition count. With 3 partitions, a 4th consumer in the same group sits idle.
+- **KRaft mode.** Modern Kafka (4.x) has dropped ZooKeeper and uses its own Raft-based metadata quorum.
+
+### What it's used for
+1. **Event-driven integration between services.** For example, `OrderCreated` is consumed by inventory, payment and notification services.
+2. **Event sourcing and audit logs**, using the log as the source of truth.
+3. **Data pipelines and CDC**, such as Debezium streaming DB changes into Kafka and then into a warehouse or Elasticsearch.
+4. **Stream processing** with Kafka Streams or Flink: aggregations, joins, windowing.
+5. **Log and metrics aggregation**, and buffering traffic spikes.
+
+## 2. Delivery semantics
+
+These matter most for understanding your config.
+
+- **At-most-once**: commit the offset first, then process. A crash loses messages.
+- **At-least-once**: process first, then commit. A crash causes redelivery, so **consumers must be idempotent**. This is the usual default.
+- **Exactly-once**: idempotent producer (`enable.idempotence=true`) plus transactions (`transactional.id`) plus consumers reading `read_committed`. It is strong only inside Kafka-to-Kafka flows. Once you write to a database, you need idempotency or the outbox pattern anyway.
+
+Producer `acks`:
+- `0`: no wait.
+- `1`: leader only.
+- `all`: all ISR replicas. Combined with `min.insync.replicas=2`, this gives durability.
+
+## 3. Your config explained
+
+```yaml
+spring.kafka.bootstrap-servers: localhost:9092
+consumer group: inventory-service
+enable-auto-commit: false
+```
+
+- **`bootstrap-servers`** is only the entry point. The client connects to one or more of these, fetches cluster metadata, and then connects directly to whichever brokers lead the partitions it needs. The broker's `advertised.listeners` must be reachable from the client. A very common local and Docker failure is a broker advertising `kafka:9092` (a container hostname) while your app on the host tries to resolve it. If your log shows connection failures to `localhost:9092`, check that the broker container is running and that its port is mapped.
+- **`group.id: inventory-service`** means all instances of the inventory service share the group. Run 3 instances and Kafka splits the partitions among them. Another service, such as `notification-service`, uses its own group ID and independently receives every message.
+- **`enable-auto-commit: false`** disables the Kafka client's timer-based commit (every 5 s by default). Auto-commit can commit offsets for records you've polled but not finished processing, which loses messages on a crash. Manual commit lets you commit **after** the DB update succeeds. In Spring you pair it with `spring.kafka.listener.ack-mode: manual` (or `manual_immediate`) and take an `Acknowledgment` parameter in the listener:
+
+```java
+@KafkaListener(topics = "order-created", groupId = "inventory-service")
+public void onOrder(OrderCreated event, Acknowledgment ack) {
+    inventoryService.reserve(event);   // must be idempotent
+    ack.acknowledge();                 // commit offset only after success
+}
+```
+
+If you set `enable-auto-commit: false` and **don't** set an ack mode, Spring's default is `BATCH`, which commits after each poll batch is processed. That is still safe, but it isn't "manual".
+
+## 4. Spring Boot microservice without Kafka
+
+Services talk **synchronously**, usually by REST (`RestTemplate`, `WebClient`, `OpenFeign`) or gRPC.
+
+```
+Client → Order Service ──HTTP──▶ Inventory Service
+                       ──HTTP──▶ Payment Service
+                       ──HTTP──▶ Notification Service
+```
+
+Technical consequences:
+- **Temporal coupling.** Inventory must be up when an order arrives, or the call fails. Latency and failure rates compound across a call chain: a chain of 4 services at 99.9% availability each gives roughly 99.6%.
+- **Needs resilience machinery.** Timeouts, retries with backoff, circuit breakers and bulkheads (Resilience4j).
+- **Needs service discovery or load balancing** (Eureka, Kubernetes DNS, Spring Cloud LoadBalancer).
+- **Orchestrator knowledge.** The order service has to know about every downstream service and call each one. Adding a new consumer means changing the producer's code.
+- **Distributed transactions are hard.** One `@Transactional` can't span services. You'd need 2PC, which is impractical, or compensating calls.
+- **Simple request/response semantics.** The caller gets an immediate result or error, and debugging is straightforward. This is a real advantage.
+- **Back-pressure falls on the caller.** A traffic spike hits downstream services directly.
+- **Data sharing.** Services either query each other's APIs for every read or share a database, which breaks the microservice boundary.
+
+## 5. Spring Boot microservice with Kafka
+
+Services talk **asynchronously via events**.
+
+```
+Order Service ──publish──▶ [order-created topic] ──▶ Inventory Service (group: inventory-service)
+                                                 ├─▶ Payment Service   (group: payment-service)
+                                                 └─▶ Notification Svc  (group: notification-service)
+```
+
+Spring pieces:
+- Dependency `spring-kafka`, with autoconfiguration under `spring.kafka.*`.
+- **Producer**: `KafkaTemplate<K,V>.send(topic, key, value)`, which returns a `CompletableFuture<SendResult>`.
+- **Consumer**: `@KafkaListener`, backed by a `ConcurrentMessageListenerContainer`. The `concurrency` setting sets the number of consumer threads, up to the partition count.
+- **Serialization**: `StringSerializer`, `JsonSerializer`/`JsonDeserializer`, or Avro/Protobuf with a Schema Registry. With JSON, mind `spring.json.trusted.packages` and type headers. Producer and consumer classes often live in different packages across services.
+- **Error handling**: `DefaultErrorHandler` with a `BackOff`, plus `DeadLetterPublishingRecoverer` to route poison messages to a `<topic>.DLT`. Use `ErrorHandlingDeserializer` so bad payloads don't cause an infinite loop at deserialization.
+- **`@RetryableTopic`** provides non-blocking retries via retry topics.
+- **Transactions**: `KafkaTransactionManager` and `transaction-id-prefix`.
+- **Testing**: `@EmbeddedKafka` or Testcontainers' `KafkaContainer`.
+
+Technical consequences:
+- **Decoupling.** The order service publishes a fact ("order created") and doesn't know who listens. Adding a service means adding a consumer group, with no producer change.
+- **Temporal decoupling.** If inventory is down, events wait in the log, and it catches up when it restarts. The order API still responds quickly.
+- **Load smoothing.** Kafka buffers spikes, and consumers process at their own pace.
+- **Eventual consistency.** The order may be accepted before stock is confirmed. You need a state machine (`PENDING → CONFIRMED / REJECTED`) and often the **saga pattern**, where services react to each other's events and issue compensating events on failure.
+- **Idempotency is required.** At-least-once delivery means duplicates. Handle them with an idempotency key such as the event ID, a processed-events table, or a unique constraint.
+- **The dual-write problem.** `save(order)` followed by `kafkaTemplate.send(...)` isn't atomic. The DB can commit while the send fails, or the reverse. The fix is the **transactional outbox**: write the event to an outbox table in the same DB transaction, then have a relay or Debezium publish it.
+- **Ordering.** It is only per partition, so use the entity ID (such as `orderId`) as the key to keep one order's events in sequence.
+- **Rebalancing.** When consumers join or leave, partitions get reassigned. A long-running handler that exceeds `max.poll.interval.ms` gets the consumer kicked out of the group, and the records are reprocessed.
+- **Operational cost.** You have to run and monitor a Kafka cluster: partition counts, retention, consumer lag, schema evolution. Debugging is also harder, since you trace across async hops and need correlation IDs and distributed tracing (Micrometer/OpenTelemetry).
+
+## 6. Side-by-side
+
+| Aspect | Without Kafka (REST) | With Kafka |
+|---|---|---|
+| Communication | Synchronous request/response | Asynchronous events |
+| Coupling | Caller knows callee, and both must be up | Producer is unaware of consumers |
+| Failure handling | Retries, circuit breakers | Log buffers, with DLT and retry topics |
+| Consistency | Immediate, but no cross-service transactions | Eventual, using sagas and outbox |
+| Adding a consumer | Change the caller | Add a new consumer group |
+| Replay and audit | Not available | Built in, via offsets and retention |
+| Scaling | Per-service load balancing | Partition-based consumer groups |
+| Latency | Lower for a single call | Slightly higher, with no instant result |
+| Complexity | Low | Higher: broker ops, idempotency, schemas |
+| Best fit | Queries, and "I need the answer now" | Notifications, state propagation, high volume, fan-out |
+
+Most real systems **use both**. They use REST for queries and commands that need an immediate answer, and Kafka for propagating state changes. For example, the user calls `POST /orders` and gets a `202 Accepted` with an order ID, while inventory, payment and notification react to the `OrderCreated` event in the background.
+
+## 7. How this maps to your project
+
+Your `inventory-service` is the consumer side: group `inventory-service`, manual offset commits, and the broker at `localhost:9092`. If the service's logs show it can't reach that address:
+1. Check that the Kafka container is up (`docker ps`).
+2. Check that the port mapping exposes 9092 to the host.
+3. Check that `KAFKA_ADVERTISED_LISTENERS` has an address your host can resolve (`localhost:9092` for host-run apps, and a separate internal listener for container-to-container traffic).
+
+I can look at your docker-compose and `application.yml` to pinpoint the problem, or sketch the producer/consumer, DLT and outbox wiring for orderflow. Tell me which you'd like.

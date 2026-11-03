@@ -1,0 +1,42 @@
+Kafka appears in one live service plus a set of Phase 2 files that aren't wired in yet. The only code that runs today is the consumer skeleton in inventory-service. Everything else is config, a stub, or documentation.
+
+## Active code (what's running now)
+
+| File | What it does | Significance |
+|---|---|---|
+| [OrderEventsListener.java](services/inventory-service/src/main/java/com/orderflow/inventory/messaging/OrderEventsListener.java) | `@KafkaListener` on topic `orders.events`, group `inventory-service`. The body is a `// TODO`. | This is the consumer that produced your warnings. Spring starts it at boot and polls Kafka, even though the method does nothing. It becomes the real work in step 14 (idempotent stock reservation). |
+| [application.yml](services/inventory-service/src/main/resources/application.yml) (lines 14–21) | `bootstrap-servers: localhost:9092`, string deserializers, `auto-offset-reset: earliest`, `enable-auto-commit: false` | `localhost:9092` is the address your log shows failing. `enable-auto-commit: false` means offsets are committed only after the message is handled, which is what at-least-once processing needs. `earliest` makes a new group read from the start of the topic. |
+| [pom.xml](services/inventory-service/pom.xml) | `spring-kafka` dependency (and its test counterparts) | The reason the consumer starts at all. |
+
+## Stub code (Phase 2, not yet in `services/order-service`)
+
+| File | What it does | Significance |
+|---|---|---|
+| [OutboxEvent.java](phase2/order-service/src-additions/outbox/OutboxEvent.java) | JPA entity for the `outbox` table: `aggregateId`, `type`, `payload`, `createdAt`, `publishedAt`, plus `markPublished()` | This is the outbox row. It is written in the same DB transaction as the order. A null `publishedAt` means "not yet sent". |
+| [OutboxPublisher.java](phase2/order-service/src-additions/outbox/OutboxPublisher.java) | `@Scheduled` poller every 500 ms that should send each unpublished row to `orders.events`, wait for the ack, then mark it published. The body is a `// TODO`. | This is step 13. The key is the order id, so one order's events stay in order on one partition. It sends at least once, so a crash between send and mark can duplicate a message. That's why the consumer must be idempotent. |
+| [pom-additions.xml](phase2/order-service/pom-additions.xml) | `spring-kafka`, plus the Testcontainers `kafka` module and `spring-kafka-test` | The dependencies for step 12 and the Kafka tests in step 13. |
+
+## Infrastructure and docs
+
+- [docker-compose.full.yml](phase2/infra/docker-compose.full.yml) runs a single-node Kafka (`apache/kafka:3.8.0`, KRaft mode, so no ZooKeeper). `KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092` is what lets apps on your host connect. Containerized apps would need a second listener, which matters in steps 22–24.
+- **Not running:** [infra/docker-compose.yml](infra/docker-compose.yml) (the Phase 1 one) mentions Kafka only in a comment. Kafka comes only from the `full` file, which explains your warnings.
+- [phase2/docs/adr/0001-transactional-outbox.md](phase2/docs/adr/0001-transactional-outbox.md) and [architecture.md](phase2/docs/architecture.md) explain why the outbox pattern is used.
+- The k8s manifests and `main.tf` have Kafka settings for steps 23 and 24.
+
+## How the pieces fit together
+
+```
+order-service                         Kafka                 inventory-service
+create order + outbox row  ->  OutboxPublisher  ->  orders.events  ->  OrderEventsListener
+   (one DB transaction)         (poll, send, ack)                      (reserve stock,
+                                                                        write result event)
+```
+
+The outbox exists so you never save an order without sending its event, or send an event for an order that rolled back. The database and Kafka can't share a transaction, so the order and the outbox row are saved together. A separate publisher then forwards the row to Kafka.
+
+## Gaps you'll hit
+
+- **Only one topic is referenced:** `orders.events`. The result topic that step 15 needs (inventory to order-service) doesn't exist yet. Neither does a dead-letter topic for step 16.
+- **No producer in inventory-service:** `application.yml` has only consumer settings. It will need producer settings, or an outbox of its own, to publish the result event.
+- **No order-service Kafka config:** there is nothing yet in `services/order-service`, as expected before step 12.
+- **Topic creation:** I found nothing that creates `orders.events`. With a default broker, auto-creation may do it on first send. For a real setup, declare a `NewTopic` bean or create the topic in compose.

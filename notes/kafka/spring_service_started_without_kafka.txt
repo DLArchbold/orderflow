@@ -1,0 +1,36 @@
+Your inventory-service is running, but it can't reach Kafka. It has been retrying about once a second and logging a warning each time.
+
+## What each line means
+
+The same three lines repeat every second:
+
+- **`Node -1 disconnected`** (INFO): the Kafka client lost or failed to open its connection. Node `-1` isn't a real broker. It's the placeholder Kafka uses for the bootstrap address you configured, before it has learned the real broker list.
+- **`Connection to node -1 (localhost/127.0.0.1:9092) could not be established. Node may not be available.`** (WARN): nothing answered on `localhost:9092`. The connection was refused or timed out.
+- **`Bootstrap broker localhost:9092 (id: -1 rack: null) disconnected`** (WARN): the client has no working broker, so it can't join its consumer group.
+
+The rest of the line shows who is complaining:
+- `[ntainer#0-0-C-1]` is a Spring Kafka listener container thread.
+- `clientId=consumer-inventory-service-1` and `groupId=inventory-service` are inventory-service's consumer.
+
+## Why it's happening
+
+Nothing is listening on port 9092 on your machine. The most likely causes:
+
+1. **Kafka isn't running.** This is the usual one. Step 11a starts inventory-service alone, before the full compose from 11b. Postgres is up, but Kafka isn't.
+2. **The container is running but not reachable from the host.** This happens when the compose file's advertised listener doesn't match what the host connects to. It's the pitfall I flagged in 11b.
+3. **Docker Desktop isn't running** or the container exited. Check `docker ps`.
+
+## Is it a problem?
+
+- **For step 11a, no.** Its Done-when is health UP and the Flyway tables in the `inventory` database. The warnings don't stop the app from starting. The consumer just keeps retrying in the background, and when Kafka appears it will connect on its own.
+- **It may make `/actuator/health` report DOWN**, if the Kafka health indicator is enabled. If it does, either start Kafka or temporarily disable the consumer.
+- **It floods the log**, which makes real errors hard to see.
+
+## What to do
+
+1. Run `docker ps` and look for a Kafka container.
+2. If there isn't one, start the full stack: `docker compose -f phase2/infra/docker-compose.full.yml up -d`.
+3. If it is running, check the logs (`docker logs <kafka-container>`) and the advertised listeners setting. Host apps should connect via `localhost:9092`.
+4. Once Kafka is up, the warnings should stop within a few seconds without restarting inventory-service.
+
+I can read `phase2/infra/docker-compose.full.yml` and inventory-service's `application.yml` to check the Kafka settings, if you want me to look.

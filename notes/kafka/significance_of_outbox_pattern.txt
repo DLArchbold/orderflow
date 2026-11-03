@@ -1,0 +1,55 @@
+# The outbox pattern in OrderFlow
+
+## The problem it solves
+
+Creating an order has to do two things:
+
+1. Write the order to PostgreSQL (the orders DB).
+2. Tell inventory-service through Kafka (`orders.events`) so it can reserve stock.
+
+Postgres and Kafka can't share one transaction, so a naive "save, then send" can fail in two ways:
+
+| Sequence | Failure | Result |
+|---|---|---|
+| Commit DB, then publish | Crash or Kafka outage between the two | The order exists but inventory never hears about it. It is stuck forever. |
+| Publish, then commit DB | The DB commit fails or rolls back | Inventory reserves stock for an order that doesn't exist. |
+
+This is the dual-write problem. The two systems drift apart with no obvious error, and retries can't fix it, because the service no longer knows what it still owes.
+
+## How the pattern fixes it
+
+The pattern turns the unreliable step (sending to Kafka) into a reliable one (a DB insert).
+
+1. **Atomic write.** In one Postgres transaction, order-service inserts the `orders` row and an `outbox` row holding the event. Both commit or neither does. The "intent to notify" is now as durable as the order.
+2. **Separate relay.** `OutboxPublisher` runs on a poll (`orderflow.outbox.poll-ms`, default 500 ms). It reads rows where `published_at IS NULL`, sends each to Kafka keyed by `aggregate_id`, waits for the broker ack, then sets `published_at`.
+
+If anything dies, the row is still there and the next poll picks it up.
+
+## Where it lives in your repo
+
+- **Schema:** [V2__idempotency_and_outbox.sql](phase2/order-service/V2__idempotency_and_outbox.sql) defines `outbox(id, aggregate_id, type, payload, created_at, published_at)`. The partial index `idx_outbox_unpublished ... WHERE published_at IS NULL` keeps polling cheap, because it only covers pending rows however large the table grows.
+- **Relay:** [OutboxPublisher.java](phase2/order-service/src-additions/outbox/OutboxPublisher.java) is currently a stub. `publishPending()` is only a TODO, and the planned test kills Kafka mid-publish.
+- **Decision record:** [0001-transactional-outbox.md](phase2/docs/adr/0001-transactional-outbox.md) says CDC (Debezium) was considered and rejected as too many moving parts for this project.
+- **Architecture:** [architecture.md](phase2/docs/architecture.md) shows `order-service -- same TX --> orders DB (orders + outbox)`, then `OutboxPublisher --> Kafka`.
+
+## Why `aggregate_id` is the Kafka key
+
+Kafka only guarantees ordering within a partition. Keying by order ID sends every event for one order to the same partition, so inventory-service sees them in order. The `aggregate_id` column exists to supply that key.
+
+## The trade-offs
+
+**At-least-once delivery.** There's a window where the publisher sends to Kafka, the send succeeds, and it crashes before setting `published_at`. On restart it re-sends, so duplicates are expected, not a bug. That is why inventory-service has `processed_messages`: it records each message ID and skips repeats. The outbox gives at-least-once delivery, and the idempotent consumer turns that into effectively-once processing. The two parts only work together.
+
+**Latency and DB load.** Events go out after the poll interval (up to about 500 ms) rather than instantly, and polling puts steady read load on Postgres. For an order flow, that's an acceptable cost.
+
+**Ordering within the table.** Polling by `created_at` keeps events roughly in order. If you ever run multiple publisher instances, you'd need `SELECT ... FOR UPDATE SKIP LOCKED` or a single-leader approach to avoid double-sending the same rows.
+
+**Cleanup.** Published rows pile up, so eventually you'll want a retention job to delete or archive them.
+
+## Implementation notes for the TODO
+
+- Do the `kafka.send(...).get(timeout)` before `markPublished()`. Marking first would reintroduce the lost-message failure.
+- Holding `@Transactional` across a blocking Kafka call keeps a DB transaction open for the duration. That's fine at this scale, but keep the batch size small.
+- The `alerts.yml` in `phase2/infra/prometheus/` mentions outbox. A natural metric is the count or age of unpublished rows, which shows when the relay is stuck.
+
+I can sketch the `publishPending()` implementation or the Kafka-killed-mid-publish test if you want.
