@@ -35,7 +35,7 @@ cd frontend && npm install && npm run dev                 # or: make frontend
 ![Swagger UI](docs/images/swagger-ui.png)
 ![Order list in the app](docs/images/app.png)
 
-## Phase 2 results (fill in only with numbers you measured yourself)
+## Phase 2 results (TBD)
 | Metric | Result | Setup / evidence |
 |---|---|---|
 | Throughput (orders/s) | _TBD_ | |
