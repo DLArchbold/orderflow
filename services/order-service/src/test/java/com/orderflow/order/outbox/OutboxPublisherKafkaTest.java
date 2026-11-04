@@ -119,6 +119,49 @@ class OutboxPublisherKafkaTest {
                         .allSatisfy(e -> assertThat(e.getPublishedAt()).isNotNull()));
     }
 
+    // PLAN step 13d. Kafka is paused (not stopped) to simulate an outage: a stopped and restarted container
+    // would get a new random port that the already-created producer does not know about.
+    @Test
+    void unpublishedRowIsRetriedAndDeliveredAfterKafkaReturns() {
+        String orderId;
+
+        kafka.getDockerClient().pauseContainerCmd(kafka.getContainerId()).exec();
+        try {
+            orderId = orderService.create(request).id().toString();
+
+            // During the outage the row must stay unpublished for 5 s (about 25 polls at 200 ms).
+            // This holds even for the no-op publisher, so it is not what makes the test fail today.
+            await().during(Duration.ofSeconds(5)).atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                    assertThat(outboxRepository.findAll()).hasSize(1)
+                            .allSatisfy(e -> assertThat(e.getPublishedAt()).isNull()));
+        } finally {
+            // always bring Kafka back, even if an assertion above failed, so later tests are not stuck with a paused broker
+            kafka.getDockerClient().unpauseContainerCmd(kafka.getContainerId()).exec();
+        }
+
+        // After Kafka returns, a later poll must deliver the row that failed earlier and mark it published.
+        // This is the assertion that fails until OutboxPublisher.publishPending() is implemented (step 13e).
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(outboxRepository.findAll()).hasSize(1)
+                        .allSatisfy(e -> assertThat(e.getPublishedAt()).isNotNull()));
+
+        // The record must be on the topic exactly once: the failed attempts during the outage must not have produced copies.
+        try (KafkaConsumer<String, String> consumer = newConsumer()) {
+            consumer.subscribe(List.of(KafkaConfig.ORDERS_EVENTS_TOPIC));
+
+            List<ConsumerRecord<String, String>> matching = new ArrayList<>();
+            Instant deadline = Instant.now().plusSeconds(15);
+            while (matching.isEmpty() && Instant.now().isBefore(deadline)) {
+                collectForKey(consumer, orderId, matching, Duration.ofMillis(500));
+            }
+            Instant quietUntil = Instant.now().plusSeconds(2);
+            while (Instant.now().isBefore(quietUntil)) {
+                collectForKey(consumer, orderId, matching, Duration.ofMillis(500));
+            }
+            assertThat(matching).as("records for order %s", orderId).hasSize(1);
+        }
+    }
+
     private static void collectForKey(KafkaConsumer<String, String> consumer, String key,
                                       List<ConsumerRecord<String, String>> into, Duration timeout) {
         // What it does: asks Kafka once for new records, keeps only those whose key equals `key`
