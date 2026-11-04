@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 // On by default; tests without a Kafka container set orderflow.outbox.enabled=false so no bean is created
+//Ground truth of orderflow.outbox.* is in OutboxPublisher; See notes\outbox\what_is_orderflow_outbox_property_and_its_uses
 @ConditionalOnProperty(name = "orderflow.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisher {
     private final OutboxRepository repo;

@@ -1,0 +1,68 @@
+**1. What `registry.add` does**
+
+`registry` is a `DynamicPropertyRegistry`, which Spring passes into a `@DynamicPropertySource` method. `registry.add(name, supplier)` registers a property for this test's Spring context only. It has the highest precedence, so it overrides the same key in `application.yml`.
+
+It takes a `Supplier`, not a plain value, so the value is computed lazily when Spring needs it. 
+That matters here because the Kafka Testcontainer picks its port at runtime. 
+`kafka::getBootstrapServers` can't be known at class-load time. 
+Without it, the test would point at `localhost:9092` from `application.yml` instead of the container.
+
+In your test, the four calls do this:
+- `spring.kafka.bootstrap-servers` points the app at the container.
+- `orderflow.outbox.poll-ms=200` polls fast.
+- `max.block.ms=2000` and `delivery.timeout.ms=5000` make a failed send fail quickly instead of waiting for the defaults (60s and 120s).
+
+
+
+
+The phrase "class-load time" was loose. Here's the precise version.
+
+**1. The port doesn't exist until the container starts**
+
+[application.yml](services/order-service/src/main/resources/application.yml) has `spring.kafka.bootstrap-servers: localhost:9092`, a fixed address. That is where your compose Kafka listens. A Testcontainers Kafka container deliberately doesn't use 9092 on your machine. Docker maps the container's port to a random free host port (something like `localhost:54213`) so tests don't collide with your compose stack or with each other. That number is assigned only when the container starts, and it's different on every run.
+
+**2. The order of events in the test**
+
+1. JUnit loads the test class.
+2. The Testcontainers extension sees `@Container` on the static `kafka` field and starts the container. Only now does a port exist.
+3. Spring builds the application context. During this step it calls the `@DynamicPropertySource` method and resolves the properties.
+4. The app's `KafkaTemplate` is created using whatever `spring.kafka.bootstrap-servers` resolved to.
+
+**3. Why a fixed value can't work**
+
+`@SpringBootTest(properties = "...")` takes annotation values, which must be compile-time constants. You could write `"spring.kafka.bootstrap-servers=localhost:9092"` there, but not "whatever port the container gets", because that is unknown when the code is compiled.
+
+`registry.add(name, supplier)` takes a `Supplier`, which is a deferred call. `kafka::getBootstrapServers` means "ask the container for its address when you need the value". Spring calls it in step 3, after the container is running, so it returns the real random port.
+
+**4. What happens without it**
+
+If you left out `registry.add("spring.kafka.bootstrap-servers", ...)`, nothing would fail at startup. Spring would use `localhost:9092` from `application.yml`, with two outcomes:
+- **Compose Kafka running:** the publisher would send the test's events to your real broker, and the test would then read from the empty container and see no records.
+- **Nothing running on 9092:** sends would time out. The `max.block.ms` and `delivery.timeout.ms` overrides make that fail fast, but the test would still fail.
+
+Either way the test wouldn't be testing against the container it started. That is the same reason `OrderServiceOutboxTest` has to turn the publisher off: it has no Kafka container, so it would hit `localhost:9092` too.
+
+
+=============================================
+=============================================
+=============================================
+
+**2. Is `@ConditionalOnProperty` another way to add properties?**
+
+No, it's the opposite. `registry.add` writes a property. `@ConditionalOnProperty` only reads one and decides whether to create the bean.
+
+Ways to supply properties include `application.yml`, env vars, `@SpringBootTest(properties = ...)`, and `@DynamicPropertySource`. `@ConditionalOnProperty` and `@Value`/`${...}` consume them. In this project:
+- `@SpringBootTest(properties = "orderflow.outbox.enabled=false")` writes a property.
+- `@ConditionalOnProperty(name = "orderflow.outbox.enabled")` reads it.
+
+The practical difference between the two test mechanisms is that `properties = ...` is for static strings. Use `@DynamicPropertySource` when the value comes from something like a container.
+
+**3. Is `spring.kafka.producer.properties.delivery.timeout.ms` built in?**
+
+Partly, yes. The `spring.kafka.*` namespace is Spring Boot's. `spring.kafka.producer.properties.*` is a pass-through map: Boot takes everything after `properties.` and hands it to the Kafka producer client as-is. So `delivery.timeout.ms` isn't a Spring property. It's Apache Kafka's own producer config key (`delivery.timeout.ms`), and Spring just forwards it. `max.block.ms` works the same way.
+
+That is different from `orderflow.outbox.*`, which is purely ours. Spring Boot gives some Kafka settings dedicated keys, like `spring.kafka.bootstrap-servers` or `spring.kafka.producer.acks`. Anything without a dedicated key goes through `.properties.*`. Because it's a pass-through, Spring doesn't validate it. A typo is handed to Kafka, which logs it as an unknown config and ignores it.
+
+=============================================
+=============================================
+=============================================

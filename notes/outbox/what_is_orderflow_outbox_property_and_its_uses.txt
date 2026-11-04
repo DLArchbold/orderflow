@@ -1,0 +1,52 @@
+**What it is**
+
+`orderflow.outbox` isn't a Spring built-in. It's a prefix we made up for this app's own configuration properties, and it's scoped to the outbox publisher. 
+Spring reads any property from `application.yml`, system properties, env vars, or a test's `properties = ...`. 
+Nothing registers these names anywhere. They only mean something because our code reads them. The `orderflow.` part is the app namespace, and `outbox.` groups the outbox settings.
+
+@ConditionalOnProperty and ${...} placeholders in OutboxPublisher aren't the only place a value can come from. 
+The effective value is whatever wins by precedence: registry.add / @DynamicPropertySource, then @SpringBootTest(properties=...), 
+then env vars, then application.yml, then the :500 default in OutboxPublisher. 
+The code in OutboxPublisher defines the key and the last-resort default, but not the value in use.
+The value in use is defined by the precedence hierarchy I just stated.
+
+For example, OrderServiceOutboxTest sets orderflow.outbox.enabled=false through @SpringBootTest(properties = "orderflow.outbox.enabled=false");
+and OutboxPublisher's @ConditionalOnProperty states that it will only run when orderflow.outbox.enabled is True. Thus, it OutboxPublisher
+will not run in ApplicationContext that is created when OrderServiceOutboxTest is being run, as opposed to when the application is running
+normally, where the @ConditionalOnProperty states that when its property is not defined, it defaults to True. This means any other 
+Bean/Component that doesn't define it will cause the ApplicationContexts to run OutboxPublisher. Through all of this, nowhere in the 
+code defines all properties under orderflow.outbox.*, the only two properties have their defaults (.enabled and .poll-ms) listed in 
+OutboxPublisher, which can be overriden any time according to the aforementioned precedence chain.
+
+
+***
+
+Two properties exist, and both are read in [OutboxPublisher.java](services/order-service/src/main/java/com/orderflow/order/outbox/OutboxPublisher.java):
+
+| Property | Read at | Meaning | Default |
+|---|---|---|---|
+| `orderflow.outbox.enabled` | [line 15](services/order-service/src/main/java/com/orderflow/order/outbox/OutboxPublisher.java#L15), `@ConditionalOnProperty` | If `false`, the `OutboxPublisher` bean isn't created, so nothing polls or publishes. | `true` (`matchIfMissing = true`) |
+| `orderflow.outbox.poll-ms` | [line 25](services/order-service/src/main/java/com/orderflow/order/outbox/OutboxPublisher.java#L25), `${orderflow.outbox.poll-ms:500}` | Delay in milliseconds between polls of the outbox table. | `500` |
+
+**How you know when to use it**
+
+The rule is that the name must match what the code reads. The `@ConditionalOnProperty` and `${...}` placeholders in `OutboxPublisher` are the source of truth. That is what your comment in the tests says. 
+If you grep for `orderflow.outbox`, you find every place a property is consumed. If you type a name the code doesn't read (say `orderflow.outbox.enable`), nothing happens and there's no error.
+
+When to set each one:
+
+- **`enabled=false`**: set it when a context should not publish to Kafka. [OrderServiceOutboxTest](services/order-service/src/test/java/com/orderflow/order/service/OrderServiceOutboxTest.java#L30) does this because it has no Kafka container. 
+    Otherwise the publisher would hit `localhost:9092`, or mark the rows it's asserting on as published.
+- **`poll-ms`**: set it to tune latency against DB load. [OutboxPublisherKafkaTest](services/order-service/src/test/java/com/orderflow/order/outbox/OutboxPublisherKafkaTest.java#L57) sets `200` so the test doesn't wait long.
+- **Normal runs**: set neither. The defaults are on and 500 ms.
+
+You can also set them permanently in `application.yml`:
+
+```yaml
+orderflow:
+  outbox:
+    enabled: true
+    poll-ms: 500
+```
+
+Because of the default fallbacks, nothing breaks if they're absent, so `application.yml` doesn't list them today. One side effect is that they're easy to miss when you read the config.
