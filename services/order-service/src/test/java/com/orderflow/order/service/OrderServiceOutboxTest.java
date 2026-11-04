@@ -28,7 +28,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 class OrderServiceOutboxTest {
 
-    // @ServiceConnection points spring.datasource.* at this container, overriding application.yml
+    // @ServiceConnection points spring.datasource.* (which is localhost:5433 in Swagger and production) 
+    // at this container, overriding application.yml
+    //These 3 lines override data source during testing to use a random postgres container and run 
+    // all migrations and listen on rnadom port instead of the production one.
     @Container
     @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
@@ -42,7 +45,7 @@ class OrderServiceOutboxTest {
             "CUST-1", List.of(new CreateOrderRequest.Item("SKU-1", 2)));
 
     
-    //So tests don't see each other's rows
+    //So tests don't see each other's rows as datasource overriden in "postgres" lines on top.
     @BeforeEach
     void cleanTables() {
         outboxRepository.deleteAll();
