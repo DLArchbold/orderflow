@@ -135,6 +135,9 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
     - Commit (so the first test cannot pass trivially): call `orderService.create(request)` normally and assert one order and one outbox row exist, with `type = "OrderCreated"` and `aggregateId` equal to the order id.
     Add `@BeforeEach` cleanup (`outboxRepository.deleteAll(); orderRepository.deleteAll();`) so tests don't see each other's rows.
     Done when: the test runs against a real PostgreSQL container and fails with the commit test reporting 0 outbox rows (not a compile error or a startup error).
+    12e. **Write the outbox row in the same transaction.**
+    Do: inject `OutboxRepository` (and Jackson's `ObjectMapper`) into `OrderService`. In `create`, after saving the order, build a JSON payload (order id, customer id, lines with sku and quantity) and call `outbox.save(new OutboxEvent(order.getId().toString(), "OrderCreated", json))`. Do not add a second `@Transactional` with `REQUIRES_NEW`: the class-level `@Transactional` already makes both saves one transaction. Do not call Kafka here; publishing is step 13.
+    Done when: a Testcontainers (PostgreSQL) test proves that on rollback neither the order nor the outbox row exists (both 12d tests pass), and creating an order through Swagger UI leaves one new row in `outbox` with `published_at` empty.
 13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published).
     Done when (two separate tests, commit each failing test first):
     - a Kafka Testcontainers test shows an event arrives once the order commits;
