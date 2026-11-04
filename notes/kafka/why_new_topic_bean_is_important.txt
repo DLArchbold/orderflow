@@ -1,0 +1,17 @@
+The compose file doesn't set `auto.create.topics.enable`, so the broker uses its default. For the `apache/kafka` image I believe that default is `true`, but I haven't verified it.
+
+If you skipped 13b, the "Done when" check would fail:
+
+1. **`mvn spring-boot:run` would still start.**
+   The Kafka dependency is already in the pom, so Spring Boot configures a `KafkaTemplate` and a `KafkaAdmin` anyway. There would be no errors.
+
+2. **The topic listing would not show `orders.events`.**
+   - With no `NewTopic` bean, `KafkaAdmin` has nothing to create.
+   - `OutboxPublisher.publishPending()` is still a no-op until 13e, so nothing sends to the topic.
+   - So `kafka-topics.sh --list` would show an empty list or only internal topics. That is the failing signal.
+
+3. **Later steps would behave differently.**
+   - **Topic auto-creation:** from 13e on, the first send might auto-create `orders.events` with broker defaults (probably 1 partition, 1 replica). This only works if auto-create is on. If it's off, every send fails with "unknown topic". Either way the topic's existence would depend on broker settings instead of your code. On a real cluster such as AWS you would get a different partition count than you intended, which affects ordering and consumer scaling.
+   - **Missing `max.block.ms: 5000`:** the default is 60 s, so during a Kafka outage each send would block much longer. Your step 13f check (stop Kafka, create an order) would be slow, and the app would keep waiting inside the open DB transaction. The tests in 13c and 13d override this value themselves, so they would not show the difference.
+   - **Missing `acks: all` and `enable.idempotence`:** Kafka clients since 3.0 already default to both, so behaviour would mostly be the same. The difference is that nothing in your config would state or protect that intent, and an older client or an accidental override could silently weaken durability.
+   - **No shared topic-name constant:** `OutboxPublisher` and the inventory listener would each hard-code `"orders.events"`, so a typo in either would silently split the flow.

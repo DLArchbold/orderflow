@@ -13,6 +13,18 @@ spring:
     open-in-view: false
   kafka:
     bootstrap-servers: localhost:9092
+    producer:
+      # the broker confirms only after the write is fully replicated, 
+      #otherwise OutboxPublished could execute markPublished() prematurely 
+      #before receiving ack from broker and when broker dies, nothing would retry
+      # the outbox event and the order will stay PENDING forever. Also needed for idempotency.
+      #See notes\kafka\why_ack_all_is_needed_for_producers.txt
+      acks: all                     
+      # key/value serializers default to StringSerializer, which KafkaTemplate<String, String> needs
+      #Why is idempotency needed in Kafka? See notes\kafka\why_idempotency_is_needed_in_kafka.txt
+      properties:
+        enable.idempotence: true    # retries cannot create duplicate records within one producer session
+        max.block.ms: 5000          # fail fast (instead of 60 s) when Kafka is unreachable
 management:
   endpoints:
     web:
