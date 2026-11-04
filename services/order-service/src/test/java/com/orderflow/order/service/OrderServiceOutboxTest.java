@@ -24,7 +24,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * PLAN step 12d: an order and its outbox row must be written in the same transaction.
  * Runs against a throwaway PostgreSQL container (Docker must be running); Flyway applies V1..V3 to it.
  */
-@SpringBootTest
+// No Kafka container here, and application.yml points at localhost:9092 (a real broker if compose is up),
+// so switch the publisher off: nothing may publish these rows or mark them published.
+@SpringBootTest(properties = "orderflow.outbox.enabled=false")
 @Testcontainers
 class OrderServiceOutboxTest {
 

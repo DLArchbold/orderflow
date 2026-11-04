@@ -1,5 +1,6 @@
 package com.orderflow.order.outbox;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -10,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
  * then mark published. Delivery is at-least-once, so consumers must be idempotent.
  */
 @Component
+// On by default; tests without a Kafka container set orderflow.outbox.enabled=false so no bean is created
+@ConditionalOnProperty(name = "orderflow.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisher {
     private final OutboxRepository repo;
     private final KafkaTemplate<String, String> kafka;

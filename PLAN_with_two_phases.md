@@ -138,7 +138,17 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
     12e. **Write the outbox row in the same transaction.**
     Do: inject `OutboxRepository` (and Jackson's `ObjectMapper`) into `OrderService`. In `create`, after saving the order, build a JSON payload (order id, customer id, lines with sku and quantity) and call `outbox.save(new OutboxEvent(order.getId().toString(), "OrderCreated", json))`. Do not add a second `@Transactional` with `REQUIRES_NEW`: the class-level `@Transactional` already makes both saves one transaction. Do not call Kafka here; publishing is step 13.
     Done when: a Testcontainers (PostgreSQL) test proves that on rollback neither the order nor the outbox row exists (both 12d tests pass), and creating an order through Swagger UI leaves one new row in `outbox` with `published_at` empty.
-13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published).
+13. **Outbox publisher.** Implement `OutboxPublisher` (send, wait for ack, mark published). All of this is in `services/order-service`. Delivery is at-least-once: if the app crashes after Kafka acknowledged a message but before the row is marked published, it is sent again. That is why the inventory consumer in step 14 must be idempotent.
+    13a. **Make the publisher switchable, and turn it on.**
+    Why: `OrderServiceOutboxTest` starts only a Postgres container and still reads `spring.kafka.bootstrap-servers: localhost:9092` from `application.yml`. Once scheduling is on, the publisher would run inside that test too, with two problems:
+    - No Kafka running (for example in CI): every poll fails and logs a warning, and each attempt blocks until `max.block.ms` expires. The test still passes, but the log is noisy and shutdown can be slow.
+    - Your compose Kafka running: the publisher connects to your real broker, sends the test orders to the real `orders.events` topic (inventory-service would consume them in step 14), and may set `published_at` before the test reads the row, as previous test without enabling publisher we didn't have to worry about publisher setting `published_at` during the `commitWritesOrderAndOutboxRow` test. That makes the `getPublishedAt()` is null assertion flaky.
+    Do:
+    1. Add `@EnableScheduling` to `OrderServiceApplication`, so the `@Scheduled` method in `OutboxPublisher` runs.
+    2. Put `@ConditionalOnProperty(name = "orderflow.outbox.enabled", havingValue = "true", matchIfMissing = true)` on `OutboxPublisher` (import `org.springframework.boot.autoconfigure.condition.ConditionalOnProperty`). The publisher is on by default, and setting the property to `false` means the bean is never created.
+    3. In `OrderServiceOutboxTest` change `@SpringBootTest` to `@SpringBootTest(properties = "orderflow.outbox.enabled=false")`, so nothing publishes those rows or marks them published when running test on `OrderServiceOutboxTest`, even though row publishing is going to be enabled otherwise.
+    `publishPending()` is still a no-op here (step 13e fills it in), so turning the publisher on changes no behaviour yet. The Kafka tests in 13c and 13d leave the publisher on and point it at their own Kafka container.
+    Done when: `mvn test` passes the 6 `OrderTest` tests and the 2 `OrderServiceOutboxTest` tests (8 in total), and `mvn spring-boot:run` still starts.
     Done when (two separate tests, commit each failing test first):
     - a Kafka Testcontainers test shows an event arrives once the order commits;
     - a second test stops Kafka, creates an order, restarts Kafka, and shows the unpublished row is retried and delivered.
