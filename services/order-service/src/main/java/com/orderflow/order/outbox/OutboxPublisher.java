@@ -1,5 +1,9 @@
 package com.orderflow.order.outbox;
 
+import com.orderflow.order.config.KafkaConfig;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 //Ground truth of orderflow.outbox.* is in OutboxPublisher; See notes\outbox\what_is_orderflow_outbox_property_and_its_uses
 @ConditionalOnProperty(name = "orderflow.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisher {
+    private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
+
     private final OutboxRepository repo;
     private final KafkaTemplate<String, String> kafka;
 
@@ -26,7 +32,21 @@ public class OutboxPublisher {
     @Scheduled(fixedDelayString = "${orderflow.outbox.poll-ms:500}")
     @Transactional
     public void publishPending() {
-        // TODO: for each event -> kafka.send("orders.events", aggregateId, payload).get(timeout)
-        //       then event.markPublished(). Add a test that kills Kafka mid-publish.
+        for (OutboxEvent event : repo.findTop100ByPublishedAtIsNullOrderByCreatedAt()) {
+            try {
+                kafka.send(KafkaConfig.ORDERS_EVENTS_TOPIC, event.getAggregateId(), event.getPayload())
+                        .get(5, TimeUnit.SECONDS);
+                // Only after the broker acked; saved on commit through dirty checking.
+                event.markPublished();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                // Do not rethrow: that would roll back markPublished() of events already sent in this
+                // batch. Stop at the first failure so later events do not overtake the failed one.
+                log.warn("Failed to publish outbox event {}; will retry on next poll", event.getId(), e);
+                break;
+            }
+        }
     }
 }

@@ -56,6 +56,8 @@ class OutboxPublisherKafkaTest {
         //.properties.max.block.ms are user-defined and not validated by Spring which causes Kfaka to log it as unknown config.
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("spring.kafka.producer.properties.max.block.ms", () -> "2000");
+        // Kafka requires delivery.timeout.ms >= linger.ms + request.timeout.ms (default 30000), so shorten request.timeout.ms too
+        registry.add("spring.kafka.producer.properties.request.timeout.ms", () -> "2000");
         registry.add("spring.kafka.producer.properties.delivery.timeout.ms", () -> "5000");
         //Ground truth of orderflow.outbox.* is in OutboxPublisher; See notes\outbox\what_is_orderflow_outbox_property_and_its_uses
         registry.add("orderflow.outbox.poll-ms", () -> "200");   // poll fast so the test does not wait long
