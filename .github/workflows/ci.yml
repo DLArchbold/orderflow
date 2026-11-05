@@ -129,3 +129,27 @@ jobs:
           if-no-files-found: ignore
       - if: always()
         run: docker compose -f phase2/infra/docker-compose.full.yml --profile apps down -v
+
+  # Both services must become Ready on a throwaway Kubernetes cluster (step 23). Goal: the manifests are valid and the
+  # probes work, not a production setup.
+  kind:
+    needs: [backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with: { cluster_name: orderflow }
+      # Build the two service images and put them into the cluster's nodes (the pods use imagePullPolicy: IfNotPresent)
+      - run: |
+          docker build -t orderflow-order-service:local services/order-service
+          docker build -t orderflow-inventory-service:local services/inventory-service
+          kind load docker-image orderflow-order-service:local orderflow-inventory-service:local --name orderflow
+      - run: kubectl apply -k phase2/infra/k8s
+      - run: kubectl wait --for=condition=Available deployment --all --timeout=180s
+      # On failure, show why: pod events and the container logs
+      - if: failure()
+        run: |
+          kubectl get pods -o wide
+          kubectl describe pods
+          kubectl logs --all-containers --tail=200 -l 'app in (order-service, inventory-service, kafka, postgres)'
