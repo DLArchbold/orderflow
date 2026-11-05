@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Order, cancelOrder, confirmOrder, createOrder, listOrders } from './api';
+import { Order, cancelOrder, createOrder, listOrders } from './api';
 
 export function App() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -45,13 +45,7 @@ export function App() {
         {orders.map((o) => (
           <li key={o.id}>
             <strong>{o.status}</strong> {o.customerId}: {o.items.map((i) => `${i.quantity} x ${i.sku}`).join(', ')}
-            {o.status === 'PENDING' && (
-              <>
-                <button onClick={() => void run(confirmOrder(o.id))}>Confirm</button>
-                <button onClick={() => void run(cancelOrder(o.id))}>Cancel</button>
-              </>
-            )}
-            {o.status === 'CONFIRMED' && <button onClick={() => void run(cancelOrder(o.id))}>Cancel</button>}
+            {o.status === 'PENDING' && <button onClick={() => void run(cancelOrder(o.id))}>Cancel</button>}
           </li>
         ))}
       </ul>

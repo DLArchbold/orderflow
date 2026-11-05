@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/orders")
-@Tag(name = "Orders", description = "Create, view, confirm and cancel orders")
+@Tag(name = "Orders", description = "Create, view and cancel orders. Status changes to CONFIRMED or REJECTED come from the inventory result, not from this API.")
 public class OrderController {
 
     private static final String ID_EXAMPLE = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
@@ -69,33 +69,16 @@ public class OrderController {
         return ResponseEntity.ok(service.get(id));
     }
 
-    @PostMapping("/{id}/confirm")
-    @Operation(summary = "Confirm an order (temporary stand-in for the Phase 2 inventory check)",
-            description = "Moves the order from PENDING to CONFIRMED. Only PENDING orders can be confirmed.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Order confirmed (status CONFIRMED)"),
-            @ApiResponse(responseCode = "400", description = "The ID is not a valid UUID",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "No order with this ID",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "409", description = "The order is not PENDING, so it cannot be confirmed",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    })
-    public ResponseEntity<OrderResponse> confirm(
-            @Parameter(description = "Order ID", example = ID_EXAMPLE) @PathVariable UUID id) {
-        return ResponseEntity.ok(service.confirm(id));
-    }
-
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel an order",
-            description = "Moves the order to CANCELLED. Only PENDING or CONFIRMED orders can be cancelled.")
+            description = "Moves the order to CANCELLED. Only PENDING orders can be cancelled; a CONFIRMED order cannot (ADR 0003).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Order cancelled (status CANCELLED)"),
             @ApiResponse(responseCode = "400", description = "The ID is not a valid UUID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "No order with this ID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "409", description = "The order is already CANCELLED or REJECTED",
+            @ApiResponse(responseCode = "409", description = "The order is not PENDING (already CONFIRMED, REJECTED or CANCELLED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<OrderResponse> cancel(

@@ -13,6 +13,12 @@ spring:
     open-in-view: false
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest   # a result written while order-service was down is still read on start
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     producer:
       # the broker confirms only after the write is fully replicated, 
       #otherwise OutboxPublished could execute markPublished() prematurely 

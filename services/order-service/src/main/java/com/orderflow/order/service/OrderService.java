@@ -77,12 +77,6 @@ public class OrderService {
         return OrderResponse.from(find(id));
     }
 
-    public OrderResponse confirm(UUID id) {
-        OrderEntity order = find(id);
-        order.confirm();   // dirty checking persists the change at commit
-        return OrderResponse.from(order);
-    }
-
     public OrderResponse cancel(UUID id) {
         OrderEntity order = find(id);
         order.cancel();

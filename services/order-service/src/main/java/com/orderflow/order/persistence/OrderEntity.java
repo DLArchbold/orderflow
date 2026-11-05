@@ -51,6 +51,7 @@ public class OrderEntity {
     }
 
     public void confirm() { transitionTo(OrderStatus.CONFIRMED); }
+    public void reject() { transitionTo(OrderStatus.REJECTED); }
     public void cancel() { transitionTo(OrderStatus.CANCELLED); }
 
     private void transitionTo(OrderStatus next) {

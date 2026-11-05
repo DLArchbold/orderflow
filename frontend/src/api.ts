@@ -31,8 +31,5 @@ export const createOrder = (customerId: string, items: OrderItem[]) =>
     body: JSON.stringify({ customerId, items }),
   });
 
-export const confirmOrder = (id: string) =>
-  request<Order>(`/api/orders/${id}/confirm`, { method: 'POST' });
-
 export const cancelOrder = (id: string) =>
   request<Order>(`/api/orders/${id}/cancel`, { method: 'POST' });
