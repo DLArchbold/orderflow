@@ -68,7 +68,7 @@ class OutboxPublisherKafkaTest {
     @Autowired OutboxRepository outboxRepository;
 
     private final CreateOrderRequest request = new CreateOrderRequest(
-            "CUST-1", List.of(new CreateOrderRequest.Item("SKU-1", 2)));
+            List.of(new CreateOrderRequest.Item("SKU-1", 2)));
 
     @BeforeEach
     void cleanTables() {
@@ -83,7 +83,7 @@ class OutboxPublisherKafkaTest {
     // and catches a publisher that re-sends a row it has already sent. 
     // (A 2 s window cannot prove there is never a duplicate, but it catches the obvious bugs.)
     void eventArrivesExactlyOnceAfterCommit() {
-        OrderResponse created = orderService.create(request);
+        OrderResponse created = orderService.create("CUST-1", request);
         String orderId = created.id().toString();
 
         try (KafkaConsumer<String, String> consumer = newConsumer()) {
@@ -136,7 +136,7 @@ class OutboxPublisherKafkaTest {
 
         kafka.getDockerClient().pauseContainerCmd(kafka.getContainerId()).exec();
         try {
-            orderId = orderService.create(request).id().toString();
+            orderId = orderService.create("CUST-1", request).id().toString();
 
             // During the outage the row must stay unpublished for 5 s (about 25 polls at 200 ms).
             // This holds even for the no-op publisher, so it is not what makes the test fail today.

@@ -19,6 +19,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
+    @ExceptionHandler(com.orderflow.order.service.ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> forbidden(com.orderflow.order.service.ForbiddenException e) {
+        return error(HttpStatus.FORBIDDEN, e.getMessage());
+    }
+
     // Thrown by OrderEntity.transitionTo when the status change isn't allowed
     @ExceptionHandler(InvalidTransitionException.class)
     public ResponseEntity<ErrorResponse> conflict(InvalidTransitionException e) {

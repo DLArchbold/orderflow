@@ -37,7 +37,9 @@ class InventoryResultHandlerTest {
     @Autowired OutboxRepository outboxRepository;
 
     private final CreateOrderRequest request = new CreateOrderRequest(
-            "CUST-1", List.of(new CreateOrderRequest.Item("SKU-1", 1)));
+            List.of(new CreateOrderRequest.Item("SKU-1", 1)));
+
+    private static final Caller ADMIN = new Caller("test", true);
 
     @BeforeEach
     void cleanTables() {
@@ -46,11 +48,11 @@ class InventoryResultHandlerTest {
     }
 
     private UUID newOrder() {
-        return orderService.create(request).id();
+        return orderService.create("CUST-1", request).id();
     }
 
     private OrderStatus status(UUID id) {
-        return OrderStatus.valueOf(String.valueOf(orderService.get(id).status()));
+        return OrderStatus.valueOf(String.valueOf(orderService.get(id, ADMIN).status()));
     }
 
     @Test
@@ -83,7 +85,7 @@ class InventoryResultHandlerTest {
     @Test
     void aResultForACancelledOrderIsIgnored() {
         UUID id = newOrder();
-        orderService.cancel(id);
+        orderService.cancel(id, ADMIN);
         assertThatCode(() -> handler.apply(id, "RESERVED")).doesNotThrowAnyException();
         assertThat(status(id)).isEqualTo(OrderStatus.CANCELLED);
     }

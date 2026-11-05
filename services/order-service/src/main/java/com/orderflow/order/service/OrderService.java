@@ -42,10 +42,10 @@ public class OrderService {
         this.objectMapper = objectMapper;
     }
 
-    public OrderResponse create(CreateOrderRequest request) {
+    public OrderResponse create(String customerId, CreateOrderRequest request) {
         //For why .save() is still needed even when OrderService is annotated with @Transactional, 
         // see notes\why_transasctional_is_important_in_order_service.txt
-        OrderEntity order = new OrderEntity(UUID.randomUUID(), request.customerId());
+        OrderEntity order = new OrderEntity(UUID.randomUUID(), customerId);
         request.items().forEach(item -> order.addLine(item.sku(), item.quantity()));
         OrderResponse response = OrderResponse.from(orders.save(order));
 
@@ -68,19 +68,29 @@ public class OrderService {
 
     //readOnly = true tells Hibernate to skip this snapshot comparison, which is a small saving on list and get
     @Transactional(readOnly = true)
-    public List<OrderResponse> list() {
-        return orders.findAll().stream().map((e) -> OrderResponse.from(e)).toList();
+    public List<OrderResponse> list(Caller caller) {
+        List<OrderEntity> visible = caller.admin() ? orders.findAll() : orders.findByCustomerId(caller.subject());
+        return visible.stream().map((e) -> OrderResponse.from(e)).toList();
     }
 
     @Transactional(readOnly = true)
-    public OrderResponse get(UUID id) {
-        return OrderResponse.from(find(id));
+    public OrderResponse get(UUID id, Caller caller) {
+        return OrderResponse.from(findOwned(id, caller));
     }
 
-    public OrderResponse cancel(UUID id) {
-        OrderEntity order = find(id);
+    public OrderResponse cancel(UUID id, Caller caller) {
+        OrderEntity order = findOwned(id, caller);
         order.cancel();
         return OrderResponse.from(order);
+    }
+
+    // 403 rather than 404 for someone else's order (trade-off written in phase2/docs/security.md)
+    private OrderEntity findOwned(UUID id, Caller caller) {
+        OrderEntity order = find(id);
+        if (!caller.admin() && !order.getCustomerId().equals(caller.subject())) {
+            throw new ForbiddenException(id);
+        }
+        return order;
     }
 
     private OrderEntity find(UUID id) {

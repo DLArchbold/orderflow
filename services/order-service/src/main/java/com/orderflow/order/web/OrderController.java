@@ -12,7 +12,9 @@ import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
+import com.orderflow.order.service.Caller;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -34,10 +36,10 @@ public class OrderController {
 
     @GetMapping
     @Operation(summary = "List orders",
-            description = "Returns all orders together with their line items.")
+            description = "Returns your orders together with their line items (an admin sees all orders).")
     @ApiResponse(responseCode = "200", description = "The orders (empty list if there are none)")
-    public ResponseEntity<List<OrderResponse>> list() {
-        return ResponseEntity.ok(service.list());
+    public ResponseEntity<List<OrderResponse>> list(Authentication auth) {
+        return ResponseEntity.ok(service.list(caller(auth)));
     }
 
     @PostMapping
@@ -50,8 +52,10 @@ public class OrderController {
                     description = "Invalid input, e.g. blank customerId, empty items, or quantity below 1",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
-        OrderResponse created = service.create(request);
+    public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request,
+                                                       Authentication auth) {
+        // the owner is the verified token's subject, never a value from the body
+        OrderResponse created = service.create(auth.getName(), request);
         return ResponseEntity.created(URI.create("/api/orders/" + created.id())).body(created);
     }
 
@@ -61,12 +65,15 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "The order"),
             @ApiResponse(responseCode = "400", description = "The ID is not a valid UUID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "The order belongs to another customer",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "No order with this ID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<OrderResponse> get(
-            @Parameter(description = "Order ID", example = ID_EXAMPLE) @PathVariable UUID id) {
-        return ResponseEntity.ok(service.get(id));
+            @Parameter(description = "Order ID", example = ID_EXAMPLE) @PathVariable UUID id,
+            Authentication auth) {
+        return ResponseEntity.ok(service.get(id, caller(auth)));
     }
 
     @PostMapping("/{id}/cancel")
@@ -76,13 +83,21 @@ public class OrderController {
             @ApiResponse(responseCode = "200", description = "Order cancelled (status CANCELLED)"),
             @ApiResponse(responseCode = "400", description = "The ID is not a valid UUID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "The order belongs to another customer",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "No order with this ID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "409", description = "The order is not PENDING (already CONFIRMED, REJECTED or CANCELLED)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<OrderResponse> cancel(
-            @Parameter(description = "Order ID", example = ID_EXAMPLE) @PathVariable UUID id) {
-        return ResponseEntity.ok(service.cancel(id));
+            @Parameter(description = "Order ID", example = ID_EXAMPLE) @PathVariable UUID id,
+            Authentication auth) {
+        return ResponseEntity.ok(service.cancel(id, caller(auth)));
+    }
+
+    private static Caller caller(Authentication auth) {
+        boolean admin = auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_admin"));
+        return new Caller(auth.getName(), admin);
     }
 }

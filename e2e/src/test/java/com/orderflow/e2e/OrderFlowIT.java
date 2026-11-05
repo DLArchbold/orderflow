@@ -53,7 +53,7 @@ class OrderFlowIT {
     }
 
     String createOrder(String sku, long quantity) throws Exception {
-        String body = "{\"customerId\":\"e2e\",\"items\":[{\"sku\":\"" + sku + "\",\"quantity\":" + quantity + "}]}";
+        String body = "{\"items\":[{\"sku\":\"" + sku + "\",\"quantity\":" + quantity + "}]}";
         JsonNode created = send(HttpRequest.newBuilder(URI.create(ORDER_URL + "/api/orders"))
                 .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build());
         assertThat(created.get("status").asText()).isEqualTo("PENDING");

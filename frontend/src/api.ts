@@ -25,10 +25,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const listOrders = () => request<Order[]>('/api/orders');
 
-export const createOrder = (customerId: string, items: OrderItem[]) =>
+// the owner is taken from the access token on the server, never sent from here
+export const createOrder = (items: OrderItem[]) =>
   request<Order>('/api/orders', {
     method: 'POST',
-    body: JSON.stringify({ customerId, items }),
+    body: JSON.stringify({ items }),
   });
 
 export const cancelOrder = (id: string) =>
