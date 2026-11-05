@@ -37,45 +37,37 @@ Execution Time: 2.623 ms
 The index finds `alice`'s 3,019 rows, but not in `created_at` order, so Postgres visits 1,969 heap pages and sorts all 3,019 rows to
 keep 50. The cost grows with the customer's history, not with the page size.
 
-## Load test (PLAN step 18)
-Throughput, p95 latency, error rate.
+## Load test (PLAN step 25)
 
-### 19c: the change
-- `V4__orders_customer_created_index.sql`: `CREATE INDEX idx_orders_customer_created ON orders (customer_id, created_at DESC);`
-- `V5__drop_unused_customer_status_index.sql`: `DROP INDEX idx_orders_customer_status;`. The old `(customer_id, status)` index is only
-  chosen for a filter on both columns (checked with `EXPLAIN`), and no query in the application filters that way
-  (`OrderRepository.findByCustomerId(customerId, pageable)` and `findAll(pageable)` are the only list queries), so nothing uses it.
-- Both migrations were run by Flyway against `orders_perf` and against the dev `orders` database (`select * from flyway_schema_history`
-  shows versions 1 to 5 in both), and on every clean Testcontainers database in `mvn test`.
+**Tool: `scripts/load_orders.py`, NOT k6.** k6 could not be installed on this machine (winget hung, a binary download was blocked), so the
+numbers below come from a stand-in written for this purpose (standard library Python, same behaviour as `phase2/load-tests/k6/create-orders.js`:
+one Keycloak token per user, a fixed arrival rate that does not wait for responses, SKU-1/SKU-2 mix). They are not k6 numbers and should not
+be quoted as such. The k6 script is written but has never been run.
 
-### 19d: result (customer query: `... WHERE customer_id = 'alice' ORDER BY created_at DESC LIMIT 50`, 3,019 rows for alice)
-| | Plan | Buffers | Runs (ms) | Median of 5 |
-|---|---|---|---|---|
-| Before (`idx_orders_customer_status`) | Bitmap Index Scan, Bitmap Heap Scan (3,019 rows), top-N Sort | 1,974 | 5.83, 1.68, 1.19, 1.10, 1.03 | **1.19 ms** |
-| After (`idx_orders_customer_created`) | Index Scan, 50 rows, no Sort node | 53 | 0.194, 0.111, 0.119, 0.154, 0.122 | **0.122 ms** |
+### Setup
+- One Windows 10 machine (Intel Core i7-14700) running everything at once: the load generator, both services (`mvn spring-boot:run`, JVM defaults),
+  PostgreSQL 16, Kafka, Redis, Keycloak, Prometheus, Grafana, Jaeger (all in Docker Desktop, no CPU or memory limits set). The numbers are conservative
+  in that the load generator shares the machine, and optimistic in that nothing crosses a network.
+- order-service: Hikari default pool (10), Tomcat default threads (200), outbox poll 500 ms, batch 100 events, one event sent at a time and waited for.
+- Command: `scripts/perf_run.sh <dir>` (warm-up 20 s at 20/s, three runs of 60 s at 50/s, then 30 s at 100, 150, 200 and 300/s, waiting for the
+  outbox lag to return to 0 between runs).
 
-About 10x faster and 37x fewer buffers read. The very first "before" measurement (19b, three runs) read 2.64 to 2.66 ms on the same
-plan; "before" here was re-measured in a rolled-back transaction that re-creates the old index, so five runs of one state could be taken.
-Warm-cache millisecond timings on a laptop are noisy (the first run of a group is 3 to 5 times slower); the buffer count is the stable
-number and it does not depend on the machine.
+### Results
+| Run | Orders | Failed | Achieved/s | p50 ms | p95 ms | p99 ms | Lag drained after |
+|---|---|---|---|---|---|---|---|
+| warm-up 20/s | 400 | 0 | 20.0 | 23.1 | 44.7 | 64.9 | |
+| steady 50/s, run 1 | 3,000 | 0 | 50.0 | 34.1 | 56.7 | 73.0 | 0 s |
+| steady 50/s, run 2 | 3,000 | 0 | 50.0 | 22.0 | 41.5 | 54.1 | 0 s |
+| steady 50/s, run 3 | 3,000 | 0 | 50.0 | 19.7 | 32.4 | 35.5 | 0 s |
+| ramp 100/s | 3,000 | 0 | 99.9 | 9.5 | 31.6 | 35.0 | 1 s |
+| ramp 150/s | 4,500 | 0 | 149.9 | 8.6 | 31.0 | 34.1 | 0 s |
+| ramp 200/s | 6,000 | 0 | 199.8 | 8.9 | 31.4 | 34.4 | 9 s |
+| ramp 300/s | 9,000 | 0 | 299.8 | 9.3 | 31.8 | 35.5 | 26 s |
 
-Plan after:
-```
-Limit  (actual time=0.023..0.147 rows=50)  Buffers: shared hit=53
-  ->  Index Scan using idx_orders_customer_created on orders  Index Cond: (customer_id = 'alice')
-```
-
-Write cost, measured honestly: inserting 100,000 orders in one transaction (rolled back) took 499 ms with only the primary key, 816 to
-831 ms with the new index added next to the old one, and 478 ms with the final index set (primary key + new index; the old index
-is dropped). So the new index costs little once the old one is gone. The earlier 64% overhead was the cost of carrying both.
-`idx_orders_customer_created` is 12 MB at creation (the whole `orders` table with its indexes was 40 MB before V4).
-
-### Reproduce
-1. `docker compose -f phase2/infra/docker-compose.full.yml exec -T postgres psql -U orderflow -d postgres -c "CREATE DATABASE orders_perf TEMPLATE orders;"` (order-service stopped)
-2. `... psql -U orderflow -d orders_perf -v rows=300000 < scripts/seed-orders.sql`
-3. Run the query with `EXPLAIN (ANALYZE, BUFFERS)` five times, apply V4 and V5 (start order-service with `SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/orders_perf SERVER_PORT=8082`), run `ANALYZE orders;`, and repeat.
-
-Setup: PostgreSQL 16.15 (docker `postgres:16`), `shared_buffers` 128MB, `work_mem` 4MB, warm cache (queries repeated), Windows 10 host running Docker Desktop with the load generator
-and everything else on the same machine, 300,020 orders / 600,578 lines (10% of the planned 3 million, see Setup above).
-The resume bullet therefore reads: "customer order list query from 1.2 ms to 0.12 ms (1,974 to 53 buffers) at 300,000 orders"; re-run
-`scripts/seed-orders.sql` with the default 3,000,000 rows on a machine with disk to fill in the 3 million figure.
+- **Highest passing rate: at least 300 orders/s.** The thresholds (failures < 1%, p95 < 500 ms) were never broken, so the real limit was **not found**;
+  the single-threaded-schedule Python generator on the same machine is the more likely ceiling, and 300/s is as far as this run went.
+- **Outbox lag peak: 26 s**, at the 300/s step; the publisher (one event at a time, 500 ms poll) fell behind the API there and took 26 s to drain
+  after the step ended. At 200/s the drain took 9 s, and at 150/s or less the lag stayed near zero. HTTP latency looked good throughout while the pipeline
+  fell behind at the top rate, as predicted: the API accepting orders is not the same as events leaving.
+- **Error rate: 0 failed of 32,200 requests.** After the last drain: 32,156 orders CONFIRMED, 4 REJECTED (from an earlier test), 0 PENDING.
+- These are warm-cache numbers from one machine and a short run each (60 s and 30 s, not the planned 3 minutes). Treat them as a first measurement.
