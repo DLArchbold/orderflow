@@ -19,11 +19,34 @@ import org.junit.jupiter.api.Test;
 class OrderFlowIT {
     static final String ORDER_URL = System.getenv().getOrDefault("ORDER_URL", "http://localhost:8080");
     static final String INVENTORY_URL = System.getenv().getOrDefault("INVENTORY_URL", "http://localhost:8081");
+    static final String KEYCLOAK_URL = System.getenv().getOrDefault("KEYCLOAK_URL", "http://localhost:8180");
 
     final HttpClient http = HttpClient.newHttpClient();
     final ObjectMapper json = new ObjectMapper();
 
+    /** Access token of a dev user from the realm import (orderflow-cli client, password grant: dev only). */
+    String token(String user) throws Exception {
+        String form = "client_id=orderflow-cli&grant_type=password&username=" + user + "&password=" + user + "-dev-pw";
+        HttpResponse<String> res = http.send(HttpRequest.newBuilder(
+                        URI.create(KEYCLOAK_URL + "/realms/orderflow/protocol/openid-connect/token"))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(form)).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(res.statusCode()).as("token for " + user + ": " + res.body()).isEqualTo(200);
+        return json.readTree(res.body()).get("access_token").asText();
+    }
+
+    String bearer = null;
+
     JsonNode send(HttpRequest request) throws Exception {
+        if (bearer == null) {
+            bearer = "Bearer " + token("alice");
+        }
+        request = HttpRequest.newBuilder(request.uri()).method(request.method(),
+                        request.bodyPublisher().orElse(HttpRequest.BodyPublishers.noBody()))
+                .header("Authorization", bearer)
+                .headers(request.headers().firstValue("Content-Type").map(v -> new String[] {"Content-Type", v})
+                        .orElse(new String[] {"Accept", "application/json"}))
+                .build();
         HttpResponse<String> res = http.send(request, HttpResponse.BodyHandlers.ofString());
         assertThat(res.statusCode()).as(request.uri() + " -> " + res.body()).isBetween(200, 299);
         return json.readTree(res.body());
