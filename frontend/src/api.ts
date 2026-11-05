@@ -33,3 +33,11 @@ export const createOrder = (customerId: string, items: OrderItem[]) =>
 
 export const cancelOrder = (id: string) =>
   request<Order>(`/api/orders/${id}/cancel`, { method: 'POST' });
+
+export interface StockInfo {
+  sku: string;
+  available: number | null;
+  reserved: number | null;
+}
+
+export const getStock = (sku: string) => request<StockInfo>(`/api/stock/${encodeURIComponent(sku)}`);

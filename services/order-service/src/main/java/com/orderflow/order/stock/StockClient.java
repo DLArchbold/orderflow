@@ -1,5 +1,7 @@
 package com.orderflow.order.stock;
 
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -15,7 +17,17 @@ public class StockClient {
         this.client = inventoryRestClient;
     }
 
+    /**
+     * PLAN step 17b: the timeout bounds one call, the breaker stops calling a dead service at all, the bulkhead
+     * limits how many threads this dependency can use. The fallback says "unknown", not 0 (which would mean sold out).
+     */
+    @CircuitBreaker(name = "inventory", fallbackMethod = "unknown")
+    @Bulkhead(name = "inventory")
     public StockInfo get(String sku) {
         return client.get().uri("/stock/{sku}", sku).retrieve().body(StockInfo.class);
+    }
+
+    StockInfo unknown(String sku, Throwable cause) {
+        return StockInfo.unknown(sku);
     }
 }

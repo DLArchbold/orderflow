@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Order, cancelOrder, createOrder, listOrders } from './api';
+import { Order, StockInfo, cancelOrder, createOrder, getStock, listOrders } from './api';
 
 export function App() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -7,6 +7,19 @@ export function App() {
   const [customerId, setCustomerId] = useState('customer-1');
   const [sku, setSku] = useState('SKU-1');
   const [quantity, setQuantity] = useState(1);
+
+  const [stock, setStock] = useState<StockInfo | null>(null);
+
+  // stock of the typed SKU; a failed lookup just hides the line, ordering does not depend on it
+  useEffect(() => {
+    let cancelled = false;
+    getStock(sku)
+      .then((s) => !cancelled && setStock(s))
+      .catch(() => !cancelled && setStock(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [sku, orders]);
 
   const refresh = () =>
     listOrders()
@@ -38,6 +51,11 @@ export function App() {
         <input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
         <button type="submit">Create order</button>
       </form>
+      {stock && (
+        <p aria-label="stock">
+          In stock for {stock.sku}: {stock.available === null ? 'unknown' : stock.available}
+        </p>
+      )}
 
       {error && <p role="alert" className="error">Error: {error}</p>}
 

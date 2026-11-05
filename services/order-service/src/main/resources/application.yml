@@ -36,11 +36,28 @@ orderflow:
     backoff-initial-ms: 1000
     backoff-max-ms: 10000
     max-attempts: 3
+resilience4j:
+  circuitbreaker:
+    instances:
+      inventory:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+        ignore-exceptions:
+          - org.springframework.web.client.HttpClientErrorException   # a 404 for an unknown SKU is not an outage
+  bulkhead:
+    instances:
+      inventory:
+        max-concurrent-calls: 10
+        max-wait-duration: 0
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers
 springdoc:
   swagger-ui:
     path: /swagger-ui.html    # open http://localhost:8080/swagger-ui.html
