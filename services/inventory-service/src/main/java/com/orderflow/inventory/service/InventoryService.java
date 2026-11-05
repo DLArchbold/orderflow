@@ -34,8 +34,11 @@ public class InventoryService {
     private final JdbcClient jdbc;
     private final OutboxRepository outbox;
     private final ObjectMapper mapper;
+    private final com.orderflow.inventory.outbox.OutboxTrace trace;
 
-    public InventoryService(JdbcClient jdbc, OutboxRepository outbox, ObjectMapper mapper) {
+    public InventoryService(JdbcClient jdbc, OutboxRepository outbox, ObjectMapper mapper,
+                            com.orderflow.inventory.outbox.OutboxTrace trace) {
+        this.trace = trace;
         this.jdbc = jdbc;
         this.outbox = outbox;
         this.mapper = mapper;
@@ -105,7 +108,10 @@ public class InventoryService {
     private void writeResult(OrderEvent order, String type, String result, String reason) {
         try {
             String payload = mapper.writeValueAsString(new Result(order.orderId().toString(), result, reason));
-            outbox.save(new OutboxEvent(order.orderId().toString(), type, payload));
+            OutboxEvent event = new OutboxEvent(order.orderId().toString(), type, payload);
+            // the consumed record's span and correlation id travel with the result event
+            event.attachContext(trace.capture(), org.slf4j.MDC.get("correlationId"));
+            outbox.save(event);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }

@@ -13,6 +13,10 @@ spring:
     open-in-view: false
   kafka:
     bootstrap-servers: localhost:9092
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true     # continues the producer's trace
     producer:
       acks: all
       properties:
@@ -24,6 +28,9 @@ spring:
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] [%X{correlationId:-}]"
 orderflow:
   consumer:
     backoff-initial-ms: 1000

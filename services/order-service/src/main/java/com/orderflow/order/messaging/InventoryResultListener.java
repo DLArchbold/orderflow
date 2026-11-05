@@ -25,7 +25,11 @@ public class InventoryResultListener {
     }
 
     @KafkaListener(topics = KafkaConfig.INVENTORY_RESULTS_TOPIC, groupId = "order-service")
-    public void onResult(String payload) {
+    public void onResult(String payload,
+            @org.springframework.messaging.handler.annotation.Header(name = "correlation-id", required = false) byte[] correlationId) {
+        if (correlationId != null) {
+            org.slf4j.MDC.put("correlationId", new String(correlationId, java.nio.charset.StandardCharsets.UTF_8));
+        }
         try {
             InventoryResult r = mapper.readValue(payload, InventoryResult.class);
             if (r.orderId() == null || r.result() == null) {
@@ -34,6 +38,8 @@ public class InventoryResultListener {
             handler.apply(r.orderId(), r.result());
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("unreadable inventory result", e);
+        } finally {
+            org.slf4j.MDC.remove("correlationId");
         }
     }
 }

@@ -23,7 +23,15 @@ public class OrderEventsListener {
     }
 
     @KafkaListener(topics = KafkaConfig.ORDERS_EVENTS_TOPIC, groupId = "inventory-service")
-    public void onOrderEvent(@Payload String payload, @Header("message-id") byte[] messageId) {
-        inventoryService.reserve(new String(messageId, StandardCharsets.UTF_8), payload);
+    public void onOrderEvent(@Payload String payload, @Header("message-id") byte[] messageId,
+            @Header(name = "correlation-id", required = false) byte[] correlationId) {
+        if (correlationId != null) {
+            org.slf4j.MDC.put("correlationId", new String(correlationId, StandardCharsets.UTF_8));
+        }
+        try {
+            inventoryService.reserve(new String(messageId, StandardCharsets.UTF_8), payload);
+        } finally {
+            org.slf4j.MDC.remove("correlationId");
+        }
     }
 }

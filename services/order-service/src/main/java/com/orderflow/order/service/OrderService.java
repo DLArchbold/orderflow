@@ -32,8 +32,11 @@ public class OrderService {
     private final OrderRepository orders;
     private final OutboxRepository outbox;
     private final ObjectMapper objectMapper;
+    private final com.orderflow.order.outbox.OutboxTrace trace;
 
-    public OrderService(OrderRepository orders, OutboxRepository outbox, ObjectMapper objectMapper) {
+    public OrderService(OrderRepository orders, OutboxRepository outbox, ObjectMapper objectMapper,
+                        com.orderflow.order.outbox.OutboxTrace trace) {
+        this.trace = trace;
         // For why OrderRepository is instantiated and can be used automatically without new keyword
         // , see notes\bean-and-spring-dependency-injection.txt
         // Using new keyword here will cause a plain object with no injection and no transactions
@@ -56,6 +59,8 @@ public class OrderService {
         //Why save OutboxEvent in this transaction? See notes\kafka\significance_of_outbox_pattern.txt
         //And also needed to pass tests in OrderServiceOutboxTest.java
         OutboxEvent outboxEvent = new OutboxEvent(response.id().toString(), "OrderCreated", toJson(response));
+        // the publisher runs later on another thread: keep the trace and the correlation id with the row
+        outboxEvent.attachContext(trace.capture(), org.slf4j.MDC.get("correlationId"));
         outbox.save(outboxEvent);
         
         return response;
