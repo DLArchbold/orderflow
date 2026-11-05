@@ -171,6 +171,31 @@ class OutboxPublisherKafkaTest {
         }
     }
 
+    // PLAN step 21c: the correlation id of the request that wrote the outbox row travels in a Kafka header
+    @Test
+    void theCorrelationIdTravelsInAKafkaHeader() {
+        String orderId;
+        org.slf4j.MDC.put("correlationId", "corr-test-1");
+        try {
+            orderId = orderService.create("CUST-1", request).id().toString();
+        } finally {
+            org.slf4j.MDC.clear();
+        }
+
+        try (KafkaConsumer<String, String> consumer = newConsumer()) {
+            consumer.subscribe(List.of(KafkaConfig.ORDERS_EVENTS_TOPIC));
+            List<ConsumerRecord<String, String>> matching = new ArrayList<>();
+            Instant deadline = Instant.now().plusSeconds(15);
+            while (matching.isEmpty() && Instant.now().isBefore(deadline)) {
+                collectForKey(consumer, orderId, matching, Duration.ofMillis(500));
+            }
+            assertThat(matching).hasSize(1);
+            org.apache.kafka.common.header.Header header = matching.get(0).headers().lastHeader("correlation-id");
+            assertThat(header).as("correlation-id header").isNotNull();
+            assertThat(new String(header.value(), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("corr-test-1");
+        }
+    }
+
     private static void collectForKey(KafkaConsumer<String, String> consumer, String key,
                                       List<ConsumerRecord<String, String>> into, Duration timeout) {
         // What it does: asks Kafka once for new records, keeps only those whose key equals `key`

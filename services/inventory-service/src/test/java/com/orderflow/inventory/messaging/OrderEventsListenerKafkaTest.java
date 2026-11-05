@@ -128,6 +128,11 @@ class OrderEventsListenerKafkaTest {
                         .map(ConsumerRecord::value).toList();
                 assertThat(values).as("results for order %s", id).hasSize(1);
                 assertThat(values.get(0)).contains("\"result\":\"RESERVED\"");
+                // the correlation id of the incoming record is carried to the result record (PLAN step 21c)
+                org.apache.kafka.common.header.Header corr = all.stream().filter(r -> id.toString().equals(r.key()))
+                        .findFirst().orElseThrow().headers().lastHeader("correlation-id");
+                assertThat(corr).as("correlation-id header on the result").isNotNull();
+                assertThat(new String(corr.value(), StandardCharsets.UTF_8)).isEqualTo("corr-" + id);
             }
         }
     }
@@ -139,6 +144,7 @@ class OrderEventsListenerKafkaTest {
     private static void send(KafkaProducer<String, String> producer, UUID key, String messageId, String json) {
         ProducerRecord<String, String> record = new ProducerRecord<>(KafkaConfig.ORDERS_EVENTS_TOPIC, key.toString(), json);
         record.headers().add("message-id", messageId.getBytes(StandardCharsets.UTF_8));
+        record.headers().add("correlation-id", ("corr-" + key).getBytes(StandardCharsets.UTF_8));   // PLAN step 21c
         try {
             producer.send(record).get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
