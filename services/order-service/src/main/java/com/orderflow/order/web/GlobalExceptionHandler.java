@@ -46,6 +46,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "Invalid value for '" + e.getName() + "'");
     }
 
+    // inventory-service answered 404 for an unknown SKU (StockClient)
+    @ExceptionHandler(org.springframework.web.client.HttpClientErrorException.NotFound.class)
+    public ResponseEntity<ErrorResponse> unknownSku(org.springframework.web.client.HttpClientErrorException.NotFound e) {
+        return error(HttpStatus.NOT_FOUND, "Unknown SKU");
+    }
+
     private static ResponseEntity<ErrorResponse> error(HttpStatus status, String message) {
         return ResponseEntity.status(status).body(new ErrorResponse(message));
     }
