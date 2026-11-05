@@ -52,4 +52,14 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     ports: ["3000:3000"]
 
-  # TODO (PLAN step 10): add Keycloak (or another OIDC provider) for JWT issuance.
+  keycloak:          # http://localhost:8180 (admin / $KEYCLOAK_ADMIN_PASSWORD, default admin); dev mode, not production-grade
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: http://localhost:8180      # the token issuer (iss claim) must equal the services' issuer-uri
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak/orderflow-realm.json:/opt/keycloak/data/import/orderflow-realm.json:ro
+    ports: ["8180:8080"]
