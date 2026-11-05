@@ -40,6 +40,7 @@ const order = (id: string, status: api.Order['status'], sku = 'SKU-1', quantity 
 });
 
 beforeEach(() => {
+  vi.clearAllMocks();   // call counts start at zero in every test
   vi.mocked(api.listOrders).mockResolvedValue([]);
   vi.mocked(api.getStock).mockResolvedValue({ sku: 'SKU-1', available: 10, reserved: 0 });
 });
@@ -111,5 +112,19 @@ describe('App', () => {
     act(() => stream.onReconnect());
 
     await waitFor(() => expect(vi.mocked(api.listOrders).mock.calls.length).toBeGreaterThan(calls));
+  });
+
+  it('keeps a pushed status when an older list arrives afterwards', async () => {
+    vi.mocked(api.listOrders).mockResolvedValue([order('abc', 'PENDING')]);
+    render(<App />);
+    expect(await screen.findByText('PENDING')).toBeInTheDocument();
+
+    act(() => stream.onStatus('abc', 'CONFIRMED'));
+    // the list request that was already in flight still answers PENDING
+    act(() => stream.onReconnect());
+
+    await waitFor(() => expect(api.listOrders).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('CONFIRMED')).toBeInTheDocument();
+    expect(screen.queryByText('PENDING')).not.toBeInTheDocument();
   });
 });

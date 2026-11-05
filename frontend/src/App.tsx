@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { getUserName, initAuth, login, logout } from './auth';
 import { useOrderStream } from './hooks/useOrderStream';
 import { Order, StockInfo, cancelOrder, createOrder, getStock, listOrders } from './api';
@@ -14,6 +14,7 @@ export function App() {
 
   // stock of the typed SKU; a failed lookup just hides the line, ordering does not depend on it
   useEffect(() => {
+    if (signedIn !== true) return;   // a 401 before sign-in would start its own login redirect
     let cancelled = false;
     getStock(sku)
       .then((s) => !cancelled && setStock(s))
@@ -21,12 +22,16 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [sku, orders]);
+  }, [sku, orders, signedIn]);
+
+  // Latest status pushed by the stream, per order. A list fetched just before an event can arrive just after it;
+  // statuses only move forward (PENDING to a final one), so applying the pushed status over the fetched list is safe.
+  const pushed = useRef<Record<string, string>>({});
 
   const refresh = () =>
     listOrders()
       .then((data) => {
-        setOrders(data);
+        setOrders(data.map((o) => (pushed.current[o.id] ? { ...o, status: pushed.current[o.id] as Order['status'] } : o)));
         setError(null);
       })
       .catch((e: Error) => setError(e.message));
@@ -46,8 +51,10 @@ export function App() {
   // PENDING -> CONFIRMED / REJECTED arrives here without a refresh
   useOrderStream({
     enabled: signedIn === true,
-    onStatus: (orderId, status) =>
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: status as Order['status'] } : o))),
+    onStatus: (orderId, status) => {
+      pushed.current[orderId] = status;
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: status as Order['status'] } : o)));
+    },
     onReconnect: () => void refresh(),
   });
 

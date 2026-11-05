@@ -1,6 +1,5 @@
 package com.orderflow.order.stream;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,15 +29,26 @@ public class SseHub {
         emitter.onCompletion(remove);
         emitter.onTimeout(remove);
         emitter.onError(e -> remove.run());
+        try {
+            // Commits the response (status and headers) right away. Without a first write the browser's fetch() and
+            // any proxy in between wait for the first event or heartbeat before they see the connection as open.
+            emitter.send(SseEmitter.event().comment("connected"));
+        } catch (Exception e) {
+            emitter.completeWithError(e);
+        }
         return emitter;
     }
 
     public void send(String subject, Object data) {
-        for (SseEmitter emitter : emitters.getOrDefault(subject, List.of())) {
+        List<SseEmitter> mine = emitters.getOrDefault(subject, List.of());
+        for (SseEmitter emitter : mine) {
             try {
                 emitter.send(SseEmitter.event().data(data, org.springframework.http.MediaType.APPLICATION_JSON));
-            } catch (IOException | IllegalStateException e) {
-                emitter.completeWithError(e);   // the client went away
+            } catch (Exception e) {
+                // The client went away. Catch everything, not just IOException: Spring 6.1 throws
+                // AsyncRequestNotUsableException (a ServletException) for a closed connection, and one dead
+                // connection (React StrictMode aborts the first one in development) must not stop the others.
+                drop(mine, emitter, e);
             }
         }
     }
@@ -49,10 +59,19 @@ public class SseHub {
         emitters.values().forEach(list -> list.forEach(emitter -> {
             try {
                 emitter.send(SseEmitter.event().comment("keep-alive"));
-            } catch (IOException | IllegalStateException e) {
-                log.debug("Dropping a dead SSE connection");
-                emitter.completeWithError(e);
+            } catch (Exception e) {
+                drop(list, emitter, e);
             }
         }));
+    }
+
+    private static void drop(List<SseEmitter> list, SseEmitter emitter, Exception cause) {
+        log.debug("Dropping a dead SSE connection: {}", cause.toString());
+        list.remove(emitter);
+        try {
+            emitter.completeWithError(cause);
+        } catch (RuntimeException ignored) {
+            // already completed
+        }
     }
 }

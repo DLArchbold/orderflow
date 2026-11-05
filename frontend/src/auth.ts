@@ -9,7 +9,7 @@ const manager = new UserManager({
   redirect_uri: window.location.origin + '/',
   post_logout_redirect_uri: window.location.origin + '/',
   response_type: 'code',
-  scope: 'openid',
+  scope: 'openid profile',
   userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
 });
 
@@ -21,14 +21,23 @@ export const getUserName = () => current?.profile.preferred_username ?? null;
 export const login = () => manager.signinRedirect();
 export const logout = () => manager.signoutRedirect();
 
-/** Completes a login if the page was reached through Keycloak's redirect; returns whether a user is signed in. */
-export async function initAuth(): Promise<boolean> {
-  const params = new URLSearchParams(window.location.search);
-  if (params.has('code') && params.has('state')) {
-    current = await manager.signinRedirectCallback();
-    window.history.replaceState({}, document.title, window.location.pathname);
-  } else {
-    current = await manager.getUser();
-  }
-  return getAccessToken() !== null;
+let initPromise: Promise<boolean> | null = null;
+
+/**
+ * Completes a login if the page was reached through Keycloak's redirect; returns whether a user is signed in.
+ * Runs once and shares the result: the authorization code can be redeemed only once, and React StrictMode
+ * runs effects twice in development.
+ */
+export function initAuth(): Promise<boolean> {
+  initPromise ??= (async () => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('code') && params.has('state')) {
+      current = await manager.signinRedirectCallback();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      current = await manager.getUser();
+    }
+    return getAccessToken() !== null;
+  })();
+  return initPromise;
 }
