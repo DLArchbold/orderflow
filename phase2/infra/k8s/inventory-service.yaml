@@ -1,9 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-service-config
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0"   # there is no Jaeger in this cluster
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: inventory-service
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: { app: inventory-service }
   template:
@@ -12,13 +21,26 @@ spec:
     spec:
       containers:
         - name: inventory-service
-          image: orderflow/inventory-service:latest   # kind: load with 'kind load docker-image'
+          image: orderflow-inventory-service:local
+          imagePullPolicy: IfNotPresent   # the image is loaded into kind with 'kind load docker-image', never pulled
           ports: [{ containerPort: 8081 }]
+          envFrom:
+            - configMapRef: { name: inventory-service-config }
+            - secretRef: { name: db-credentials }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          # Spring Boot takes 10 to 30 s to start; without this the liveness probe would kill it while it boots
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8081 }
+            periodSeconds: 5
+            failureThreshold: 36            # up to 3 minutes
           readinessProbe:
             httpGet: { path: /actuator/health/readiness, port: 8081 }
+            periodSeconds: 10
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: 8081 }
-          # TODO (PLAN step 16): env for DB/Kafka/Redis, resource requests and limits.
+            periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -26,4 +48,4 @@ metadata:
   name: inventory-service
 spec:
   selector: { app: inventory-service }
-  ports: [{ port: 80, targetPort: 8081 }]
+  ports: [{ port: 8081, targetPort: 8081 }]
