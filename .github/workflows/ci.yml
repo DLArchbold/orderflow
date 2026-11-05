@@ -50,3 +50,44 @@ jobs:
       - run: npm test
       # Type-checks and bundles with Vite; type errors fail the job
       - run: npm run build
+
+  # Builds the three images and pushes them to GitHub Container Registry, only on a push to main and only when the
+  # tests above passed. The tag is the commit SHA (not just latest) so a deploy or rollback names one exact build.
+  images:
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # GITHUB_TOKEN may write packages only if the workflow says so
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - { name: order-service, context: services/order-service }
+          - { name: inventory-service, context: services/inventory-service }
+          - { name: frontend, context: frontend }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Computes the image name and tags: ghcr.io/<owner>/orderflow-<name>:<sha>
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/orderflow-${{ matrix.name }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # layer cache between runs, so the Maven dependency layer is not rebuilt every time
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
