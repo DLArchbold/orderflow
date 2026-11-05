@@ -14,3 +14,13 @@ output "db_init_command" {
     "--network-configuration 'awsvpcConfiguration={subnets=[${aws_subnet.public[0].id}],securityGroups=[${aws_security_group.dbinit.id}],assignPublicIp=ENABLED}'",
   ])
 }
+
+output "app_url" {
+  description = "Public URL of the whole system (HTTP only)"
+  value       = "http://${aws_lb.main.dns_name}"
+}
+
+output "push_images_commands" {
+  description = "Log in to ECR; then docker tag/push each image with the tag you pass as image_tag"
+  value       = "aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${split("/", aws_ecr_repository.app["order-service"].repository_url)[0]}"
+}
