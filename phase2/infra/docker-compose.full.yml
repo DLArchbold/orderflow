@@ -125,11 +125,11 @@ services:
 
   frontend:
     profiles: [apps]
-    build:
-      context: ../../frontend
-      args:
-        VITE_OIDC_AUTHORITY: http://localhost:8180/realms/orderflow   # the public Keycloak URL, as the browser sees it
+    build: { context: ../../frontend }
     image: orderflow-frontend:local
+    environment:
+      OIDC_AUTHORITY: http://localhost:8180/realms/orderflow   # the public Keycloak URL, as the browser sees it
+      ORDER_SERVICE_URL: http://order-service:8080
     ports: ["5173:80"]   # 5173 is the redirect URI registered for orderflow-frontend in the realm
     depends_on:
       order-service: { condition: service_healthy }

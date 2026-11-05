@@ -3,8 +3,18 @@ import { InMemoryWebStorage, User, UserManager, WebStorageStateStore } from 'oid
 // Authorization code flow with PKCE against Keycloak. The signed-in user (and so the access token) is kept in
 // memory, not in localStorage, which any injected script can read. The in-flight login state (the PKCE verifier)
 // has to survive the redirect to Keycloak, so it stays in the default sessionStorage.
+declare global {
+  interface Window {
+    ORDERFLOW_CONFIG?: { oidcAuthority?: string };
+  }
+}
+
+// /config.js (runtime, set by the container) wins over the build-time value, which wins over the local default
+const authority =
+  window.ORDERFLOW_CONFIG?.oidcAuthority || import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:8180/realms/orderflow';
+
 const manager = new UserManager({
-  authority: import.meta.env.VITE_OIDC_AUTHORITY ?? 'http://localhost:8180/realms/orderflow',
+  authority,
   client_id: 'orderflow-frontend',
   redirect_uri: window.location.origin + '/',
   post_logout_redirect_uri: window.location.origin + '/',

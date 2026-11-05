@@ -2,12 +2,19 @@ server {
   listen 80;
   root /usr/share/nginx/html;
 
+  # Runtime settings for the page. ${OIDC_AUTHORITY} is filled in from the container's environment when nginx starts.
+  location = /config.js {
+    default_type application/javascript;
+    add_header Cache-Control "no-store";
+    return 200 "window.ORDERFLOW_CONFIG={oidcAuthority:'${OIDC_AUTHORITY}'};";
+  }
+
   location / {
     try_files $uri /index.html;   # single-page app: unknown paths go to index.html
   }
 
   location /api/ {
-    proxy_pass http://order-service:8080;
+    proxy_pass ${ORDER_SERVICE_URL};
     proxy_set_header Host $host;
     proxy_set_header Authorization $http_authorization;
     # server-sent events (/api/orders/stream): no buffering, long-lived connection
