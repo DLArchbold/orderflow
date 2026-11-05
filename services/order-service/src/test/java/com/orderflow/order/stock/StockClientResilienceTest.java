@@ -15,14 +15,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
-import org.springframework.web.client.RestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,30 +31,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         "orderflow.outbox.enabled=false",
         "spring.kafka.listener.auto-startup=false",
         "resilience4j.circuitbreaker.instances.inventory.wait-duration-in-open-state=1s"})
-@Import(StockClientResilienceTest.StubConfig.class)
+@Import(InventoryStubConfig.class)
 @Testcontainers
 class StockClientResilienceTest {
 
     @Container
     @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
-
-    /** Replaces the real RestClient with one bound to a stub server. */
-    @TestConfiguration
-    static class StubConfig {
-        static final RestClient.Builder BUILDER = RestClient.builder().baseUrl("http://inventory.test");
-
-        @Bean
-        MockRestServiceServer inventoryStub() {
-            return MockRestServiceServer.bindTo(BUILDER).build();
-        }
-
-        @Bean
-        @Primary
-        RestClient stubRestClient(MockRestServiceServer inventoryStub) {
-            return BUILDER.build();
-        }
-    }
 
     @Autowired StockClient client;
     @Autowired MockRestServiceServer stub;

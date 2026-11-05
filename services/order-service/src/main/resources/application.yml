@@ -11,6 +11,14 @@ spring:
     hibernate:
       ddl-auto: validate      # Flyway creates the tables; Hibernate only checks they match your entities
     open-in-view: false
+  data:
+    redis:
+      host: localhost
+      timeout: 500ms           # fail fast when Redis is down; the cache error handler then carries on
+      connect-timeout: 500ms
+  cache:
+    redis:
+      time-to-live: 30s
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
@@ -54,6 +62,9 @@ resilience4j:
         max-concurrent-calls: 10
         max-wait-duration: 0
 management:
+  health:
+    redis:
+      enabled: false      # the cache is optional; a Redis outage must not make the service unready
   endpoints:
     web:
       exposure:
