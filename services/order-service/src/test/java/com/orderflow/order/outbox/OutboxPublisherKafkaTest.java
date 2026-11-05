@@ -104,6 +104,13 @@ class OutboxPublisherKafkaTest {
             assertThat(matching).as("records for order %s", orderId).hasSize(1);
             assertThat(matching.get(0).value()).contains(orderId);
 
+            // PLAN step 14a: the record carries a stable `message-id` header (the outbox row id) so a consumer
+            // can recognise a re-delivery; the offset changes on every re-send, the row id does not.
+            org.apache.kafka.common.header.Header messageId = matching.get(0).headers().lastHeader("message-id");
+            assertThat(messageId).as("message-id header").isNotNull();
+            assertThat(new String(messageId.value(), java.nio.charset.StandardCharsets.UTF_8))
+                    .isEqualTo(outboxRepository.findAll().get(0).getId().toString());
+
             // keep listening for 2 s: a duplicate would show up here
             Instant quietUntil = Instant.now().plusSeconds(2);
             while (Instant.now().isBefore(quietUntil)) {
