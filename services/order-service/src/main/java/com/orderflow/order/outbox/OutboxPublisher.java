@@ -1,7 +1,9 @@
 package com.orderflow.order.outbox;
 
 import com.orderflow.order.config.KafkaConfig;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,8 +36,11 @@ public class OutboxPublisher {
     public void publishPending() {
         for (OutboxEvent event : repo.findTop100ByPublishedAtIsNullOrderByCreatedAt()) {
             try {
-                kafka.send(KafkaConfig.ORDERS_EVENTS_TOPIC, event.getAggregateId(), event.getPayload())
-                        .get(5, TimeUnit.SECONDS);
+                // message-id = outbox row id: stable across re-sends, so consumers can dedupe on it
+                ProducerRecord<String, String> record = new ProducerRecord<>(
+                        KafkaConfig.ORDERS_EVENTS_TOPIC, event.getAggregateId(), event.getPayload());
+                record.headers().add("message-id", event.getId().toString().getBytes(StandardCharsets.UTF_8));
+                kafka.send(record).get(5, TimeUnit.SECONDS);
                 // Only after the broker acked; saved on commit through dirty checking.
                 event.markPublished();
             } catch (InterruptedException e) {
