@@ -25,4 +25,11 @@ public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {
     /** A customer's own orders (lines fetched in the same query). */
     @EntityGraph(attributePaths = "lines")
     List<OrderEntity> findByCustomerId(String customerId);
+
+    /** One page of a customer's orders. Lines are batch-loaded (@BatchSize), because a collection fetch cannot be paged in SQL. */
+    org.springframework.data.domain.Page<OrderEntity> findByCustomerId(String customerId, org.springframework.data.domain.Pageable pageable);
+
+    /** One page of all orders (admin). */
+    @Override
+    org.springframework.data.domain.Page<OrderEntity> findAll(org.springframework.data.domain.Pageable pageable);
 }

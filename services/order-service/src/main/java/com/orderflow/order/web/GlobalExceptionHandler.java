@@ -45,6 +45,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "Malformed request body");
     }
 
+    // e.g. /api/orders?size=0
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> badParameter(jakarta.validation.ConstraintViolationException e) {
+        return error(HttpStatus.BAD_REQUEST, "Invalid request parameter");
+    }
+
     // e.g. /api/orders/not-a-uuid
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> badPathValue(MethodArgumentTypeMismatchException e) {

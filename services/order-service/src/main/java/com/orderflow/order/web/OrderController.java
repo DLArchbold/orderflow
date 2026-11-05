@@ -13,6 +13,8 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 import com.orderflow.order.service.Caller;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
  * JSON messages by GlobalExceptionHandler.
  */
 @RestController
+@org.springframework.validation.annotation.Validated
 @RequestMapping("/api/orders")
 @Tag(name = "Orders", description = "Create, view and cancel orders. Status changes to CONFIRMED or REJECTED come from the inventory result, not from this API.")
 public class OrderController {
@@ -36,10 +39,13 @@ public class OrderController {
 
     @GetMapping
     @Operation(summary = "List orders",
-            description = "Returns your orders together with their line items (an admin sees all orders).")
+            description = "Returns one page of your orders, newest first, with their line items (an admin sees all orders).")
     @ApiResponse(responseCode = "200", description = "The orders (empty list if there are none)")
-    public ResponseEntity<List<OrderResponse>> list(Authentication auth) {
-        return ResponseEntity.ok(service.list(caller(auth)));
+    public ResponseEntity<List<OrderResponse>> list(
+            @Parameter(description = "Page number, from 0") @RequestParam(defaultValue = "0") @Min(0) int page,
+            @Parameter(description = "Page size, 1 to 100") @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size,
+            Authentication auth) {
+        return ResponseEntity.ok(service.list(caller(auth), page, size));
     }
 
     @PostMapping

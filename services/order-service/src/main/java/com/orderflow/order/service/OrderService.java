@@ -8,6 +8,10 @@ import com.orderflow.order.web.CreateOrderRequest;
 import com.orderflow.order.web.OrderResponse;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,9 +72,13 @@ public class OrderService {
 
     //readOnly = true tells Hibernate to skip this snapshot comparison, which is a small saving on list and get
     @Transactional(readOnly = true)
-    public List<OrderResponse> list(Caller caller) {
-        List<OrderEntity> visible = caller.admin() ? orders.findAll() : orders.findByCustomerId(caller.subject());
-        return visible.stream().map((e) -> OrderResponse.from(e)).toList();
+    public List<OrderResponse> list(Caller caller, int page, int size) {
+        // newest first, one bounded page: an unbounded findAll() would not survive a real table
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<OrderEntity> visible = caller.admin()
+                ? orders.findAll(pageable)
+                : orders.findByCustomerId(caller.subject(), pageable);
+        return visible.stream().map(OrderResponse::from).toList();
     }
 
     @Transactional(readOnly = true)

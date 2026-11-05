@@ -37,6 +37,7 @@ public class OrderEntity {
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
+    @org.hibernate.annotations.BatchSize(size = 100)   // a page of orders loads its lines in one extra query, not one per order
     private List<OrderLineEntity> lines = new ArrayList<>();
 
     protected OrderEntity() {}

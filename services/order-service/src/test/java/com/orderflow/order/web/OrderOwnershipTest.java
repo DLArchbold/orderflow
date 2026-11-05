@@ -103,4 +103,20 @@ class OrderOwnershipTest {
                 .andExpect(jsonPath("$.length()").value(2));
         mvc.perform(get("/api/orders/" + id).with(admin())).andExpect(status().isOk());
     }
+
+    @Test
+    void theListIsPagedNewestFirst() throws Exception {
+        String first = createAs(customer("alice"), "{" + ITEMS + "}");
+        createAs(customer("alice"), "{" + ITEMS + "}");
+        String newest = createAs(customer("alice"), "{" + ITEMS + "}");
+
+        mvc.perform(get("/api/orders?size=2").with(customer("alice")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(newest));
+        mvc.perform(get("/api/orders?page=1&size=2").with(customer("alice")))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(first));
+        mvc.perform(get("/api/orders?size=0").with(customer("alice"))).andExpect(status().isBadRequest());
+    }
 }
