@@ -19,11 +19,31 @@ class OrderTest {
         assertEquals(OrderStatus.CONFIRMED, o.status());
     }
 
-    @Test void confirmedCanBeCancelled() {
+    @Test void confirmedCannotBeCancelled() {
         Order o = newOrder();
         o.confirm();
-        o.cancel();
-        assertEquals(OrderStatus.CANCELLED, o.status());
+        assertThrows(IllegalStateException.class, () -> o.cancel());
+        assertEquals(OrderStatus.CONFIRMED, o.status());
+    }
+
+    @Test void pendingCanBeRejected() {
+        Order o = newOrder();
+        o.reject();
+        assertEquals(OrderStatus.REJECTED, o.status());
+    }
+
+    @Test void confirmedRejectedAndCancelledCannotBeRejected() {
+        Order confirmed = newOrder();
+        confirmed.confirm();
+        assertThrows(IllegalStateException.class, () -> confirmed.reject());
+
+        Order rejected = newOrder();
+        rejected.reject();
+        assertThrows(IllegalStateException.class, () -> rejected.reject());
+
+        Order cancelled = newOrder();
+        cancelled.cancel();
+        assertThrows(IllegalStateException.class, () -> cancelled.reject());
     }
 
     @Test void rejectedIsTerminal() {
