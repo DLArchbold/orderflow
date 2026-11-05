@@ -78,8 +78,8 @@ export function App() {
       </p>
 
       <form onSubmit={onSubmit} className="form">
-        <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" required />
-        <input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
+        <input aria-label="SKU" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" required />
+        <input aria-label="Quantity" type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
         <button type="submit">Create order</button>
       </form>
       {stock && (
