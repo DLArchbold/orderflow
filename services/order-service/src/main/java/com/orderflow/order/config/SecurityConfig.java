@@ -4,6 +4,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.config.Customizer;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpMethod;
@@ -21,7 +25,8 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.csrf(csrf -> csrf.disable())   // stateless bearer-token API: no cookies, so no CSRF to defend against
+        http.cors(Customizer.withDefaults())   // uses the CorsConfigurationSource bean below
+            .csrf(csrf -> csrf.disable())   // stateless bearer-token API: no cookies, so no CSRF to defend against
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a -> a
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()   // CORS preflight carries no token
@@ -29,6 +34,22 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();
+    }
+
+    /**
+     * PLAN step 18d: for a deployment where the UI and the API have different origins. In development the Vite
+     * proxy keeps one origin, so the browser sends no cross-origin requests at all.
+     */
+    @Bean
+    CorsConfigurationSource corsConfigurationSource(
+            @org.springframework.beans.factory.annotation.Value("${orderflow.cors.allowed-origin:http://localhost:5173}") String origin) {
+        CorsConfiguration cors = new CorsConfiguration();
+        cors.setAllowedOrigins(List.of(origin));
+        cors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        cors.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", cors);
+        return source;
     }
 
     @Bean

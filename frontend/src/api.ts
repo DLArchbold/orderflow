@@ -1,3 +1,5 @@
+import { getAccessToken, login } from './auth';
+
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
 
 export interface OrderItem {
@@ -12,11 +14,25 @@ export interface Order {
   items: OrderItem[];
 }
 
+export class ForbiddenError extends Error {
+  constructor() {
+    super('You are not allowed to see this order');
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const token = getAccessToken();
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     ...init,
   });
+  if (res.status === 401) {
+    void login();   // not signed in (or the token expired): go through Keycloak
+    throw new Error('Please sign in');
+  }
+  if (res.status === 403) {
+    throw new ForbiddenError();
+  }
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}`);
   }

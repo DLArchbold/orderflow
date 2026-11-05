@@ -3,6 +3,8 @@ package com.orderflow.order.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
@@ -47,5 +49,24 @@ class SecurityTest {
         // /swagger-ui.html redirects to the UI page; what matters is that it is not a 401
         int swagger = mvc.perform(get("/swagger-ui.html")).andReturn().getResponse().getStatus();
         assertThat(swagger).isIn(200, 302);
+    }
+
+    // PLAN step 18d: the browser's preflight carries no token and must be answered for the frontend origin only
+    @Test
+    void preflightFromTheFrontendOriginIsAllowed() throws Exception {
+        mvc.perform(options("/api/orders")
+                        .header("Origin", "http://localhost:5173")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization,content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
+    }
+
+    @Test
+    void preflightFromAnotherOriginIsRejected() throws Exception {
+        mvc.perform(options("/api/orders")
+                        .header("Origin", "http://evil.example")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isForbidden());
     }
 }

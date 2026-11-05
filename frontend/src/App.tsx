@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { getUserName, initAuth, login, logout } from './auth';
 import { Order, StockInfo, cancelOrder, createOrder, getStock, listOrders } from './api';
 
 export function App() {
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);   // null while the login state is being read
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sku, setSku] = useState('SKU-1');
@@ -29,7 +31,15 @@ export function App() {
       .catch((e: Error) => setError(e.message));
 
   useEffect(() => {
-    void refresh();
+    initAuth()
+      .then((ok) => {
+        setSignedIn(ok);
+        if (ok) void refresh();
+      })
+      .catch((e: Error) => {
+        setSignedIn(false);
+        setError(e.message);
+      });
   }, []);
 
   const run = (action: Promise<unknown>) =>
@@ -40,9 +50,23 @@ export function App() {
     void run(createOrder([{ sku, quantity }]));
   };
 
+  if (signedIn === null) return <main className="app"><p>Loading...</p></main>;
+  if (!signedIn) {
+    return (
+      <main className="app">
+        <h1>OrderFlow</h1>
+        {error && <p role="alert" className="error">Error: {error}</p>}
+        <button onClick={() => void login()}>Log in</button>
+      </main>
+    );
+  }
+
   return (
     <main className="app">
       <h1>OrderFlow</h1>
+      <p>
+        Signed in as {getUserName()} <button onClick={() => void logout()}>Log out</button>
+      </p>
 
       <form onSubmit={onSubmit} className="form">
         <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" required />
