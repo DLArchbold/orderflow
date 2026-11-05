@@ -91,3 +91,41 @@ jobs:
           # layer cache between runs, so the Maven dependency layer is not rebuilt every time
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Runs the whole system from source in Docker Compose and drives it over HTTP (step 15d) and, on main only,
+  # through a real browser (step 20c). Browser tests are slow, so pull requests get the HTTP test only (docs/ci.md).
+  e2e:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21', cache: maven }
+      # Builds the three images from the Dockerfiles and waits until every health check passes
+      - run: docker compose -f phase2/infra/docker-compose.full.yml --profile apps up -d --wait --build
+      # The e2e module only talks HTTP to the running stack (ORDER_URL etc. default to localhost)
+      - run: mvn -B -f e2e/pom.xml verify
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - if: github.ref == 'refs/heads/main'
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+        working-directory: frontend
+      # What the next person needs to see why it failed
+      - if: failure()
+        run: docker compose -f phase2/infra/docker-compose.full.yml --profile apps logs --no-color > compose-logs.txt
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: |
+            compose-logs.txt
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+      - if: always()
+        run: docker compose -f phase2/infra/docker-compose.full.yml --profile apps down -v
