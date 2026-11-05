@@ -1,0 +1,70 @@
+# Errors met in steps 13f to 27, mapped to plan steps and resume claims
+
+The resume claims are the ones listed in PLAN step 28 (the plan holds no bullet text beyond that list). Each story is true to what happened;
+where a result is a stand-in or unverified, the story says so. Use the "Say it like this" column, not a bigger claim.
+
+| # | Error or failure | Cause and fix | Plan step | Resume claim (step 28 list) | Say it like this in an interview |
+|---|---|---|---|---|---|
+| 1 | Kafka producer would not start in tests: `delivery.timeout.ms` smaller than `request.timeout.ms` | The test overrode only one timeout. Set `request.timeout.ms=2000` so the pair is consistent. | 13e (`OutboxPublisher`, test 2: Kafka down then back) | Kafka, outbox, idempotent consumers (12 to 16) | "To test a broker outage I needed short timeouts. Kafka rejects a delivery timeout below the request timeout, so I tuned both and the test could show a row staying unpublished, then delivered when the broker returned." |
+| 2 | Outage drill invalid: `MSYS_NO_PATHCONV` made `taskkill //F` fail, so the service was never killed | I noticed the drill showed no disruption, found the cause and redid it with `taskkill /F`. | 15e (hand check including an outage) | Kafka, outbox, idempotent consumers (12 to 16) | "My first outage drill proved nothing because the kill silently failed. I checked that the disruption really happened before trusting a pass." |
+| 3 | Duplicate events on the topic after a long outage (3 copies of one event) | At-least-once publishing re-sends. Not a bug: the `processed_messages` insert absorbs copies. I defined "duplicated" as duplicated *effect* before testing. | 13f, 26a | Kafka, outbox, idempotent consumers (12 to 16) | "At-least-once means duplicates on the wire. I defined what counts as a duplicate before the drill, then showed 0 duplicated reservations across 3 drills." |
+| 4 | Testcontainers could not reach Docker (Docker Engine 29) in inventory-service | Spring Boot 3.3 manages an older Testcontainers. Pinned `testcontainers.version` 1.21.4 in both poms and documented it in the README. | 14c to 14e (inventory tests) | Tests with Testcontainers (12 to 16) | "A Docker upgrade broke my integration tests. I traced it to the managed Testcontainers version, pinned a newer one and wrote it down for the next person." |
+| 5 | Stale "cannot be resolved" IDE errors after edits | The IDE lagged behind Maven. The Maven build was the source of truth. | 14 to 16 | none (not worth telling) | Skip. |
+| 6 | A consumer error on a poison message could block a partition | Retries with backoff, then a dead-letter topic, plus a replay endpoint. Tested with a poison record and a transient failure. | 16a to 16d | Kafka, outbox, idempotent consumers (12 to 16) | "A message that always fails must not stop everything behind it. Bounded retries, then a dead-letter topic, and a way to replay after the bug is fixed." |
+| 7 | Lag alert did not fire in the 60 s Kafka drill | The rule needs lag above 60 s for 2 minutes; a 60 s outage barely crossed it. It did fire (Pending, then Firing) in the 5 minute test in 21b. Reported, not hidden. | 21b, 26b | Prometheus, Grafana, OpenTelemetry (21) | "My alert passed its rule test and fired in a long outage, but not in the short drill. That showed me the threshold matches outages over about 3 minutes, and I documented that." |
+| 8 | Prometheus renamed the counter `orderflow.orders.created` to `orderflow_orders_total` | Dashboard queries used the wrong name. Checked the real exported name and fixed the panels. | 21a | Prometheus, Grafana, OpenTelemetry (21) | "A dashboard panel was empty. The cause was the exporter's naming rule, so I checked the actual metric names instead of assuming." |
+| 9 | Trace stopped at the Kafka hop | The publisher runs in another thread, so the trace was lost. Stored `traceparent` in the outbox row and continued it when publishing. Result: 12 spans in one Jaeger trace across both services. | 21c | Prometheus, Grafana, OpenTelemetry (21) | "Tracing through an outbox needs the trace context saved with the row. I stored it in a column and now one trace spans both services." |
+| 10 | Stock lookup before sign-in caused a 401 redirect that raced the login button | Gated the call on being signed in. | 18d | REST APIs, OAuth2/JWT (5, 6, 18) | "A request fired before login triggered a redirect that fought the login button. Only call protected endpoints once the user is signed in." |
+| 11 | Authorization code redeemed twice (400) | React StrictMode ran the auth init twice. Made `initAuth` run once and share the result. Also added the `profile` scope so the username shows. | 18d | REST APIs, OAuth2/JWT (5, 6, 18) | "A one-time login code was used twice because StrictMode runs effects twice in development. I made the init single-shot." |
+| 12 | SSE headers sent only at the first write, so the browser saw nothing | Send an initial `:connected` comment on connect. | 20a | React/TypeScript with live status (20a, 20b) | "The server held back response headers until the first event, so the stream looked dead. A first comment line flushes them." |
+| 13 | Dead SSE connection aborted the broadcast loop | Spring 6.1's `AsyncRequestNotUsableException` is not an `IOException`. `SseHub` now catches `Exception` and drops that client. | 20a | React/TypeScript with live status (20a, 20b) | "One closed browser tab stopped updates for everyone, because the exception type was not the one I caught. Now one bad connection is dropped and the rest continue." |
+| 14 | UI race: an older list response overwrote a status pushed by SSE | Kept a `pushed` ref and applied it over fetched lists. | 20a, 20b | React/TypeScript with live status (20a, 20b) | "A slow fetch could undo a live update. I made pushed status win over older fetched data." |
+| 15 | Playwright REJECTED test passed falsely (matched old rows) | Gave the test a unique oversized quantity so it only matches its own order. | 20c | Tests with Playwright (20c) | "My browser test passed for the wrong reason, matching earlier orders. I made each run use a unique value so it can only pass on its own order." |
+| 16 | Random large quantities drained stock and made later tests fail | Restored seed stock and used small quantities. | 20c | Tests with Playwright (20c) | "Tests that share state need controlled data. I reset stock and bounded quantities." |
+| 17 | Vitest picked up the Playwright specs (CI would have failed) | Excluded `e2e/**` in `vite.config.ts`. | 20b, 22d | CI and CodeQL (22) | "I found the CI break locally before pushing: the unit runner was loading browser tests." |
+| 18 | `npm audit` reported 3 advisory groups (dev tooling); Vite 5 and Vitest 5 conflicted | Upgraded to Vite 7 and Vitest 5. Now 0 vulnerabilities. | 22e | CI and CodeQL (22) | "`npm audit` found advisories in dev tooling. I upgraded and re-ran it to 0. CodeQL and Dependabot have not run yet because I have not pushed." (Do not claim CodeQL findings.) |
+| 19 | Seed script duplicate-key error | Re-inserting lines; added `NOT EXISTS`. | 19a | Index tuning (19) | "Seed scripts need to be re-runnable. I made the insert idempotent." |
+| 20 | Disk nearly full, so the seed was cut to 300k rows (plan says 3 million) | Scaled down, stated in `perf.md` and README. Index result: 1.19 ms to 0.12 ms (1,974 to 53 buffers). | 19a to 19d | Index tuning (19) | "On 300,000 orders, a composite index on customer and created time cut my newest-orders query from 1.19 ms to 0.12 ms and buffers from 1,974 to 53. I ran at a tenth of my planned size because of disk space." |
+| 21 | Chromium download did not fit; used installed Edge for Playwright | Configured the Edge channel locally; CI uses Chromium. | 20c | Tests with Playwright (20c) | Skip, or: "Locally I drive Edge; CI is set up for Chromium." (CI not yet run.) |
+| 22 | `.auth` session files (cookies) committed by `git add -A` | Added `.gitignore` and amended the unpushed commit. Not in history. | 20c | CI and CodeQL (22) (secrets hygiene) | "I committed test session cookies by accident, caught it before pushing, rewrote the local commit and ignored the folder." |
+| 23 | `git add -A` swept the user's chat export into step 15d's commit | Noted in the report; not fixed (the file later showed as deleted and moved). | 15d | none | Skip. Housekeeping lesson: stage by path. |
+| 24 | Drill check failed: 200 orders existed before the drill | Added `--baseline` to `drill_check.py`. | 26a, 26b | Kafka, outbox, idempotent consumers (12 to 16) | "My check failed on a clean system because earlier data existed. I made the baseline an explicit input rather than loosening the check." |
+| 25 | k6 download denied by the classifier, `winget` hung | Did not work around the block. Wrote `scripts/load_orders.py` and labelled every result "not k6". Result: at least 300 orders/s, 0 failures, limit not found, outbox lag peak 26 s. | 25a, 25b | the `[N]` orders/s at p95 sentence | "I measured with a Python load generator, not k6, and my docs say so. Up to 300 orders/s on one machine had 0 failures; I did not find the limit." Do not say "k6". |
+| 26 | Order-service kill: 521 client errors in drill 3 | Expected: requests in flight when the process died were never acknowledged. 0 acknowledged orders lost. | 26b | Kafka, outbox, idempotent consumers (12 to 16) | "Failures during a kill are requests that never got a 201. Of acknowledged orders, 0 were lost and 0 reservations duplicated across three drills at 20 orders/s." |
+| 27 | Resume wording risk in step 28: "Resilience4j and Redis kept it correct" | Drills show correctness comes from the outbox and the idempotent consumer. Resilience4j and Redis protect only the stock lookup (tried live with the dependency down). | 17, 26, 28 | Kafka/outbox claim versus the Resilience4j/Redis claim | "Correctness through failure comes from the outbox and idempotent consumers. Resilience4j and Redis keep the optional stock lookup from taking the page down." |
+
+## Not errors, but unfinished (never claim these)
+CI runs on GitHub, Docker image builds and compose `apps` profile, the kind cluster, all AWS and Terraform work (24, including deploy-under-load and
+"failed requests during rolling deploy"), k6 runs, the demo GIF and the fresh-clone walkthrough. A resume claim for any of them needs the work done first.
+
+
+
+I'd make two changes. The table would link each error to one of your four bullets, and a new section would check each number in the bullets against what was measured. Several numbers don't match, so the second change matters more.
+
+**1. Table changes**
+- Replace the "Resume claim (step 28 list)" column with "Bullet" (1 to 4). Mapping:
+  - Bullet 1: rows 4 (Testcontainers), 6 (dead-letter handling), 10 and 11 (OAuth2/JWT).
+  - Bullet 2: rows 1, 2, 3, 24 and 26, which are the outbox and idempotent-consumer stories.
+  - Bullet 3: rows 25 (load tool) and 27 (what Resilience4j and Redis really protect).
+  - Bullet 4: rows 19 and 20 (index), 7 to 9 (observability), 17 and 18 (CI).
+- The UI rows (12 to 16, 21) belong to no bullet. They would move to a "supporting stories" group, or you could add a UI clause to bullet 1.
+
+**2. Claims that don't match what was measured**
+
+| Resume wording | What the repo supports | Suggested wording |
+|---|---|---|
+| "0 orders lost or double-processed across **50,000 orders and 6 forced outages**" | 3 drills of 3,600 orders each (about 10,800 orders); 0 lost, 0 duplicated | "0 lost and 0 duplicated reservations across 3 forced failure drills (Kafka, inventory-service, order-service) at 20 orders/s" |
+| "Sustained **200 orders/s at p95 300 ms (k6)**" | At least 300 orders/s with 0 failures, p95 about 31 ms, measured with a Python script, not k6 | "Sustained 300 orders/s with 0 failures at p95 about 31 ms on one machine (custom load generator)". Drop "k6" unless the k6 run happens. |
+| "from **400 ms to 30 ms on 3M rows**" | 1.19 ms to 0.12 ms on 300,000 rows | State the measured numbers and the row count, or finish the 3M-row run first |
+| "**CodeQL** CI/CD" | Workflows written, never run | Leave out until the first CI run on GitHub |
+| "**Terraform-provisioned AWS ECS rolling deploys with 0 failed requests under load**" | An unvalidated draft; no deploy happened | Remove it. There is no deploy-under-load result. |
+| "so a slow or unavailable inventory-service degrades gracefully **instead of failing orders**" | Order creation never calls inventory-service; the outbox keeps orders working. Resilience4j and Redis only protect the stock lookup. | "…keep the stock lookup from failing the page when inventory-service is slow or down" |
+
+Smaller items to fix:
+- The "timeout" in "(timeout, circuit breaker, bulkhead)" needs checking. I only recall the circuit breaker, the bulkhead and the Redis timeouts, so confirm a timeout limiter exists.
+- `github.com/[handle]` and the dates are placeholders. The repo isn't pushed or public.
+- Step 28 says to keep the wording identical across the resume and README. The README already states the honest numbers, so the resume should copy them.
+
+I'd also add an "Interview traps" section to the file. It would hold the one-line honest answer to each likely question: "Why not k6?", "Why 300k rows?", "Did you deploy to AWS?", and "Did the drills prove Resilience4j and Redis?".
+
+Want me to apply these edits to the file? I'd also add a corrected resume text block to it.

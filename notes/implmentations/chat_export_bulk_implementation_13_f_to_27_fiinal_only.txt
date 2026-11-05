@@ -1,0 +1,37 @@
+I worked through steps 13f to 27 and committed after every substep, 49 commits in all. About half of it ran for real. The rest is written but untested, because this machine blocked it. Nothing is pushed, and no AWS or GitHub action was taken.
+
+**What ran and passed** ([name and purpose of each test](tests-that-ran-and-passed.md))
+- **Tests:** 40 tests in order-service, 11 in inventory-service, 7 in the frontend, 4 Playwright tests, and the HTTP e2e test. The Playwright tests pass from a clean `docker compose down -v` start.
+- **Pipeline checks:**
+  - 14, 15, 16: stock reservation is all-or-nothing and idempotent. Order status comes from inventory's result. Poison messages go to a dead-letter topic and can be replayed.
+  - 17 and 18: circuit breaker and Redis cache, tried live with the dependency down. Keycloak login, ownership by token `sub`, and CORS.
+  - 20: live status over server-sent events.
+  - 21: metrics, a provisioned Grafana dashboard, and an alert that went Pending then Firing for real. One Jaeger trace now spans 12 spans across both services.
+- **Database tuning (19):** the "my newest orders" query went from 1.19 ms to 0.12 ms (1,974 to 53 buffers).
+- **Failure drills (26):** I stopped Kafka for 60 s, killed inventory-service for 60 s, and killed order-service, under 20 orders/s. Result: 0 orders lost and 0 duplicated reservations.
+
+**What is only drafted**
+- **Docker, compose `apps` profile, kind and CI jobs:** `docker build --check` and `kubectl kustomize` are clean, but no image was built. The C: drive had under 1 GB free.
+- **Terraform (24):** an unvalidated draft. There is no `terraform` binary and no valid AWS credentials. No deploy, deploy-under-load run or destroy happened.
+- **GitHub (22):** no push, so no CodeQL, Dependabot or branch protection.
+
+**Deviations to know about**
+- **k6 never ran.** The classifier blocked a binary download. The 25b numbers (at least 300 orders/s, 0 failures, limit not found) come from `scripts/load_orders.py`, labelled "not k6". The k6 script itself is written but never executed.
+- **Index test scale:** 300,000 orders, not 3 million, because of the disk. This is stated in `perf.md` and the README.
+- **Playwright** drives the installed Edge locally, since a Chromium download didn't fit.
+- **No demo GIF** and no fresh-clone walkthrough.
+- **Lag alert:** it did not fire in the 60 s Kafka drill. `for: 2m` can't be met by a 60 s outage.
+- **Counter name:** Prometheus exports `orderflow.orders.created` as `orderflow_orders_total`, so the dashboard uses that.
+
+**Things I got wrong or changed along the way**
+- I briefly committed Playwright session cookies (`frontend/e2e/.auth`). I fixed the ignore rule and amended that unpushed commit; they are not in history.
+- One earlier `git add -A` also committed your `notes/chat_export_...` file.
+- Real bugs the browser tests exposed are fixed: the SSE response headers, a dead-connection exception, a UI race, and a double code exchange under StrictMode. `npm test` was also picking up the Playwright specs, which would have failed CI.
+- Upgrading to Vite 7 and Vitest 5 cleared the `npm audit` findings (3 advisory groups).
+
+**State of your machine**
+- The dev databases were truncated for the drills, and `orders_perf` was dropped.
+- Both services and the Vite dev server are still running.
+- C: has about 1 GB free.
+
+Pushing and the first real CI run is the sensible next step, once you've freed disk space. It is also where the untested image, compose and kind jobs get their first test.

@@ -1,0 +1,2355 @@
+> Implement steps 13f to 27 including all substeps. For each substep and step
+  completed, perform a commit before starting the next step.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● I'll work through this large scope in order, committing after each substep and
+  flagging anything I can't do alone, like AWS spend, GitHub publishing, or
+  manual browser steps. I'm checking whether the app I launched earlier is still
+  running, starting with 13f. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+● The app is up and the plan's 13f text already records a manual run on
+  2026-11-04, so I'll just verify the end state.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 13f is confirmed: 0 unpublished rows and nothing left to commit, since the
+  work is already in 13a407e. Next is step 14a, so I'll read the rest of the
+  Kafka test.
+
+  Read 1 file (ctrl+o to expand)
+
+● 14a, test first: I'll make the first test assert the message-id header against
+  the outbox row id.
+
+● Update(services\order-service\src\test\java\com\orderflow\order\outbox\OutboxP
+        ublisherKafkaTest.java)
+  ⎿  Added 7 lines
+      104              assertThat(matching).as("records for order %s", or
+           derId).hasSize(1);
+      105              assertThat(matching.get(0).value()).contains(order
+           Id);
+      106  
+      107 +            // PLAN step 14a: the record carries a stable `mes
+          +sage-id` header (the outbox row id) so a consumer             
+      108 +            // can recognise a re-delivery; the offset changes
+          + on every re-send, the row id does not.                       
+      109 +            org.apache.kafka.common.header.Header messageId = 
+          +matching.get(0).headers().lastHeader("message-id");           
+      110 +            assertThat(messageId).as("message-id header").isNo
+          +tNull();                                                      
+      111 +            assertThat(new String(messageId.value(), java.nio.
+          +charset.StandardCharsets.UTF_8))                              
+      112 +                    .isEqualTo(outboxRepository.findAll().get(
+          +0).getId().toString());                                       
+      113 +                                                              
+      114              // keep listening for 2 s: a duplicate would show 
+           up here
+      115              Instant quietUntil = Instant.now().plusSeconds(2);
+      116              while (Instant.now().isBefore(quietUntil)) {
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● It fails on the new assertion, as expected. I'll commit it, then implement the
+  header.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(services\order-service\src\main\java\com\orderflow\order\outbox\OutboxP
+        ublisher.java)
+  ⎿  Added 5 lines, removed 2 lines
+      34      public void publishPending() {
+      35          for (OutboxEvent event : repo.findTop100ByPublishedAtIs
+          NullOrderByCreatedAt()) {
+      36              try {
+      37 -                kafka.send(KafkaConfig.ORDERS_EVENTS_TOPIC, eve
+         -nt.getAggregateId(), event.getPayload())                       
+      38 -                        .get(5, TimeUnit.SECONDS);             
+      37 +                // message-id = outbox row id: stable across re
+         +-sends, so consumers can dedupe on it                          
+      38 +                ProducerRecord<String, String> record = new Pro
+         +ducerRecord<>(                                                 
+      39 +                        KafkaConfig.ORDERS_EVENTS_TOPIC, event.
+         +getAggregateId(), event.getPayload());                         
+      40 +                record.headers().add("message-id", event.getId(
+         +).toString().getBytes(StandardCharsets.UTF_8));                
+      41 +                kafka.send(record).get(5, TimeUnit.SECONDS);   
+      42                  // Only after the broker acked; saved on commit
+           through dirty checking.
+      43                  event.markPublished();
+      44              } catch (InterruptedException e) {
+
+● Update(services\order-service\src\main\java\com\orderflow\order\outbox\OutboxP
+        ublisher.java)
+  ⎿  Added 2 lines
+      1  package com.orderflow.order.outbox;
+      2  
+      3  import com.orderflow.order.config.KafkaConfig;
+      4 +import java.nio.charset.StandardCharsets;                       
+      5  import java.util.concurrent.TimeUnit;
+      6 +import org.apache.kafka.clients.producer.ProducerRecord;        
+      7  import org.slf4j.Logger;
+      8  import org.slf4j.LoggerFactory;
+      9  import org.springframework.boot.autoconfigure.condition.Conditio
+         nalOnProperty;
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The diagnostics are stale again, since the build passes. I'll commit 14a and
+  move on to 14b, after looking at inventory-service.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now step 14b: inventory outbox (migration, copied classes, producer settings,
+  topics, ADR 0002).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The copied publisher must send to inventory.results, so I'll clean up the
+  copies and write the config.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The repository copy failed because of a bad relative path, so I'll write it
+  directly. I'll also add ADR 0002 and the dependency check.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now a run check: the outbox table must appear in the inventory database and
+  the app must start.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 14b works: it starts and the outbox table exists. I'll stop it and commit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 14c: the failing InventoryServiceTest. First I'll create the empty
+  InventoryService.reserve so the failure is an assertion rather than a compile
+  error.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Testcontainers fails here but works in order-service, so I'll compare the test
+  resources.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● That's the cause: order-service pins Testcontainers 1.21.4 because Docker
+  Engine 29+ rejects the 1.19.x client. I'll apply the same pin to
+  inventory-service.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● All five tests fail on assertions, as intended. Committing 14c.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 14d: the Kafka-level test. It sends the same record twice, plus a second
+  order, and expects stock to move once per order.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● It fails with the atMost timeout at line 103, which is the intended failure.
+  Committing 14d.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 14e: implementing reserve (insert-as-lock dedupe, lock-first all-or-nothing)
+  and the listener.
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 6 pass. I'll record the event contracts in the architecture doc, then
+  commit 14e.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● 14f: restart order-service with the header change and start inventory-service,
+  then drive one order through by hand.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Stock moved exactly once and the result landed on inventory.results once with
+  no unpublished rows, so I'm recording the verification as an empty commit
+  since there are no file changes. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 15. I'll read the order-service domain, persistence, service and
+  controller code, plus the frontend files that mention confirm.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● 15a: write ADR 0003.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 15b: update OrderTest, add InventoryResultHandlerTest, and add an empty
+  InventoryResultHandler.apply so the failures are assertions.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● OrderResponse.status() is a String, so I'll fix the helper.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The tests fail on assertions as intended, and the three ignore cases already
+  pass. Committing 15b.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 15c: implement the result consumer and remove the manual confirm endpoint.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Backend tests pass (17) and the frontend type-checks. Committing 15c.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 15d: a standalone e2e/ module that only talks HTTP.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll show red-then-green honestly. First, order-service restarted on the new
+  code with inventory-service stopped, so the e2e test should fail.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Red, as expected, with both timing out at 30 s. Now I'll start
+  inventory-service and run it again.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Green: the e2e run printed nothing under -q, and the DB shows CONFIRMED and
+  REJECTED orders. Committing 15d, making sure target/ isn't added.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 15e: the outage drill by hand. I'll stop inventory-service, create two orders,
+  check lag, restart it and watch both confirm.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● MSYS_NO_PATHCONV mangled //F, so inventory never stopped and that run proves
+  nothing. Redoing it properly.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both stayed PENDING with lag 2 during the outage. After restart the killed
+  consumer's old group session may still need to expire, so I'll wait a bit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both orders confirmed on their own after the restart (the consumer rejoined
+  the group after the killed one's session expired). The README has no mention
+  of a manual confirm. Committing 15e.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 16a: the failing ConsumerFailureKafkaTest (poison goes to the DLT without
+  blocking, a transient failure is retried).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The poison test fails at the DLT timeout as intended. The transient test
+  already passes, because Spring's default handler retries. Committing 16a.
+  Ran 1 shell command (ctrl+o to expand)
+
+● 16b: the DefaultErrorHandler with exponential backoff and a counting
+  dead-letter recoverer.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Inventory is green. Now the same treatment for order-service's
+  inventory.results listener, plus the inventory.results.DLT topic.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● I'm moving the dead-letter replayer test into its own class, since the shared
+  DLT's poison record would make the "second call returns 0" check depend on
+  test order. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The shell choked on the combined heredocs and nothing ran. I'll write the
+  files with the Write tool instead.
+
+● Write(services\inventory-service\src\main\java\com\orderflow\inventory\admin\D
+       eadLetterReplayer.java)
+  ⎿  Wrote 82 lines to services\inventory-service\src\main\java\com\orderfl
+     ow\inventory\admin\DeadLetterReplayer.java
+       1 package com.orderflow.inventory.admin;
+       2
+       3 import com.orderflow.inventory.config.KafkaConfig;
+       4 import java.time.Duration;
+       5 import java.util.List;
+       6 import java.util.Map;
+       7 import java.util.Properties;
+       8 import java.util.concurrent.TimeUnit;
+       9 import org.apache.kafka.clients.consumer.ConsumerConfig;
+      10 import org.apache.kafka.clients.consumer.ConsumerRecord;
+     … +94 lines (ctrl+o to expand)
+
+● Write(services\inventory-service\src\main\java\com\orderflow\inventory\admin\D
+       eadLetterController.java)
+  ⎿  Wrote 21 lines to services\inventory-service\src\main\java\com\orderfl
+     ow\inventory\admin\DeadLetterController.java
+       1 package com.orderflow.inventory.admin;
+       2
+         nalOnProperty;
+       4 import org.springframework.web.bind.annotation.PostMapping;
+       5 import org.springframework.web.bind.annotation.RestController;
+       7 /** PLAN step 16c: POST /admin/dlt/replay returns the number of
+         dead letters replayed. */
+       8 @RestController
+         alue = "true")
+      10 public class DeadLetterController {
+     … +14 lines (ctrl+o to expand)
+
+● Write(services\inventory-service\src\test\java\com\orderflow\inventory\messagi
+       ng\DeadLetterReplayKafkaTest.java)
+  ⎿  Wrote 133 lines to services\inventory-service\src\test\java\com\orderf
+     low\inventory\messaging\DeadLetterReplayKafkaTest.java
+      1 package com.orderflow.inventory.messaging;
+      2
+      3 import static org.assertj.core.api.Assertions.assertThat;
+      5 import static org.mockito.ArgumentMatchers.any;
+      6 import static org.mockito.Mockito.doThrow;
+      7 import static org.springframework.test.web.servlet.request.MockMv
+        cRequestBuilders.post;
+        ResultMatchers.content;
+      9 import static org.springframework.test.web.servlet.result.MockMvc
+        ResultMatchers.status;
+     … +165 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 9/9 pass. Committing 16c.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 16d: restart both services on the new code (admin replay enabled on inventory)
+  and run the poison-record drill by hand.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The order was still PENDING after 15 s, probably the consumer-group rejoin
+  delay again. I'll check it now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The poison record sits on the DLT, failing on a missing message-id header, and
+  the replay returned to the DLT as expected without a fix. The normal order is
+  CONFIRMED with lag 0, and I'm committing 16d next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 17a. First the inventory-side GET /stock/{sku} with its test.
+
+● Write(services\inventory-service\src\main\java\com\orderflow\inventory\web\Sto
+       ckController.java)
+  ⎿  Wrote 30 lines to services\inventory-service\src\main\java\com\orderfl
+     ow\inventory\web\StockController.java
+       1 package com.orderflow.inventory.web;
+       2
+       3 import org.springframework.http.HttpStatus;
+       4 import org.springframework.jdbc.core.simple.JdbcClient;
+       5 import org.springframework.web.bind.annotation.GetMapping;
+       7 import org.springframework.web.bind.annotation.RestController;
+       8 import org.springframework.web.server.ResponseStatusException;
+       9
+      10 /** PLAN step 17a: read-only stock lookup used by order-service
+         (a convenience for the UI, not part of order creation). */
+     … +25 lines (ctrl+o to expand)
+
+● Write(services\inventory-service\src\test\java\com\orderflow\inventory\web\Sto
+       ckControllerTest.java)
+  ⎿  Wrote 50 lines to services\inventory-service\src\test\java\com\orderfl
+     ow\inventory\web\StockControllerTest.java
+       1 package com.orderflow.inventory.web;
+       3 import static org.springframework.test.web.servlet.request.MockM
+         vcRequestBuilders.get;
+       4 import static org.springframework.test.web.servlet.result.MockMv
+       5 import static org.springframework.test.web.servlet.result.MockMv
+         cResultMatchers.status;
+       7 import org.junit.jupiter.api.BeforeEach;
+       8 import org.junit.jupiter.api.Test;
+       9 import org.springframework.beans.factory.annotation.Autowired;
+         utoConfigureMockMvc;
+     … +50 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the order-service client, with Resilience4j in 17b.
+
+● Write(services\order-service\src\main\java\com\orderflow\order\stock\StockInfo
+       .java)
+  ⎿  Wrote 12 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\stock\StockInfo.java
+       1 package com.orderflow.order.stock;
+       2
+       4
+       5 /** Stock levels of one SKU as seen through inventory-service. {
+         @code available == null} means "unknown". */
+         eserved) implements Serializable {
+       7
+       8     /** Fallback value: we do not know, which is not the same as
+       9     public static StockInfo unknown(String sku) {
+      10         return new StockInfo(sku, null, null);
+     … +5 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\stock\StockClie
+       nt.java)
+  ⎿  Wrote 21 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\stock\StockClient.java
+       1 package com.orderflow.order.stock;
+       2
+       3 import org.springframework.stereotype.Component;
+       5
+       6 /**
+       7  * PLAN step 17a: synchronous call to inventory-service. Not par
+         t of order creation, so orders are still accepted
+         ath keeps orders correct.
+       9  */
+      10 @Component
+     … +14 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\config\Inventor
+       yClientConfig.java)
+  ⎿  Wrote 21 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\config\InventoryClientConfig.java
+       1 package com.orderflow.order.config;
+       2
+       3 import org.springframework.beans.factory.annotation.Value;
+       4 import org.springframework.context.annotation.Bean;
+       5 import org.springframework.context.annotation.Configuration;
+         ctory;
+       7 import org.springframework.web.client.RestClient;
+       8
+       9 @Configuration
+      10 public class InventoryClientConfig {
+     … +16 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\web\StockContro
+       ller.java)
+  ⎿  Wrote 28 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\web\StockController.java
+       1 package com.orderflow.order.web;
+       2
+       3 import com.orderflow.order.stock.StockClient;
+       4 import com.orderflow.order.stock.StockInfo;
+       5 import io.swagger.v3.oas.annotations.Operation;
+       6 import io.swagger.v3.oas.annotations.tags.Tag;
+       7 import org.springframework.web.bind.annotation.GetMapping;
+       8 import org.springframework.web.bind.annotation.PathVariable;
+       9 import org.springframework.web.bind.annotation.RequestMapping;
+      10 import org.springframework.web.bind.annotation.RestController;
+     … +20 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\test\java\com\orderflow\order\stock\StockClie
+       ntTest.java)
+  ⎿  Wrote 27 lines to services\order-service\src\test\java\com\orderflow\o
+     rder\stock\StockClientTest.java
+       1 package com.orderflow.order.stock;
+       2
+       4 import static org.springframework.test.web.client.match.MockRest
+         RequestMatchers.requestTo;
+       5 import static org.springframework.test.web.client.response.MockR
+       6
+       7 import org.junit.jupiter.api.Test;
+       8 import org.springframework.http.MediaType;
+         ;
+      10 import org.springframework.web.client.RestClient;
+     … +25 lines (ctrl+o to expand)
+  Ran 3 shell commands (ctrl+o to expand)
+
+● 17b: dependencies and the failing breaker test first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(services\order-service\src\test\java\com\orderflow\order\stock\StockClie
+       ntResilienceTest.java)
+  ⎿  Wrote 106 lines to services\order-service\src\test\java\com\orderflow\
+     order\stock\StockClientResilienceTest.java
+      1 package com.orderflow.order.stock;
+      3 import static org.assertj.core.api.Assertions.assertThat;
+      4 import static org.awaitility.Awaitility.await;
+      5 import static org.springframework.test.web.client.ExpectedCount.m
+      6 import static org.springframework.test.web.client.ExpectedCount.t
+        imes;
+        equestMatchers.requestTo;
+      8 import static org.springframework.test.web.client.response.MockRe
+        stResponseCreators.withServerError;
+        stResponseCreators.withSuccess;
+     … +123 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The test compile error looks like a main-compile problem upstream, so I'll
+  look at the compile output directly.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The earlier compile error was a stale incremental build. Now the tests fail
+  correctly: the 500s propagate because there's no breaker yet. Committing the
+  failing test, then implementing.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● That change is my own edit, and all 20 tests pass. Now the UI part (stock
+  shown next to the form, "unknown" for the fallback). I'll look at the form
+  first.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now the live breaker check: restart order-service, stop inventory, hit
+  /api/stock/SKU-1, then bring inventory back.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Verified live: breaker OPEN with fast "unknown" fallbacks while inventory was
+  down, and CLOSED again after restart. Committing 17b.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 17c: Redis cache. First I'll move the stub config into a shared test class,
+  then write the cache test.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(services\order-service\src\test\java\com\orderflow\order\stock\StockServ
+       iceCacheTest.java)
+  ⎿  Wrote 67 lines to services\order-service\src\test\java\com\orderflow\o
+     rder\stock\StockServiceCacheTest.java
+       1 package com.orderflow.order.stock;
+       3 import static org.assertj.core.api.Assertions.assertThat;
+       4 import static org.springframework.test.web.client.ExpectedCount.
+         once;
+         RequestMatchers.requestTo;
+       6 import static org.springframework.test.web.client.response.MockR
+       7 import static org.springframework.test.web.client.response.MockR
+         estResponseCreators.withSuccess;
+       8
+      10 import org.junit.jupiter.api.Test;
+     … +73 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both of those changes are mine. The one failing test just adds expectations
+  after a request was made, so I'll declare both up front (the stub is ordered
+  by default).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 22 pass. Now the live check against the compose Redis: a cache key with a
+  TTL, repeated reads, and Redis stopped.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● With Redis stopped the endpoint hung past 5 s, so the cache isn't degrading
+  gracefully yet. Lettuce's default timeouts are too long, so I'll set short
+  ones.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● It answers now, at about 1 s per call (the failed cache get plus the failed
+  put, 500 ms each), and health stays UP. Writing ADR 0005 and committing 17c.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 18. 18a: Keycloak in the compose file with a realm import.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● 18a is verified: all three users get tokens with sub and realm_access.roles.
+  Committing.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 18b: add the security dependencies and the failing MockMvc test first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(services\order-service\src\test\java\com\orderflow\order\web\SecurityTes
+       t.java)
+  ⎿  Wrote 51 lines to services\order-service\src\test\java\com\orderflow\o
+     rder\web\SecurityTest.java
+       1 package com.orderflow.order.web;
+       3 import static org.assertj.core.api.Assertions.assertThat;
+       4 import static org.springframework.security.test.web.servlet.requ
+         est.SecurityMockMvcRequestPostProcessors.jwt;
+         vcRequestBuilders.get;
+       6 import static org.springframework.test.web.servlet.result.MockMv
+       7
+       8 import org.junit.jupiter.api.Test;
+       9 import org.springframework.beans.factory.annotation.Autowired;
+         utoConfigureMockMvc;
+     … +55 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The "relation orders does not exist" error is unexpected, since Flyway runs in
+  the other tests. I'll look at the Flyway log for this run.
+
+  Ran 1 shell command (ctrl+o to expand)
+● That was a one-off flake: Flyway ran fine this time, and the only failure is
+  the intended 401 on the docs endpoint. Committing the failing test, then
+  implementing the config.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\config\Security
+       Config.java)
+  ⎿  Wrote 53 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\config\SecurityConfig.java
+       1 package com.orderflow.order.config;
+       2
+       3 import java.util.Collection;
+       4 import java.util.List;
+       5 import java.util.Map;
+       7 import org.springframework.context.annotation.Configuration;
+       8 import org.springframework.core.convert.converter.Converter;
+       9 import org.springframework.http.HttpMethod;
+      10 import org.springframework.security.authentication.AbstractAuthe
+         nticationToken;
+     … +59 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll drop the unused import, then check with real Keycloak tokens against the
+  running service.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Real tokens work: 401 without one, 200 with one, 401 for garbage. The e2e test
+  would now get 401s, so I'll make it fetch a token as alice before committing
+  18b.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● 18c: ownership. Failing HTTP-level tests first (they compile against the
+  current code).
+
+● Write(services\order-service\src\test\java\com\orderflow\order\web\OrderOwners
+       hipTest.java)
+  ⎿  Wrote 106 lines to services\order-service\src\test\java\com\orderflow\
+     order\web\OrderOwnershipTest.java
+       1 package com.orderflow.order.web;
+       3 import static org.springframework.security.test.web.servlet.requ
+         est.SecurityMockMvcRequestPostProcessors.jwt;
+         vcRequestBuilders.get;
+       5 import static org.springframework.test.web.servlet.request.MockM
+       6 import static org.springframework.test.web.servlet.result.MockMv
+         cResultMatchers.jsonPath;
+         cResultMatchers.status;
+       8
+      10 import com.orderflow.order.outbox.OutboxRepository;
+     … +122 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All four fail on assertions. Committing, then the implementation.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now the main refactor: Caller, ForbiddenException, service, repository,
+  controller, and the existing tests and frontend.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 29 pass. Now the frontend (drop customerId), the e2e body, and the
+  403-vs-404 note in security.md.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The e2e fails only because the running order-service is still the old build.
+  I'll restart it and rerun.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The ownership behaviour holds against real Keycloak tokens, and the e2e
+  passes. Committing 18c.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 18d, backend half: a CorsConfigurationSource and a MockMvc preflight test.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Backend CORS passes. Now the frontend: oidc-client-ts, an in-memory token,
+  bearer headers, and 401/403 handling.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The frontend builds. I'll fill the OWASP table with evidence I can actually
+  point to, and mark A06 as pending step 22 instead of claiming it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 19. First the schema, since the seed script has to match it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 19a: write the seed script and load the copy. Order-service must be stopped
+  first, because CREATE DATABASE ... TEMPLATE needs no open connections.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Only 829 MB is free on C:, so a 3-million-row load could fill the disk; I'm
+  parameterizing the script and running 300,000 rows here, and noting that in
+  perf.md. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● order_lines only has the 19 original rows, so the second insert failed. I'll
+  look at the error.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The duplicate lines came from the insert also touching older dev orders that
+  already had lines. I'm restricting it to orders with no lines and rerunning
+  with rows=0 to fill only the gaps. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The 300k-order copy is loaded (600k lines, 122 MB), and 604 MB of disk
+  remains. Committing 19a, then 19b: a paginated, newest-first list.
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Constraints on request params need @Validated and a 400 mapping. I'll add
+  both, plus a pagination test.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 32 tests pass. Now 19b's measurement: EXPLAIN (ANALYZE, BUFFERS) three times
+  each for the three candidate queries on orders_perf.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The measurements are in. Let me capture Q2's plan too, then write the "before"
+  section of perf.md.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● 19c: the migration, then run order-service against orders_perf so Flyway
+  applies it for real.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Flyway applied V4 on orders_perf. Now the "after" measurements (five runs),
+  the old index's usage, and the write cost of the extra index.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The customer query went from about 2.6 ms to 0.17 ms, so I'll drop the old
+  (customer_id, status) index in V5 since no application query uses it.
+  · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Migrations V4 and V5 are applied to both databases, and the 32 tests pass on
+  clean containers. Committing 19c, then taking the final numbers for 19d.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● For a fair "median of five" I'll recreate the old index state inside a
+  rolled-back transaction and take five "before" runs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Run-to-run noise is large (1.0–5.8 ms), so I'll report both runs honestly and
+  lean on buffer counts, which are stable. Writing 19d into perf.md.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 20a. First the existing hook template in phase2/frontend.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Backend first: the failing SSE test.
+
+● Write(services\order-service\src\test\java\com\orderflow\order\web\OrderStream
+       Test.java)
+  ⎿  Wrote 79 lines to services\order-service\src\test\java\com\orderflow\o
+     rder\web\OrderStreamTest.java
+      1 package com.orderflow.order.web;
+      3 import static org.assertj.core.api.Assertions.assertThat;
+      4 import static org.awaitility.Awaitility.await;
+      5 import static org.springframework.security.test.web.servlet.reque
+      6 import static org.springframework.test.web.servlet.request.MockMv
+        cRequestBuilders.get;
+        cRequestBuilders.post;
+      8 import static org.springframework.test.web.servlet.result.MockMvc
+        ResultMatchers.request;
+        ResultMatchers.status;
+     … +90 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The test fails on the missing stream, as intended. I'll commit it, then
+  implement.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● 33 tests pass. Now the frontend hook with @microsoft/fetch-event-source.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now a live end-to-end check of the stream with curl: alice opens the stream,
+  creates an order, and the CONFIRMED event should arrive without any polling.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The heartbeats work, but no status event arrived. Order-service's results
+  consumer probably hadn't rejoined its group after the kill. I'll check the
+  order's status now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The stream works live: the CONFIRMED event arrives for the owner without
+  polling (the earlier miss was just the consumer rejoin delay after the
+  restart). Committing 20a.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 20b: React Testing Library. First the tooling and config.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The newest vitest needs Vite 6+, and the project is on Vite 5, so I'll use the
+  vitest 2.x line that supports it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(frontend\src\App.test.tsx)  ⎿  Wrote 115 lines to frontend\src\App.test.tsx
+       1 import { act, render, screen, waitFor } from '@testing-library/r
+         eact';
+       2 import userEvent from '@testing-library/user-event';
+       4 import { App } from './App';
+       5 import * as api from './api';
+       6
+       7 // the tests look at what the user sees and does (labels, roles,
+       8 vi.mock('./api', async (importOriginal) => {
+       9   const actual = await importOriginal<typeof import('./api')>();
+      10   return {
+     … +128 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 6 pass and tsc is clean. Now the sanity check the plan asks for: rename
+  the submit button's label and confirm the tests fail.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Renaming the button breaks 3 tests, and restoring it brings back all 6.
+  Committing 20b.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Playwright needs a Chromium download, and disk is tight, so I'll check free
+  space first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Only 159 MB free on C: now. I'll check what Docker is holding before deciding
+  anything.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Docker has nothing to reclaim, and the low disk space is mostly the host's
+  own. Since a full Chromium download won't fit, I'm checking whether Microsoft
+  Edge is installed so Playwright can drive it instead. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Edge is there. Writing the Playwright config, a Keycloak login in globalSetup,
+  and the three flows.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The click never returns, which suggests the Keycloak redirect is stalling. Let
+  me look at where the page actually ends up.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The stock lookup fires before sign-in, gets a 401, and triggers a login
+  redirect that races the button, which is a bug in my UI. I'm changing it to
+  look up stock only once signed in. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The login itself worked, but the app shows no username: with only the openid
+  scope, Keycloak's id token has no preferred_username. I'll request the profile
+  scope too.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Still stuck, so I need to see the page after the Keycloak login instead of
+  guessing.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The token exchange returns 400 because React StrictMode runs the effect twice,
+  so the one-time code is redeemed twice. I'll make initAuth run once and share
+  the result.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Login works now and 3 of 4 pass. The bob test fails only because an empty <ul>
+  counts as hidden, so I'll assert it's attached instead.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The bob test passes, but now the CONFIRMED test fails when it passed a moment
+  ago. Let me read the failure.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The order stays PENDING for the whole 15 s. Time to see where the pipeline
+  stalls.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The pipeline is healthy, so this is a UI race where the CONFIRMED event lands
+  before the post-create list refresh, letting the older list overwrite the
+  newer status. I'll keep the latest event per order and apply it over any
+  fetched list. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Two things: my new unit test counts calls across tests (mock call history
+  isn't cleared), and Playwright still fails intermittently. Fixing the unit
+  test first, then looking at the flaky failure.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Four failures in a row now. First question: is the order still PENDING in the
+  database, or did the UI just miss the update?
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The backend confirms each order within about a second, so the UI isn't
+  receiving the event. I'll test whether the stream passes through the Vite
+  proxy.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The proxy passes events fine, so the problem is in the browser. I'll watch the
+  stream request from inside Playwright.
+
+  Ran 1 shell command (ctrl+o to expand)
+● The browser's stream request never logs a response, so I suspect the response
+  headers are only flushed at the first byte. I'll measure when bytes actually
+  arrive, directly and through the proxy.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The dev proxy only delivers the response headers at the server's first write,
+  so the browser's fetch and onopen wait for the first heartbeat; I'm sending an
+  initial comment on connect to fix that at the source. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Headers now arrive immediately. The missing CONFIRMED event is just the
+  consumer-group rejoin delay after I killed order-service (up to 45 s). I'll
+  wait it out, then rerun.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The server side is fixed (event 0.9 s after creation), but a Playwright test
+  still fails. I'll see exactly which one and what it received.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The REJECTED test passes only because it matches an older row with the same
+  quantity, so I'm giving it a unique oversized quantity. Next I'll check why
+  the CONFIRMED row stays PENDING in the browser. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The emitter loop died on Spring 6.1's AsyncRequestNotUsableException, which
+  isn't an IOException, so the stale connection from StrictMode's aborted mount
+  escaped the catch. I'm changing it to catch any send failure and drop that
+  emitter. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Still one failure. I'll check which test it is and what the server logged this
+  time.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The SSE path now works in the browser, and the CONFIRMED failure was real:
+  earlier test runs drained SKU-1's stock, so I'm restoring the seed stock and
+  using smaller unique quantities. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Playwright is at 3 of 3 passing, including the browser login check. Next I'll
+  run the clean-start sequence from the plan, which wipes the local dev
+  databases and Keycloak test data. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Passes from a clean start. Committing 20c (which also includes the SSE hub
+  fixes and the UI race fixes found along the way).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● My commit accidentally included the saved Keycloak session cookies in
+  frontend/e2e/.auth/, because my ignore rule was anchored to the repo root.
+  Since the commit is local and unpushed, I'm fixing the ignore rule and
+  amending it. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The ignore rule is fixed, the session files are out of the commit, and nothing
+  was pushed. Moving on to step 21a, with the failing metrics test first.
+
+● Write(services\order-service\src\test\java\com\orderflow\order\web\MetricsTest
+       .java)
+  ⎿  Wrote 70 lines to services\order-service\src\test\java\com\orderflow\o
+     rder\web\MetricsTest.java
+       1 package com.orderflow.order.web;
+       2
+       4 import static org.springframework.security.test.web.servlet.requ
+         est.SecurityMockMvcRequestPostProcessors.jwt;
+       5 import static org.springframework.test.web.servlet.request.MockM
+       6 import static org.springframework.test.web.servlet.result.MockMv
+         cResultMatchers.status;
+       7
+       9 import java.util.UUID;
+      10 import org.junit.jupiter.api.BeforeEach;
+     … +79 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Failing on the missing meters, as intended. Committing the test, then the
+  implementation.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 36 tests pass. Now the Grafana side: datasource uid first, then a provisioned
+  dashboard.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Both targets are UP. Now I'll create some orders and check that each panel's
+  query returns data, and that Grafana provisioned the dashboard.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● The Prometheus export names the counter orderflow_orders_total, not the
+  planned orderflow_orders_created_total, so I'm using the real name in the
+  dashboard. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The dashboard is provisioned and all four panels return live values (0.5
+  orders/s while creating). Committing 21a.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 21b: the promtool unit test first, mounted into the Prometheus container.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The test fails against the placeholder rules, as intended. Committing it, then
+  writing the real rules.
+
+  Ran 1 shell command (ctrl+o to expand)
+● The promtool test passes against the real rules, so I'm running the real
+  trigger next: order-service with the publisher off, creating orders while I
+  watch the alert go from Pending to Firing. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The alert went Pending, then Firing, from the real publisher stoppage.
+  Restarting order-service with the publisher on so the three held events go
+  out, then committing 21b.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 21c is next, the hardest one; I'm writing the correlation-id tests first,
+  then wiring trace propagation through the outbox and checking the trace in
+  Jaeger. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All five new assertions fail for the right reason. Committing, then
+  implementing across both services.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the implementation, order-service first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The shell choked on the long heredoc, so nothing ran. I'll create the new
+  files with the Write tool and apply the edits from a script file.
+
+● Write(services\order-service\src\main\java\com\orderflow\order\outbox\OutboxTr
+       ace.java)
+  ⎿  Wrote 47 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\outbox\OutboxTrace.java
+       1 package com.orderflow.order.outbox;
+       2
+       3 import io.micrometer.tracing.Span;
+       4 import io.micrometer.tracing.Tracer;
+       5 import io.micrometer.tracing.propagation.Propagator;
+       6 import java.util.HashMap;
+       7 import java.util.Map;
+       8 import org.springframework.stereotype.Component;
+       9
+      10 /**
+     … +43 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\java\com\orderflow\order\web\Correlation
+       IdFilter.java)
+  ⎿  Wrote 41 lines to services\order-service\src\main\java\com\orderflow\o
+     rder\web\CorrelationIdFilter.java
+       1 package com.orderflow.order.web;
+       2
+       3 import jakarta.servlet.FilterChain;
+       4 import jakarta.servlet.ServletException;
+       5 import jakarta.servlet.http.HttpServletRequest;
+       6 import jakarta.servlet.http.HttpServletResponse;
+       7 import java.io.IOException;
+       8 import java.util.UUID;
+       9 import java.util.regex.Pattern;
+      10 import org.slf4j.MDC;
+     … +37 lines (ctrl+o to expand)
+
+● Write(services\order-service\src\main\resources\db\migration\V6__outbox_trace_
+       and_correlation.sql)
+  ⎿  Wrote 4 lines to services\order-service\src\main\resources\db\migratio
+     n\V6__outbox_trace_and_correlation.sql
+      1 -- Carry the request's trace and correlation id across the outbox
+        : the publisher runs later on a scheduler thread
+      2 -- with no current span, so without these two columns the trace w
+        ould stop at the database (PLAN step 21c).
+      3 ALTER TABLE outbox ADD COLUMN trace_context  TEXT;   -- W3C trace
+        parent of the request that wrote the row
+      4 ALTER TABLE outbox ADD COLUMN correlation_id TEXT;
+
+● Write(services\order-service\src\main\java\com\orderflow\order\outbox\OutboxPu
+       blisher.java)
+  ⎿  Added 20 lines, removed 4 lines
+       1  package com.orderflow.order.outbox;
+       2  
+       3  import com.orderflow.order.config.KafkaConfig;
+       4 +import io.micrometer.tracing.Span;                             
+       5 +import io.micrometer.tracing.Tracer;                           
+       6  import java.nio.charset.StandardCharsets;
+       7  import java.util.concurrent.TimeUnit;
+       8  import org.apache.kafka.clients.producer.ProducerRecord;
+       9  import org.slf4j.Logger;
+      10  import org.slf4j.LoggerFactory;
+      11 +import org.slf4j.MDC;                                          
+      12  import org.springframework.boot.autoconfigure.condition.Conditi
+          onalOnProperty;
+      13  import org.springframework.kafka.core.KafkaTemplate;
+      14  import org.springframework.scheduling.annotation.Scheduled;
+     ...
+      28  
+      29      private final OutboxRepository repo;
+      30      private final KafkaTemplate<String, String> kafka;
+      31 +    private final OutboxTrace trace;                           
+      32  
+      29 -    public OutboxPublisher(OutboxRepository repo, KafkaTemplate
+         -<String, String> kafka) {                                      
+      33 +    public OutboxPublisher(OutboxRepository repo, KafkaTemplate
+         +<String, String> kafka, OutboxTrace trace) {                   
+      34          this.repo = repo;
+      35          this.kafka = kafka;
+      36 +        this.trace = trace;                                    
+      37      }
+      38  
+      39      @Scheduled(fixedDelayString = "${orderflow.outbox.poll-ms:5
+          00}")
+      40      @Transactional
+      41      public void publishPending() {
+      42          for (OutboxEvent event : repo.findTop100ByPublishedAtIs
+          NullOrderByCreatedAt()) {
+      38 -            try {                                              
+      43 +            // continue the trace of the request that wrote the
+         + row, so the Kafka send is a child of its span                 
+      44 +            Span span = trace.startChild(event.getTraceContext(
+         +), "outbox publish");                                          
+      45 +            if (event.getCorrelationId() != null) {            
+      46 +                MDC.put("correlationId", event.getCorrelationId
+         +());                                                           
+      47 +            }                                                  
+      48 +            try (Tracer.SpanInScope ignored = trace.inScope(spa
+         +n)) {                                                          
+      49                  // message-id = outbox row id: stable across re
+          -sends, so consumers can dedupe on it
+      50                  ProducerRecord<String, String> record = new Pro
+          ducerRecord<>(
+      51                          KafkaConfig.ORDERS_EVENTS_TOPIC, event.
+          getAggregateId(), event.getPayload());
+      52                  record.headers().add("message-id", event.getId(
+          ).toString().getBytes(StandardCharsets.UTF_8));
+      53 +                if (event.getCorrelationId() != null) {        
+      54 +                    record.headers().add("correlation-id", even
+         +t.getCorrelationId().getBytes(StandardCharsets.UTF_8));        
+      55 +                }                                              
+      56                  kafka.send(record).get(5, TimeUnit.SECONDS);
+      57                  // Only after the broker acked; saved on commit
+           through dirty checking.
+      58                  event.markPublished();
+     ...
+      60                  Thread.currentThread().interrupt();
+      61                  return;
+      62              } catch (Exception e) {
+      50 -                // Do not rethrow: that would roll back markPub
+         -lished() of events already sent in this                        
+      51 -                // batch. Stop at the first failure so later ev
+         -ents do not overtake the failed one.                           
+      63 +                // Do not rethrow: that would roll back markPub
+         +lished() of events already sent in this batch.                 
+      64 +                // Stop at the first failure so later events do
+         + not overtake the failed one.                                  
+      65                  log.warn("Failed to publish outbox event {}; wi
+          ll retry on next poll", event.getId(), e);
+      66                  break;
+      67 +            } finally {                                        
+      68 +                span.end();                                    
+      69 +                MDC.remove("correlationId");                   
+      70              }
+      71          }
+      72      }
+
+  Made 1 scratchpad edit +67, ran 1 shell command (ctrl+o to expand)
+
+● 40 order-service tests pass, including the new correlation tests; those
+  diagnostics were from before the pom and entity edits landed. Now the same
+  wiring in inventory-service.
+
+● Write(services\inventory-service\src\main\java\com\orderflow\inventory\outbox\
+       OutboxTrace.java)
+  ⎿  Wrote 47 lines to services\inventory-service\src\main\java\com\orderfl
+     ow\inventory\outbox\OutboxTrace.java
+       1 package com.orderflow.inventory.outbox;
+       2
+       3 import io.micrometer.tracing.Span;
+       4 import io.micrometer.tracing.Tracer;
+       5 import io.micrometer.tracing.propagation.Propagator;
+       6 import java.util.HashMap;
+       7 import java.util.Map;
+       8 import org.springframework.stereotype.Component;
+       9
+      10 /**
+     … +43 lines (ctrl+o to expand)
+
+● Write(services\inventory-service\src\main\java\com\orderflow\inventory\outbox\
+       OutboxPublisher.java)
+  ⎿  Added 18 lines, removed 3 lines
+       1  package com.orderflow.inventory.outbox;
+       2  
+       3  import com.orderflow.inventory.config.KafkaConfig;
+       4 +import io.micrometer.tracing.Span;                             
+       5 +import io.micrometer.tracing.Tracer;                           
+       6  import java.nio.charset.StandardCharsets;
+       7  import java.util.concurrent.TimeUnit;
+       8  import org.apache.kafka.clients.producer.ProducerRecord;
+       9  import org.slf4j.Logger;
+      10  import org.slf4j.LoggerFactory;
+      11 +import org.slf4j.MDC;                                          
+      12  import org.springframework.boot.autoconfigure.condition.Conditi
+          onalOnProperty;
+      13  import org.springframework.kafka.core.KafkaTemplate;
+      14  import org.springframework.scheduling.annotation.Scheduled;
+     ...
+      17  
+      18  /**
+      19   * Copy of order-service's OutboxPublisher (ADR 0002): poll unp
+          ublished rows, send to inventory.results
+      17 - * (key = aggregateId, header message-id = row id), wait for th
+         -e ack, then mark published.                                    
+      20 + * (key = aggregateId, headers message-id = row id and correlat
+         +ion-id), wait for the ack, then mark published.                
+      21   * Delivery is at-least-once, so consumers must be idempotent.
+      22   */
+      23  @Component
+     ...
+      27  
+      28      private final OutboxRepository repo;
+      29      private final KafkaTemplate<String, String> kafka;
+      30 +    private final OutboxTrace trace;                           
+      31  
+      28 -    public OutboxPublisher(OutboxRepository repo, KafkaTemplate
+         -<String, String> kafka) {                                      
+      32 +    public OutboxPublisher(OutboxRepository repo, KafkaTemplate
+         +<String, String> kafka, OutboxTrace trace) {                   
+      33          this.repo = repo;
+      34          this.kafka = kafka;
+      35 +        this.trace = trace;                                    
+      36      }
+      37  
+      38      @Scheduled(fixedDelayString = "${orderflow.outbox.poll-ms:5
+          00}")
+      39      @Transactional
+      40      public void publishPending() {
+      41          for (OutboxEvent event : repo.findTop100ByPublishedAtIs
+          NullOrderByCreatedAt()) {
+      37 -            try {                                              
+      42 +            Span span = trace.startChild(event.getTraceContext(
+         +), "outbox publish");                                          
+      43 +            if (event.getCorrelationId() != null) {            
+      44 +                MDC.put("correlationId", event.getCorrelationId
+         +());                                                           
+      45 +            }                                                  
+      46 +            try (Tracer.SpanInScope ignored = trace.inScope(spa
+         +n)) {                                                          
+      47                  ProducerRecord<String, String> record = new Pro
+          ducerRecord<>(
+      48                          KafkaConfig.INVENTORY_RESULTS_TOPIC, ev
+          ent.getAggregateId(), event.getPayload());
+      49                  record.headers().add("message-id", event.getId(
+          ).toString().getBytes(StandardCharsets.UTF_8));
+      50 +                if (event.getCorrelationId() != null) {        
+      51 +                    record.headers().add("correlation-id", even
+         +t.getCorrelationId().getBytes(StandardCharsets.UTF_8));        
+      52 +                }                                              
+      53                  kafka.send(record).get(5, TimeUnit.SECONDS);
+      54                  event.markPublished();
+      55              } catch (InterruptedException e) {
+     ...
+      59                  // Do not rethrow: that would roll back markPub
+          lished() of events already sent in this batch.
+      60                  log.warn("Failed to publish outbox event {}; wi
+          ll retry on next poll", event.getId(), e);
+      61                  break;
+      62 +            } finally {                                        
+      63 +                span.end();                                    
+      64 +                MDC.remove("correlationId");                   
+      65              }
+      66          }
+      67      }
+
+● Write(services\inventory-service\src\main\resources\db\migration\V3__outbox_tr
+       ace_and_correlation.sql)
+  ⎿  Wrote 3 lines to services\inventory-service\src\main\resources\db\migr
+     ation\V3__outbox_trace_and_correlation.sql
+      1 -- Carry the trace and correlation id of the consumed record acro
+        ss the outbox (PLAN step 21c), same as order-service V6.
+      2 ALTER TABLE outbox ADD COLUMN trace_context  TEXT;
+      3 ALTER TABLE outbox ADD COLUMN correlation_id TEXT;
+
+● Write(services\inventory-service\src\main\java\com\orderflow\inventory\web\Cor
+       relationIdFilter.java)
+  ⎿  Wrote 35 lines to services\inventory-service\src\main\java\com\orderfl
+     ow\inventory\web\CorrelationIdFilter.java
+       1 package com.orderflow.inventory.web;
+       2
+       3 import jakarta.servlet.FilterChain;
+       4 import jakarta.servlet.ServletException;
+       5 import jakarta.servlet.http.HttpServletRequest;
+       6 import jakarta.servlet.http.HttpServletResponse;
+       7 import java.io.IOException;
+       8 import java.util.UUID;
+       9 import java.util.regex.Pattern;
+      10 import org.slf4j.MDC;
+     … +29 lines (ctrl+o to expand)
+
+  Made 1 scratchpad edit +57, ran 1 shell command (ctrl+o to expand)
+
+● Both services pass (40 and 11 tests). Now the live check: restart both, send
+  one order with a known correlation id, then look for one trace across both
+  services in Jaeger and grep both logs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The same trace id (6dbfe307…) and the correlation id demo-corr-7 show up in
+  both services' logs. Now the trace in Jaeger.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● One end-to-end trace now spans both services, covering the outbox publish, the
+  orders.events exchange and the inventory.results reply; I'm committing it as
+  21c next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 22. Creating a GitHub repo and pushing the code, publishing images to
+  GHCR, and branch protection are outward-facing, so I won't do them without
+  your say-so. First, whether a remote exists.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● There's already an origin and a .github/workflows/ci.yml; I'll only commit
+  locally and leave pushing to you. Let me compare the current CI file with the
+  plan's template.
+
+  Ran 1 shell command (ctrl+o to expand)
+● 22a: update ci.yml (backend matrix, frontend with npm ci and cache), add
+  CodeQL and Dependabot configs, and validate them locally.
+
+● Write(.github\workflows\ci.yml)
+  ⎿  Added 22 lines, removed 13 lines
+       6  
+       7  # Jobs run in parallel by default, each on its own fresh machin
+          e
+       8  jobs:
+       9 -  # Builds and tests the Spring Boot API                       
+       9 +  # Builds and tests both Spring Boot services (one matrix entr
+         +y per service, run in parallel)                                
+      10    backend:
+      11 -    # GitHub-hosted Linux virtual machine, wiped after the job 
+      11 +    # GitHub-hosted Linux virtual machine, wiped after the job.
+         + ubuntu-latest has Docker, so the                              
+      12 +    # Testcontainers tests (PostgreSQL, Kafka, Redis) run uncha
+         +nged; the first run pulls the images and is slow.              
+      13      runs-on: ubuntu-latest
+      13 -    # Steps run in order; if one fails, the rest are skipped an
+         -d the job fails                                                
+      14 +    strategy:                                                  
+      15 +      matrix:                                                  
+      16 +        service: [order-service, inventory-service]            
+      17      steps:
+      18        # Clone the repository onto the runner (without this the 
+          machine has no code)
+      19        - uses: actions/checkout@v4
+     ...
+      24          with: { distribution: temurin, java-version: '21', cach
+          e: maven }
+      25        # Compile, run the tests and build the jar; -B (batch mod
+          e) removes colors/progress bars from logs.
+      26        # A compile error or failing test makes this step, and th
+          e job, fail.
+      24 -      - run: mvn -B package                                    
+      27 +      - run: mvn -B verify                                     
+      28          # Run the command in the folder that contains pom.xml
+      26 -        working-directory: services/order-service              
+      29 +        working-directory: services/${{ matrix.service }}      
+      30  
+      28 -  # Builds the React/TypeScript frontend                       
+      31 +  # Tests and builds the React/TypeScript frontend             
+      32    frontend:
+      33      runs-on: ubuntu-latest
+      34 +    defaults:                                                  
+      35 +      run:                                                     
+      36 +        working-directory: frontend                            
+      37      steps:
+      38        # Jobs don't share files, so this job clones the reposito
+          ry again
+      39        - uses: actions/checkout@v4
+      40        # Install Node.js
+      41        - uses: actions/setup-node@v4
+      36 -        # Node 22 matches the local version                    
+      37 -        with: { node-version: '22' }                           
+      38 -      # Install the dependencies listed in package.json        
+      39 -      - run: npm install                                       
+      40 -        working-directory: frontend                            
+      41 -      # Run the "build" script in package.json (type-checks and
+         - bundles with Vite); type errors fail the job                  
+      42 +        # Node 22 matches the local version; cache: npm saves t
+         +he downloaded packages between runs                            
+      43 +        with:                                                  
+      44 +          node-version: '22'                                   
+      45 +          cache: npm                                           
+      46 +          cache-dependency-path: frontend/package-lock.json    
+      47 +      # npm ci installs exactly what package-lock.json says (an
+         +d fails if it disagrees with package.json)                     
+      48 +      - run: npm ci                                            
+      49 +      # Vitest + React Testing Library (step 20b)              
+      50 +      - run: npm test                                          
+      51 +      # Type-checks and bundles with Vite; type errors fail the
+         + job                                                           
+      52        - run: npm run build
+      43 -        working-directory: frontend                            
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The exact CI commands pass locally (mvn verify in both services, npm ci, npm
+  test, npm run build). I couldn't run the workflow on GitHub without pushing.
+  Committing 22a.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Disk is down to 922 MB, too little to build three images locally without
+  risking the host disk, so I'll write and validate the image, compose,
+  Kubernetes and Terraform files without building, then check which tools are
+  available. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Writing the 22b image files: Dockerfiles (moved and corrected),
+  .dockerignores, frontend Dockerfile and nginx config.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The Dockerfiles lint clean (a real build isn't possible on this disk). Now the
+  GHCR publish job in ci.yml.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 22c: the apps compose profile and Kafka's second listener (so containers reach
+  kafka:29092 while the host keeps localhost:9092).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both configs validate. I'll recreate Kafka and Keycloak with the new settings
+  and prove the second listener works from a second container on the compose
+  network.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both listeners work and the health checks report healthy. Now confirm the
+  host-run services and the e2e test still work against the reconfigured stack.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● 22d: an e2e CI job (the Java e2e on every push, Playwright on main only) that
+  uploads logs and reports on failure, plus docs/ci.md.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 22e needs the GitHub Security tab, which only exists after a push, so I can't
+  do that part. What I can do locally is look at known dependency findings,
+  starting with npm audit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All the findings are in the dev toolchain (Vite dev server, esbuild, vitest)
+  rather than the shipped bundle, but they're real. I'll try the major-version
+  upgrade once and revert if it breaks the build or tests. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The upgrade didn't resolve, so nothing changed, and npm test now picks up the
+  Playwright specs in e2e/ and fails, which would break CI. I'm fixing that
+  first. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Upgraded to Vite 7 and Vitest 5: 0 vulnerabilities, types clean, tests and
+  build pass. Checking the browser tests still run on the new Vite.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The Playwright tests pass on Vite 7. I'll log the findings honestly in
+  security.md and commit 22e as partial.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 23. kind isn't installed and there's no disk for a node image, so I'll
+  write the manifests and render them with kubectl kustomize. Let me see what's
+  there.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Writing the Kubernetes manifests: Postgres, a single-node Kafka, a shared
+  config, and the two services finished with probes and resources.
+
+● Write(phase2\infra\k8s\postgres.yaml)
+  ⎿  Wrote 63 lines to phase2\infra\k8s\postgres.yaml
+       1 # Throwaway PostgreSQL for the kind cluster: no persistent volum
+         e, dev-only credentials.
+         y crash and never become Ready.
+       3 apiVersion: v1
+       4 kind: Secret
+       6   name: db-credentials
+       7 type: Opaque
+       8 stringData:
+      10   POSTGRES_PASSWORD: orderflow          # dev only; real deploym
+         ents take this from a secret store (step 24: Secrets Manager)
+     … +57 lines (ctrl+o to expand)
+
+● Write(phase2\infra\k8s\kafka.yaml)
+  ⎿  Wrote 45 lines to phase2\infra\k8s\kafka.yaml
+       1 # Single-node Kafka (KRaft) for the kind cluster. It advertises
+         kafka:9092, the name of the Service below, which is
+         ner rule of step 11b: clients connect to what the
+       3 # broker advertises). No persistent volume: the data is gone whe
+         n the pod restarts.
+       5 kind: Deployment
+       6 metadata:
+       7   name: kafka
+       9   replicas: 1
+      10   selector:
+     … +47 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The manifests render (12 objects). I'll commit 23a (dependencies) and 23b
+  (services) separately, as the plan splits them.
+
+  Ran 1 shell command (ctrl+o to expand)
+● 23c: the kind job in CI.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Without valid AWS credentials, a Terraform binary, or enough disk for the AWS
+  provider, I can't plan or apply anything, so I'm drafting the Terraform as an
+  unvalidated file for review, starting with making the Keycloak URL
+  configurable at runtime. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The Dockerfile's ENV line came out with a literal \n. I'll fix it directly and
+  re-lint.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The runtime config works (Playwright still passes). Committing that, then
+  writing the Terraform in stages: 24a is network, ECR, RDS, secrets and the
+  database-init task.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(phase2\infra\terraform\main.tf)
+  ⎿  Added 14 lines, removed 8 lines
+       1  terraform {
+       2    required_version = ">= 1.6"
+       3    required_providers {
+       4 -    aws = { source = "hashicorp/aws", version = "~> 5.0" }     
+       4 +    aws    = { source = "hashicorp/aws", version = "~> 5.0" }  
+       5 +    random = { source = "hashicorp/random", version = "~> 3.6" 
+         +}                                                              
+       6    }
+       7 +  # State is LOCAL (one person, one machine). Never commit terr
+         +aform.tfstate: it contains the generated passwords.            
+       8 +  # Move to an S3 backend with `use_lockfile = true` before sha
+         +ring; see ADR 0006.                                            
+       9  }
+      10  
+      11  provider "aws" {
+      12    region = var.region
+      13 +  default_tags {                                               
+      14 +    tags = { Project = var.project }                           
+      15 +  }                                                            
+      16  }
+      17  
+      12 -# PLAN step 17: build these up one at a time, running `terrafor
+         -m plan` after each.                                            
+      13 -# - networking (VPC, subnets, security groups)                 
+      14 -# - ECR repositories                                           
+      15 -# - RDS PostgreSQL                                             
+      16 -# - Kafka (MSK Serverless OR a single container, your choice; n
+         -ote cost)                                                      
+      17 -# - ECS cluster, task definitions, services (rolling deploy), A
+         -LB                                                             
+      18 -# - Secrets Manager entries                                    
+      18 +data "aws_availability_zones" "available" {                    
+      19 +  state = "available"                                          
+      20 +}                                                              
+      21 +                                                               
+      22 +locals {                                                       
+      23 +  azs = slice(data.aws_availability_zones.available.names, 0, 2
+         +)                                                              
+      24 +}                                                              
+
+● Write(phase2\infra\terraform\variables.tf)
+  ⎿  Added 21 lines
+       2    type    = string
+       3    default = "us-east-1"
+       4  }
+       5 +                                                               
+       6 +variable "project" {                                           
+       7 +  type    = string                                             
+       8 +  default = "orderflow"                                        
+       9 +}                                                              
+      10 +                                                               
+      11 +variable "image_tag" {                                         
+      12 +  description = "Tag of the three application images in ECR (us
+         +e the commit SHA, so a deploy or rollback names one build)"    
+      13 +  type        = string                                         
+      14 +  default     = "latest"                                       
+      15 +}                                                              
+      16 +                                                               
+      17 +variable "budget_email" {                                      
+      18 +  description = "Address that gets the AWS Budget alerts. Requi
+         +red: set the budget before creating anything that costs money."
+      19 +  type        = string                                         
+      20 +}                                                              
+      21 +                                                               
+      22 +variable "budget_usd" {                                        
+      23 +  type    = number                                             
+      24 +  default = 10                                                 
+      25 +}                                                              
+
+● Write(phase2\infra\terraform\network.tf)
+  ⎿  Wrote 178 lines to phase2\infra\terraform\network.tf
+       1 # VPC with two availability zones. Public subnets hold the ALB A
+         ND the ECS tasks (with public IPs): there is no NAT gateway
+         e the only guard. Acceptable for a demo; written down in
+       3 # ADR 0006. RDS lives in the private subnets and is not reachabl
+         e from the internet.
+       5 resource "aws_vpc" "main" {
+       6   cidr_block           = "10.0.0.0/16"
+       7   enable_dns_support   = true
+       9   tags                 = { Name = var.project }
+      10 }
+     … +182 lines (ctrl+o to expand)
+
+● Now ECR, RDS with the Secrets Manager password, the ECS base (cluster, roles,
+  logs), the database-init task and the budget.
+
+● Write(phase2\infra\terraform\data.tf)
+  ⎿  Wrote 71 lines to phase2\infra\terraform\data.tf
+       1 # ECR repositories, the RDS instance with a generated password i
+         n Secrets Manager, and the AWS Budget.
+       2
+       3 resource "aws_budgets_budget" "monthly" {
+       4   name         = "${var.project}-monthly"
+       6   limit_amount = tostring(var.budget_usd)
+       7   limit_unit   = "USD"
+       8   time_unit    = "MONTHLY"
+       9
+      10   notification {
+     … +67 lines (ctrl+o to expand)
+
+● Write(phase2\infra\terraform\ecs_base.tf)
+  ⎿  Wrote 88 lines to phase2\infra\terraform\ecs_base.tf
+       1 # ECS cluster, log groups, IAM roles, and the one-off task that
+         creates the two databases inside RDS
+          reachable from inside the VPC).
+       3
+       4 resource "aws_ecs_cluster" "main" {
+       6 }
+       7
+       8 locals {
+         , "kafka", "keycloak", "db-init"]
+      10 }
+     … +91 lines (ctrl+o to expand)
+
+● Write(phase2\infra\terraform\outputs.tf)
+  ⎿  Wrote 16 lines to phase2\infra\terraform\outputs.tf
+       1 output "ecr_repositories" {
+       2   value = { for name, repo in aws_ecr_repository.app : name => r
+         epo.repository_url }
+       4
+       5 output "rds_endpoint" {
+       6   value = aws_db_instance.db.address
+       7 }
+       9 # Run once after the first apply, before the services start; it
+         creates the two databases inside RDS.
+      10 output "db_init_command" {
+     … +11 lines (ctrl+o to expand)
+
+● ecs_base.tf refers to a Keycloak admin secret, so I'll define it with the
+  other secrets, start ADR 0006, and commit 24a.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now 24b: service discovery, the ALB, and the five ECS services (order,
+  inventory, frontend, Kafka, Keycloak).
+
+● Write(phase2\infra\terraform\alb.tf)
+  ⎿  Wrote 84 lines to phase2\infra\terraform\alb.tf
+       1 # Public entry point. HTTP only: with no domain there is no ACM
+         certificate (ADR 0006, README).
+       2 #   /api/*                   -> order-service
+         rough the same hostname)
+       4 #   everything else          -> frontend (nginx)
+       5
+       6 resource "aws_lb" "main" {
+       8   load_balancer_type = "application"
+       9   security_groups    = [aws_security_group.alb.id]
+      10   subnets            = aws_subnet.public[*].id
+     … +77 lines (ctrl+o to expand)
+
+● Write(phase2\infra\terraform\ecs_services.tf)
+  ⎿  Wrote 328 lines to phase2\infra\terraform\ecs_services.tf
+       1 # The five ECS services. Kafka and Keycloak are single container
+       2
+       3 locals {
+       4   alb_url      = "http://${aws_lb.main.dns_name}"
+         ual the token's iss claim, i.e. Keycloak's KC_HOSTNAME
+       6   image        = { for name, repo in aws_ecr_repository.app : na
+       7   db_secret    = aws_secretsmanager_secret.db.arn
+       8   log_options  = { for name, group in aws_cloudwatch_log_group.a
+         pp : name => {
+      10     "awslogs-region"        = var.region
+     … +377 lines (ctrl+o to expand)
+
+● Adding the ALB output, rewriting the Terraform README, and ignoring state
+  files before committing 24b.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 25a comes before the 24c deploy-under-load run: I'm rewriting the k6
+  script to fetch per-user Keycloak tokens, drop the unused Idempotency-Key, mix
+  SKUs and use a constant arrival rate, and first checking whether k6 can be
+  installed. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● winget is hanging, most likely on a UAC prompt. I'll stop it and use the
+  portable k6 release instead, unpacked into its own scratchpad folder.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The k6 binary was blocked, so I'll commit the script as written and use a
+  small Python load generator for steps 25 and 26, labeling those numbers as not
+  k6. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(scripts\load_orders.py)
+  ⎿  Wrote 82 lines to scripts\load_orders.py
+       1 #!/usr/bin/env python3
+         brary only).
+       3
+          k6 could not be installed. It does the same thing:
+       5 fetch one token per user from Keycloak, then start a fixed numbe
+       6 whether or not earlier ones have finished), mixing SKU-1 and SKU
+         -2. Numbers from this tool are NOT k6 numbers and must
+       8
+       9   python scripts/load_orders.py --rate 20 --duration 180 --label
+      10 """
+     … +96 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The stand-in passed (200 of 200 at 20/s, p95 40 ms), so I'm now running the
+  warm-up, three 60-second runs at 50 orders/s, and then the ramp, sampling
+  outbox lag as I go. · summary
+● Write(scripts\perf_run.sh)
+  ⎿  Wrote 44 lines to scripts\perf_run.sh
+      1 #!/usr/bin/env bash
+      2 # PLAN step 25b: warm-up, three runs at a steady rate, then a ram
+        p to find the first rate that breaks a threshold.
+         to drain between runs.
+      4 #   scripts/perf_run.sh <output-dir>
+      5 # Uses scripts/load_orders.py (a stand-in for k6). Needs the loca
+        l stack running (order-service on 8080, Keycloak on 8180).
+      7 OUT=${1:?output directory}
+      8 mkdir -p "$OUT"
+      9 HERE=$(cd "$(dirname "$0")" && pwd)
+     … +43 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● While that runs, 26a: the check queries and a small runner that evaluates the
+  definitions of "lost" and "duplicated".
+
+● Write(scripts\drill-check.sql)
+  ⎿  Wrote 44 lines to scripts\drill-check.sql
+       1 -- PLAN step 26a: the numbers behind "lost" and "duplicated". On
+       2 -- Run it with scripts/drill_check.py (compares the two database
+         s and prints PASS/FAIL), or by hand:
+          -T postgres psql -U orderflow -d orders    < (the "orders" bloc
+         k)
+         -- db:, -- name:) are read by drill_check.py.
+       5
+       7 -- name: orders_total
+       8 SELECT count(*) FROM orders;
+      10 -- name: orders_by_status
+     … +40 lines (ctrl+o to expand)
+
+● Write(scripts\drill_check.py)
+  ⎿  Wrote 73 lines to scripts\drill_check.py
+       1 #!/usr/bin/env python3
+       2 """Runs scripts/drill-check.sql against both databases in the co
+       3 "lost" and "duplicated" from phase2/docs/resilience.md.
+       4
+       5   python scripts/drill_check.py --created 3600        # --create
+       6
+       7 Exit code 0 only if every check passes. Needs the compose stack
+         (docker compose ... exec postgres psql).
+       9 import argparse, re, subprocess, sys
+      10 from pathlib import Path
+     … +90 lines (ctrl+o to expand)
+
+● Background command "cd "c:/Users/WJ/Desktop/Work 2023-05-12/Project/orderflow"
+&& S="C:/Users/WJ/AppData/Local/Temp/claude/c--Users-WJ-Desktop-Work-2023-05-12
+-Project-orderflow/d5ee70fe-04a6-4282-8c6b-932f6b3e90a6/scratchpad"; rm -rf
+"$S/perf1"; nohup bash scripts/perf_run.sh "$S/perf1" > "$S/perf1.log" 2>&1 &
+sleep 2; echo started; nproc 2>/dev/null; wmic cpu get
+NumberOfLogicalProcessors,Name 2>/dev/null | tail -2; wmic computersystem get
+TotalPhysicalMemory 2>/dev/null | tail -2" completed (exit code 0)
+
+● That notification is just the launcher returning. I'll check how far the perf
+  run actually got.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Still running (about 10 minutes total). Meanwhile I'll write the definitions
+  section of resilience.md.
+
+● Write(phase2\docs\resilience.md)
+  ⎿  Wrote 19 lines to phase2\docs\resilience.md
+      1 # Resilience drills (PLAN step 26)
+      3 ## Definitions (written before the drills, so the numbers can be
+      4 - **Lost** = an order that has no row in `orders` although the cl
+        ient got a `201` for it, **or** an order still `PENDING` after th
+      5   pipeline has drained (outbox lag back to 0) with nothing in the
+         after the drain,
+      7 - **Duplicated** = more stock reserved than the CONFIRMED orders
+        account for (per SKU, `reserved` against the quantity of CONFIRME
+      8   lines), **or** two rows for one request (an order with more tha
+        esult row i
+     … +25 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Waiting for the perf run to finish; I'll analyse it as soon as it does.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The perf run is still going. I'll continue once the background watcher reports
+  it finished, then summarise the numbers.
+
+● Background command "cd "c:/Users/WJ/Desktop/Work 2023-05-12/Project/orderflow"
+&& cat > phase2/load-tests/k6/create-orders.js <<'EOF' // Arrival-rate load
+test for POST /api/orders (PLAN step 25). // // k6 run
+phase2/load-tests/k6/create-orders.js # 50 orders/s for 3 minutes, local stack
+// k6 run -e RATE=50 -e DURATION=30s phase2/load-tests/k6/create-orders.js #
+smoke run // k6 run -e BASE_URL=http://<alb> -e KEYCLOAK_URL=http://<alb> ... #
+against AWS // // A VU-based test finds how many requests the system handles
+when users wait for each answer. An arrival-rate test // holds the orders per
+second constant, which is what "sustained N orders/s at p95 N ms" actually
+claims. import http from 'k6/http'; import { check, fail } from 'k6'; import {
+Counter } from 'k6/metrics'; const BASE_URL = __ENV.BASE_URL ||
+'http://localhost:8080'; const KEYCLOAK_URL = __ENV.KEYCLOAK_URL ||
+'http://localhost:8180'; const USERS = (__ENV.USERS || 'alice,bob').split(',');
+const created = new Counter('orders_created'); // counted from the 201
+responses, for the resilience drill (step 26) export const options = {
+scenarios: { orders: { executor: 'constant-arrival-rate', rate:
+Number(__ENV.RATE || 50), // iterations (orders) per second timeUnit: '1s',
+duration: __ENV.DURATION || '3m', preAllocatedVUs: 100, maxVUs: 300, }, },
+thresholds: { http_req_failed: ['rate<0.01'], http_req_duration: ['p(95)<500'],
+}, }; // One token per user, fetched once. The realm gives access tokens 30
+minutes, which covers the run. export function setup() { return USERS.map((user)
+=> { const res = http.post(
+`${KEYCLOAK_URL}/realms/orderflow/protocol/openid-connect/token`, { client_id:
+'orderflow-cli', grant_type: 'password', username: user, password:
+`${user}-dev-pw` }, ); if (res.status !== 200) fail(`could not get a token for
+${user}: ${res.status} ${res.body}`); return res.json('access_token'); }); }
+export default function (tokens) { const token = tokens[__VU % tokens.length];
+const sku = Math.random() < 0.5 ? 'SKU-1' : 'SKU-2'; // mix both SKUs const res
+= http.post( `${BASE_URL}/api/orders`, JSON.stringify({ items: [{ sku, quantity:
+1 }] }), // the owner comes from the token, not the body { headers: {
+'Content-Type': 'application/json', Authorization: `Bearer ${token}` } }, ); if
+(check(res, { created: (r) => r.status === 201 })) created.add(1); } EOF winget
+install --id GrafanaLabs.k6 -e --accept-source-agreements
+--accept-package-agreements 2>&1 | tail -4; df -h . | tail -1" completed (exit
+code 0)
+
+● That notification is the earlier winget command exiting after I killed it, so
+  it changes nothing. k6 is still not installed.
+
+  The perf run (task boythf4d3) hasn't finished yet. When it does, I'll write up
+  the numbers for 25b, then run the clean reset and the drills for step 26.
+
+● Background command
+"S="C:/Users/WJ/AppData/Local/Temp/claude/c--Users-WJ-Desktop-Work-2023-05-12-Pr
+oject-orderflow/d5ee70fe-04a6-4282-8c6b-932f6b3e90a6/scratchpad"; until grep -q
+'^done$' "$S/perf1/timeline.txt" 2>/dev/null; do sleep 5; done; echo finished"
+completed (exit code 0)
+
+● The perf run finished. Let me analyse it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● No threshold broke up to 300 orders/s, so the limit wasn't found; the
+  single-machine Python generator is probably the ceiling. I'll record that as
+  it is.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'm resetting the two dev databases to clear out earlier test data, then
+  running the 26a checker, since a dry check now would be misleading after my
+  mid-run stock reset. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● That passes trivially on an empty system, so I'll also check it against real
+  traffic: 200 orders, drain, check.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Three drills are next: Kafka stopped, inventory killed, and order-service
+  killed, each run at a steady 20 orders/s. A script drives each one, samples
+  the outbox lag, waits for the drain, and runs the checker. · summary
+
+● Write(scripts\drill.sh)
+  ⎿  Wrote 53 lines to scripts\drill.sh
+       1 #!/usr/bin/env bash
+         for the pipeline to drain, then run the checks.
+       3 #   scripts/drill.sh kafka|inventory|order <output-dir>
+         /start, not down, so the data stays)
+       5 # inventory kill inventory-service for 60 s, then start it again
+         art it again 20 s later
+       7 # Needs the local stack and both services started with mvn sprin
+       8 set -u
+       9 export MSYS_NO_PATHCONV=1
+          "$OUT"
+     … +64 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The Kafka drill is running (about 4 minutes). I'll pick it up when the watcher
+  reports it finished.
+
+● Background command
+"S="C:/Users/WJ/AppData/Local/Temp/claude/c--Users-WJ-Desktop-Work-2023-05-12-Pr
+oject-orderflow/d5ee70fe-04a6-4282-8c6b-932f6b3e90a6/scratchpad"; until grep -qE
+"ALL CHECKS PASS|CHECK\(S\) FAILED" "$S/drill-kafka/check.txt" 2>/dev/null; do
+sleep 5; done; echo drill-kafka-finished" completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The drill passed except for one check, which failed because my earlier check
+  run left 200 orders in the baseline. No orders were lost or duplicated, and
+  I'm adding a baseline option to the checker and having the drill capture it
+  automatically. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Those file changes are my own edits, and the Kafka drill now passes in full
+  with the baseline. The inventory drill is running; the watcher hit a transient
+  classifier error, so I'll retry it once.
+
+  Ran 1 shell command (ctrl+o to expand)
+● The inventory drill is under way (about 5 minutes including the restart). I'll
+  report on it, and start the order-service drill, once the watcher finishes.
+
+● Background command
+"S="C:/Users/WJ/AppData/Local/Temp/claude/c--Users-WJ-Desktop-Work-2023-05-12-Pr
+oject-orderflow/d5ee70fe-04a6-4282-8c6b-932f6b3e90a6/scratchpad"; until grep -qE
+"ALL CHECKS PASS|CHECK\(S\) FAILED" "$S/drill-inventory/check.txt" 2>/dev/null;
+do sleep 5; done; echo inventory-drill-finished" completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The inventory drill passes: orders piled up PENDING (peak 1,468) during the
+  outage and all resolved afterwards with no duplicate reservation. Now the
+  order-service kill.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The order-service kill drill is running; I'll write up all three drills once
+  it finishes.
+
+● Background command
+"S="C:/Users/WJ/AppData/Local/Temp/claude/c--Users-WJ-Desktop-Work-2023-05-12-Pr
+oject-orderflow/d5ee70fe-04a6-4282-8c6b-932f6b3e90a6/scratchpad"; until grep -qE
+"ALL CHECKS PASS|CHECK\(S\) FAILED" "$S/drill-order/check.txt" 2>/dev/null; do
+sleep 5; done; echo order-drill-finished" completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All three drills passed, though 521 of 3,600 requests during the order-service
+  kill got connection errors; since those were never acknowledged, they don't
+  count as lost under the written definition. I'm recording the results now.
+  · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 27, documentation. First a hygiene check: secrets, state files and
+  leftover placeholders.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● No secrets, state files, or placeholders remain in tracked code; the only TBDs
+  are in the README results table. I'm writing the README and the architecture
+  failure modes next. · summary
+
+● Write(README.md)
+  ⎿  Added 80 lines, removed 36 lines
+       1  # OrderFlow
+       2  
+       3 -Order management web app: **React + TypeScript** UI, **Java 21 
+         -/ Spring Boot** REST API documented with **Swagger**, **Postgre
+         -SQL** with Flyway migrations.                                  
+       4 -Later phases (Kafka messaging, Redis, security, Kubernetes, Ter
+         -raform/AWS, load tests) are kept in [`phase2/`](phase2/README.m
+         -d).                                                            
+       3 +An order-management system built to show event-driven design do
+         +ne carefully: a **React + TypeScript** UI, two **Java 21 / Spri
+         +ng Boot** services                                             
+       4 +(`order-service`, `inventory-service`) that talk through **Kafk
+         +a** with the **transactional outbox** pattern and **idempotent 
+         +consumers**,                                                   
+       5 +**PostgreSQL** with Flyway, **OAuth2/JWT** login through Keyclo
+         +ak, **Redis** cache with **Resilience4j**, and metrics, tracing
+         + and alerts                                                    
+       6 +(Prometheus, Grafana, Jaeger).                                 
+       7  
+       6 -**Status 11/01: skeleton.** Build order and "done when" checks:
+         - [docs/PLAN.md](docs/PLAN.md) (start with Phase 1).            
+       8 +```                                                            
+       9 +browser ──REST + SSE──> order-service ──(same transaction)──> o
+         +rders DB: orders + outbox                                      
+      10 +                             │ OutboxPublisher                 
+         +                                                               
+      11 +                             v                                 
+         +                                                               
+      12 +                       Kafka: orders.events ──> inventory-servi
+         +ce ──(same transaction)──> inventory DB: stock + processed_mess
+         +ages + outbox                                                  
+      13 +                             ^                                │
+         + OutboxPublisher                                               
+      14 +                             └──── inventory.results <────────┘
+         +        (retries + dead-letter topics on both consumers)       
+      15 +```                                                            
+      16  
+       8 -**Status 11/02: Phase 1 done.** Build order and "done when" che
+         -cks: [docs/PLAN.md](docs/PLAN.md) (I used [PLAN_with_two_phases
+         -.md](PLAN_with_two_phases.md)) (Continue on with Phase 2).     
+      17 +An order starts `PENDING`; inventory-service reserves stock (al
+         +l lines or none, once per message id) and answers `RESERVED` or
+         + `REJECTED`; order-service moves                               
+      18 +the order to `CONFIRMED` or `REJECTED` and pushes the change to
+         + the browser. Details: [architecture](phase2/docs/architecture.
+         +md), decisions in [`phase2/docs/adr/`](phase2/docs/adr).       
+      19  
+      20 +## Results (read the "setup / evidence" column: some numbers ar
+         +e from a stand-in tool or a reduced scale)                     
+      21 +| Metric | Result | Setup / evidence |                         
+      22 +|---|---|---|                                                  
+      23 +| Throughput (orders/s) | **At least 300 orders/s accepted with
+         + 0 failures; the limit was not found** | One i7-14700 machine r
+         +unning the load generator and the whole system together; 30 s p
+         +er step. Measured with `scripts/load_orders.py`, **not k6** (k6
+         + could not be installed). [perf.md](phase2/docs/perf.md#load-te
+         +st-plan-step-25) |                                             
+      24 +| p95 create-order latency | 32 to 57 ms at 50 orders/s; about 
+         +31 ms at 100 to 300 orders/s | same runs |                     
+      25 +| Outbox lag at the top rate | peak 26 s at 300 orders/s, drain
+         +ed 26 s after the step ended; near zero at 150/s or less | same
+         + runs |                                                        
+      26 +| Query time before/after index | **1.19 ms to 0.12 ms** (1,974
+         + to 53 buffers) for "my newest 50 orders" at **300,000 orders**
+         + (10% of the planned 3 million: the disk was nearly full) | [pe
+         +rf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |       
+      27 +| Failed requests during rolling deploy | **not measured** | th
+         +e AWS deploy was never run (no AWS account used); [Terraform](p
+         +hase2/infra/terraform/README.md) is an unvalidated draft |     
+      28 +| Orders lost / duplicated after failure drills | **0 / 0** in 
+         +three drills at 20 orders/s (Kafka stopped 60 s, inventory-serv
+         +ice killed 60 s, order-service killed) | [resilience.md](phase2
+         +/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_check.
+         +py` |                                                          
+      29 +| Security scan findings fixed | 3 advisory groups from `npm au
+         +dit` (all in dev tooling), now 0 vulnerabilities. CodeQL and De
+         +pendabot have **not run yet** (nothing pushed) | [security.md](
+         +phase2/docs/security.md) |                                     
+      30  
+      11 -## Layout                                                      
+      12 -| Path | What |                                                
+      31 +What is not done, so nobody has to guess: pushing to GitHub and
+         + the first CI run; building the Docker images and `docker compo
+         +se --profile apps`; the kind cluster;                          
+      32 +everything on AWS; the demo GIF; the k6 runs. The files for all
+         + of them are in the repository and are marked as untested where
+         + they are.                                                     
+      33 +                                                               
+      34 +## Quick start                                                 
+      35 +                                                               
+      36 +Prerequisites: JDK 21, Maven, Node 22, Docker Desktop (or Docke
+         +r Engine + the compose plugin). Give Docker about 6 GB of memor
+         +y.                                                             
+      37 +                                                               
+      38 +```bash                                                        
+      39 +# 1. Infrastructure: Postgres, Kafka, Redis, Keycloak, Jaeger, 
+         +Prometheus, Grafana                                            
+      40 +docker compose -f phase2/infra/docker-compose.full.yml up -d --
+         +wait                                                           
+      41 +                                                               
+      42 +# 2. The two services, each in its own terminal (inventory-serv
+         +ice is on :8081, order-service on :8080)                       
+      43 +cd services/inventory-service && mvn spring-boot:run           
+      44 +cd services/order-service && mvn spring-boot:run               
+      45 +                                                               
+      46 +# 3. The UI                                                    
+      47 +cd frontend && npm ci && npm run dev          # http://localhos
+         +t:5173                                                         
+      48 +```                                                            
+      49 +                                                               
+      50 +Log in at http://localhost:5173 as `alice` / `alice-dev-pw`, `b
+         +ob` / `bob-dev-pw` (customers) or `ada` / `ada-dev-pw` (admin).
+         + Throwaway development passwords.                              
+      51 +                                                               
+      52 +| What | Where |                                               
+      53  |---|---|
+      14 -| `services/order-service` | Spring Boot API (Swagger UI at `/s
+         -wagger-ui.html`) |                                             
+      15 -| `frontend` | React + TypeScript + SCSS (Vite) |              
+      16 -| `infra` | docker-compose with Postgres only |                
+      17 -| `docs` | The plan |                                          
+      18 -| `phase2` | Everything deferred until Phase 1 works |         
+      54 +| Swagger UI (press Authorize with a token) | http://localhost:
+         +8080/swagger-ui.html |                                         
+      55 +| Keycloak admin | http://localhost:8180 (admin / admin) |     
+      56 +| Grafana (OrderFlow dashboard) | http://localhost:3000 (admin 
+         +/ admin) |                                                     
+      57 +| Prometheus, Jaeger | http://localhost:9090, http://localhost:
+         +16686 |                                                        
+      58  
+      20 -## Run locally (Phase 1)                                       
+      21 -## Screenshots                                                 
+      22 -![Swagger UI](docs/images/swagger-ui.png)                      
+      23 -![Order list in the app](docs/images/app.png)                  
+      24 -## Prerequisites : JDK 21, Maven, Node 22, and Docker Desktop (
+         -or local Postgres with user orderflow, password orderflow, data
+         -base orders); schema will be populated through V1 and V2 script
+         -s in order-service\src\main\resources\db\migration are executed
+         - properly - the data migration is actually carried out by Flywa
+         -y.                                                             
+      25 -```bash (or powershell in VS Code terminal)                    
+      26 -docker compose -f infra/docker-compose.yml up -d        # Postg
+         -res (or: make db)                                              
+      27 -cd services/order-service && mvn spring-boot:run         # or: 
+         -make backend; ***make sure V1 and V2 scripts in order-service\s
+         -rc\main\resources\db\migration are executed properly.          
+      28 -cd frontend && npm install && npm run dev                 # or:
+         - make frontend                                                 
+      59 +A token for curl: `curl -s -d client_id=orderflow-cli -d grant_
+         +type=password -d username=alice -d password=alice-dev-pw http:/
+         +/localhost:8180/realms/orderflow/protocol/openid-connect/token`
+      60 +                                                               
+      61 +### Differences between Windows and Linux/macOS                
+      62 +- **Windows (Git Bash)**: put `MSYS_NO_PATHCONV=1` in front of 
+         +`docker compose exec ... /opt/kafka/...` commands, otherwise Gi
+         +t Bash rewrites the path. To stop a                            
+      63 +  service started with `mvn spring-boot:run`, find the PID with
+         + `netstat -ano | findstr :8080` and run `taskkill /F /PID <pid>
+         + /T` (in Git Bash write it as `taskkill /F ...` with `MSYS_NO_P
+         +ATHCONV=1`).                                                   
+      64 +- **Linux/macOS**: no path rewriting; stop a service with `kill
+         + $(lsof -ti :8080)`. Docker Engine needs your user in the `dock
+         +er` group for Testcontainers.                                  
+      65 +- **Docker Engine 29 or newer**: the Testcontainers version Spr
+         +ing Boot 3.3 manages is too old for it; both services pin `test
+         +containers.version` 1.21.4 in their `pom.xml`.                 
+      66 +                                                               
+      67 +### Tests                                                      
+      68 +```bash                                                        
+      69 +cd services/order-service && mvn verify        # unit + Testcon
+         +tainers (PostgreSQL, Kafka, Redis); Docker must be running     
+      70 +cd services/inventory-service && mvn verify                    
+      71 +cd frontend && npm test                         # Vitest + Reac
+         +t Testing Library                                              
+      72 +cd frontend && npx playwright test              # browser tests
+         +; needs the stack and both services running (uses installed Edg
+         +e locally, Chromium in CI)                                     
+      73 +cd e2e && mvn verify                            # HTTP end-to-e
+         +nd through both services                                       
+      74 +promtool: docker compose -f phase2/infra/docker-compose.full.ym
+         +l exec prometheus promtool test rules /etc/prometheus/alerts_te
+         +st.yml                                                         
+      75  ```
+      30 -## Try it:                                                     
+      31 -- Swagger UI: http://localhost:8080/swagger-ui.html            
+      32 -- App: http://localhost:5173                                   
+      33 -- Health: http://localhost:8080/actuator/health                
+      34 -## Screenshots                                                 
+      35 -![Swagger UI](docs/images/swagger-ui.png)                      
+      36 -![Order list in the app](docs/images/app.png)                  
+      76  
+      38 -## Phase 2 results (TBD)                                       
+      39 -| Metric | Result | Setup / evidence |                         
+      40 -|---|---|---|                                                  
+      41 -| Throughput (orders/s) | _TBD_ | |                            
+      42 -| p95 create-order latency | _TBD_ | |                         
+      43 -| Query time before/after index | _TBD_ | `phase2/docs/perf.md`
+         - |                                                             
+      44 -| Failed requests during rolling deploy | _TBD_ | |            
+      45 -| Orders lost/duplicated after failure drill | _TBD_ | |       
+      46 -| Security scan findings fixed | _TBD_ | `phase2/docs/security.
+         -md` |                                                          
+      77 +### Failure drills and load                                    
+      78 +`python scripts/load_orders.py --rate 50 --duration 60` (a stan
+         +d-in for the k6 script in `phase2/load-tests/k6/`), `scripts/pe
+         +rf_run.sh <dir>`, `scripts/drill.sh kafka|inventory|order <dir>
+         +`.                                                             
+      79 +Pipeline and CI: [docs/ci.md](docs/ci.md). Build plan and "done
+         + when" checks: [PLAN_with_two_phases.md](PLAN_with_two_phases.m
+         +d).                                                            
+      80 +                                                               
+      81 +## Layout                                                      
+      82 +| Path | What |                                                
+      83 +|---|---|                                                      
+      84 +| `services/order-service` | orders API, outbox publisher, inve
+         +ntory-result consumer, SSE stream, stock lookup with circuit br
+         +eaker and Redis cache |                                        
+      85 +| `services/inventory-service` | stock reservation (idempotent,
+         + all-or-nothing), its own outbox, dead-letter replay, stock end
+         +point |                                                        
+      86 +| `frontend` | React + TypeScript (Vite), OIDC login with PKCE,
+         + live status; Vitest and Playwright tests |                    
+      87 +| `e2e` | HTTP end-to-end tests against the running stack |    
+      88 +| `phase2/infra` | docker-compose, Keycloak realm, Prometheus r
+         +ules, Grafana dashboard, Kubernetes manifests, Terraform draft 
+         +|                                                              
+      89 +| `phase2/docs` | architecture, ADRs 0001 to 0006, security, pe
+         +rformance, resilience |                                        
+      90 +| `scripts` | seed data, load generator, drill and check script
+         +s |                                                            
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I worked through steps 13f to 27 and committed after every substep, 49 commits
+  in all. About half of it ran for real. The rest is written but untested,
+  because this machine blocked it. Nothing is pushed, and no AWS or GitHub
+  action was taken.
+
+  What ran and passed
+  - Tests: 40 tests in order-service, 12 in inventory-service, 7 in the
+    frontend, 4 Playwright tests, and the HTTP e2e test. The Playwright tests
+    pass from a clean docker compose down -v start.
+  - Pipeline checks:
+    - 14, 15, 16: stock reservation is all-or-nothing and idempotent. Order
+      status comes from inventory's result. Poison messages go to a dead-letter
+      topic and can be replayed.
+    - 17 and 18: circuit breaker and Redis cache, tried live with the dependency
+      down. Keycloak login, ownership by token sub, and CORS.
+    - 20: live status over server-sent events.
+    - 21: metrics, a provisioned Grafana dashboard, and an alert that went
+      Pending then Firing for real. One Jaeger trace now spans 12 spans across
+      both services.
+  - Database tuning (19): the "my newest orders" query went from 1.19 ms to 0.12
+    ms (1,974 to 53 buffers).
+  - Failure drills (26): I stopped Kafka for 60 s, killed inventory-service for
+    60 s, and killed order-service, under 20 orders/s. Result: 0 orders lost and
+    0 duplicated reservations.
+
+  What is only drafted
+  - Docker, compose apps profile, kind and CI jobs: docker build --check and
+    kubectl kustomize are clean, but no image was built. The C: drive had under
+    1 GB free.
+  - Terraform (24): an unvalidated draft. There is no terraform binary and no
+    valid AWS credentials. No deploy, deploy-under-load run or destroy happened.
+  - GitHub (22): no push, so no CodeQL, Dependabot or branch protection.
+
+  Deviations to know about
+  - k6 never ran. The classifier blocked a binary download. The 25b numbers (at
+    least 300 orders/s, 0 failures, limit not found) come from
+    scripts/load_orders.py, labelled "not k6". The k6 script itself is written
+    but never executed.
+  - Index test scale: 300,000 orders, not 3 million, because of the disk. This
+    is stated in perf.md and the README.
+  - Playwright drives the installed Edge locally, since a Chromium download
+    didn't fit.
+  - No demo GIF and no fresh-clone walkthrough.
+  - Lag alert: it did not fire in the 60 s Kafka drill. for: 2m can't be met by
+    a 60 s outage.
+  - Counter name: Prometheus exports orderflow.orders.created as
+    orderflow_orders_total, so the dashboard uses that.
+
+  Things I got wrong or changed along the way
+  - I briefly committed Playwright session cookies (frontend/e2e/.auth). I fixed
+    the ignore rule and amended that unpushed commit; they are not in history.
+  - One earlier git add -A also committed your notes/chat_export_... file.
+  - Real bugs the browser tests exposed are fixed: the SSE response headers, a
+    dead-connection exception, a UI race, and a double code exchange under
+    StrictMode. npm test was also picking up the Playwright specs, which would
+    have failed CI.
+  - Upgrading to Vite 7 and Vitest 5 cleared the npm audit findings (3 advisory
+    groups).
+
+  State of your machine
+  - The dev databases were truncated for the drills, and orders_perf was
+    dropped.
+  - Both services and the Vite dev server are still running.
+  - C: has about 1 GB free.
+
+  Pushing and the first real CI run is the sensible next step, once you've freed
+  disk space. It is also where the untested image, compose and kind jobs get
+  their first test.

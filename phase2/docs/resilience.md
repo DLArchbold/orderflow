@@ -15,6 +15,15 @@
 `scripts/drill-check.sql` holds the queries, one set per database; `python scripts/drill_check.py --created <orders the client got 201 for>`
 runs them against the compose Postgres and prints PASS or FAIL for each definition above. It must pass on a clean system before any drill.
 
+## What "acknowledged" means (request path)
+1. The browser sends `POST /orders` with its JWT to order-service (port 8080). 2. Filters validate the token and set the correlation id.
+3. `OrderService.create` runs one transaction in the orders database: `orders` + `order_lines` + an `outbox` row (`OrderCreated`). 4. The transaction commits.
+5. Order-service writes the HTTP `201` (status `PENDING`) back to the browser. That `201` is the acknowledgement; Kafka and inventory-service are not involved yet.
+After that, asynchronously: `OutboxPublisher` sends the row to `orders.events` and marks it published after Kafka's ack; inventory-service reserves stock and writes its own
+outbox row; its publisher sends the result to `inventory.results`; order-service's listener sets `CONFIRMED` or `REJECTED` and pushes it to the browser over SSE.
+The one gap is between step 4 and step 5: if the process dies there, the order exists but the client never saw the `201`. In drill 3 this did not happen (the order count
+matched the `201`s exactly), but nothing in the design rules it out.
+
 ## Drills
 Setup for all three: the local stack (order-service and inventory-service started with `mvn spring-boot:run`), `scripts/load_orders.py` (a stand-in for k6, which
 could not be installed) at a steady **20 orders/s for 180 s**, the disruption starting 30 s into the load, then waiting until no order is PENDING and running
@@ -25,7 +34,7 @@ were kept in the run directories (not committed; the numbers are quoted here).
 |---|---|---|---|
 | Disruption | `docker compose stop kafka` at +30 s, `start` 62 s later | process killed at +30 s, started again 60 s later | `taskkill /F` at +30 s, started 20 s later |
 | Orders sent / answered `201` | 3,600 / 3,600 | 3,600 / 3,600 | 3,600 / 3,079 |
-| API errors | **0** (kept returning 201) | **0** | 521 connection errors (the API itself was down for about 26 s: 20 s plus start-up); never acknowledged, so not "lost" |
+| API errors | **0** (kept returning 201) | **0** | 521 connection errors (the API itself was down for about 26 s: 20 s plus start-up; mostly refused connections, a few in flight); never acknowledged, so not "lost", but a customer would have seen an error and had to resubmit |
 | Latency p95 of the 201s | 45 ms | 34 ms | 4,100 ms (requests that started just before the kill waited on a dead connection) |
 | Outbox lag peak | 64 s | 0.5 s | 0.5 s |
 | PENDING orders peak | 1,296 | 1,468 | 369 |
@@ -42,10 +51,19 @@ What was seen
 - **Drill 2 (consumer).** Orders stayed PENDING while inventory-service was down (the events wait in `orders.events`), the outbox lag stayed near zero (order-service
   was healthy), and every order reached CONFIRMED after the restart. After a kill the restarted consumer waits for the old group member's session to expire, which
   delayed the catch-up by up to 45 s. No stock was reserved twice (`reserved` equals the CONFIRMED quantity, per SKU).
-- **Drill 3 (publisher).** Nothing acknowledged was lost. Requests in flight at the moment of the kill failed on the client side (that is the 521), and the rows
-  already committed were published by the restarted instance. Both services' outbox tables ended with 0 unpublished rows.
+- **Drill 3 (order-service killed, the whole process).** `taskkill /F /PID <pid> /T` killed the JVM on port 8080, so the controller, `OrderService`, `OutboxPublisher`, the
+  `inventory.results` listener and the SSE stream were all down together; not only the publisher. Inventory-service, Kafka, Postgres and Redis kept running.
+  Nothing acknowledged (see What "acknowledged" means (request path) above) was lost. About 26 s of downtime at 20 requests/s explains the 521 failed requests: most found nothing listening on port 8080 (connection refused)
+  and only a few were in flight when the process died. None of them got a `201`, so none counts as an accepted order. The PENDING peak (369) is the results waiting
+  because nothing was applying them while order-service was down. After the restart the publisher sent the rows already committed, the listener applied the waiting
+  results, and both services' outbox tables ended with 0 unpublished rows.
+  Not run: a drill that stops only the publisher (orders would keep returning 201 and stay PENDING while the outbox lag grew, like drill 1).
 - **Duplicate records on the topic were not counted** (see the definitions); what was checked is that they caused no duplicated effect: the per-SKU reservations equal
   the CONFIRMED quantities exactly and `processed_messages` equals the number of orders.
+
+Limits of the "0 lost" claim: it covers orders the client got a `201` for. Requests that failed during the order-service outage are not counted, and the API has
+no `Idempotency-Key`, so a client that retries after a lost response could create a second order. Order-service also runs one replica (two would publish the same outbox
+rows), so a crash is an outage of the create API until it restarts.
 
 Not captured: a Grafana screenshot for each drill (the image renderer plugin is not installed); the lag and PENDING samples above stand in for it. The optional
 Kafka-outage-long-enough-to-fire-the-alert drill was not run.
