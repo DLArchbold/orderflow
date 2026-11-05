@@ -1,0 +1,52 @@
+# promtool unit test for alerts.yml (PLAN step 21b):
+#   docker compose -f phase2/infra/docker-compose.full.yml exec prometheus promtool test rules /etc/prometheus/alerts_test.yml
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+
+tests:
+  # the outbox lag rises above 60 s at minute 2 and stays there: pending after 3 min, firing after 4 min (for: 2m)
+  - interval: 1m
+    input_series:
+      - series: 'orderflow_outbox_lag_seconds{job="order-service"}'
+        values: '0 0 100 100 100 100 100'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: OutboxLagHigh
+        exp_alerts: []
+      - eval_time: 3m          # above 60 for only 1 minute so far: still pending, not firing
+        alertname: OutboxLagHigh
+        exp_alerts: []
+      - eval_time: 4m          # above 60 for 2 minutes: firing
+        alertname: OutboxLagHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: order-service
+            exp_annotations:
+              summary: "Oldest unpublished outbox row is older than 60 s for 2 minutes"
+
+  # a lag that stays below the threshold never fires
+  - interval: 1m
+    input_series:
+      - series: 'orderflow_outbox_lag_seconds{job="order-service"}'
+        values: '0 5 30 10 0 0 0'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: OutboxLagHigh
+        exp_alerts: []
+
+  # one dead-lettered message fires the DLT alert
+  - interval: 1m
+    input_series:
+      - series: 'orderflow_dlt_messages_total{job="inventory-service"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DeadLetterQueueGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: inventory-service
+            exp_annotations:
+              summary: "Messages are being dead-lettered"
