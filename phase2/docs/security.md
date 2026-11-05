@@ -28,3 +28,7 @@ until a domain and certificate exist.
 
 ## Scan findings fixed
 List each real CodeQL / Dependabot finding you fixed (date, what, how). Count them honestly.
+
+## Known exposure
+- `/actuator/prometheus` of order-service is open without a token so Prometheus can scrape it. It must only be reachable
+  inside the private network (step 23 NetworkPolicy / step 24 security group), never from the public ALB.

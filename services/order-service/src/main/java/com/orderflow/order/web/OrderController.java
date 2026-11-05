@@ -13,6 +13,8 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 import com.orderflow.order.service.Caller;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
@@ -32,7 +34,10 @@ public class OrderController {
     private static final String ID_EXAMPLE = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 
     private final OrderService service;
-    public OrderController (OrderService service){
+    private final Counter ordersCreated;
+
+    public OrderController (OrderService service, MeterRegistry meters){
+        this.ordersCreated = Counter.builder("orderflow.orders.created").description("Orders created").register(meters);
         //Utilize Spring's Dependency Injection to assign service reference here to OrderService Singleton instance
         this.service = service;
     }
@@ -62,6 +67,7 @@ public class OrderController {
                                                        Authentication auth) {
         // the owner is the verified token's subject, never a value from the body
         OrderResponse created = service.create(auth.getName(), request);
+        ordersCreated.increment();   // after the service returned, so a rolled-back create is not counted
         return ResponseEntity.created(URI.create("/api/orders/" + created.id())).body(created);
     }
 

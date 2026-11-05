@@ -67,13 +67,21 @@ resilience4j:
         max-concurrent-calls: 10
         max-wait-duration: 0
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true     # /actuator/health/liveness and /readiness for Kubernetes (step 23)
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true   # needed for histogram_quantile (p95) in Grafana
   health:
     redis:
       enabled: false      # the cache is optional; a Redis outage must not make the service unready
   endpoints:
     web:
       exposure:
-        include: health,info,circuitbreakers
+        include: health,info,circuitbreakers,prometheus
 springdoc:
   swagger-ui:
     path: /swagger-ui.html    # open http://localhost:8080/swagger-ui.html

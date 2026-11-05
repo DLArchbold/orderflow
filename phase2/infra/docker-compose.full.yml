@@ -50,6 +50,7 @@ services:
     image: grafana/grafana:11.3.0
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["3000:3000"]
 
   keycloak:          # http://localhost:8180 (admin / $KEYCLOAK_ADMIN_PASSWORD, default admin); dev mode, not production-grade
