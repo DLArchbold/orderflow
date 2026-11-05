@@ -38,6 +38,7 @@ def run(db, sql):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--created", type=int, required=True, help="orders the load generator got a 201 for")
+    ap.add_argument("--baseline", type=int, default=0, help="orders already in the database before the load started")
     args = ap.parse_args()
 
     r = {name: run(db, sql) for db, name, sql in parse(Path(__file__).with_name("drill-check.sql"))}
@@ -47,7 +48,7 @@ def main():
     totals = {sku: int(q) for sku, q in r["stock_available_plus_reserved"]}
 
     checks = [
-        ("lost: orders created (201) vs rows in orders", args.created, one("orders_total"), lambda a, b: a == b),
+        (f"lost: baseline {args.baseline} + orders created (201) vs rows in orders", args.baseline + args.created, one("orders_total"), lambda a, b: a == b),
         ("lost: orders still PENDING after the drain (expected 0)", 0, one("orders_still_pending"), lambda a, b: a == b),
         ("lost: unpublished outbox rows, order-service (expected 0)", 0, one("orders_outbox_unpublished"), lambda a, b: a == b),
         ("lost: unpublished outbox rows, inventory-service (expected 0)", 0, one("inventory_outbox_unpublished"), lambda a, b: a == b),
