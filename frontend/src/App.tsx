@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { getUserName, initAuth, login, logout } from './auth';
+import { useOrderStream } from './hooks/useOrderStream';
 import { Order, StockInfo, cancelOrder, createOrder, getStock, listOrders } from './api';
 
 export function App() {
@@ -41,6 +42,14 @@ export function App() {
         setError(e.message);
       });
   }, []);
+
+  // PENDING -> CONFIRMED / REJECTED arrives here without a refresh
+  useOrderStream({
+    enabled: signedIn === true,
+    onStatus: (orderId, status) =>
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: status as Order['status'] } : o))),
+    onReconnect: () => void refresh(),
+  });
 
   const run = (action: Promise<unknown>) =>
     action.then(refresh).catch((e: Error) => setError(e.message));

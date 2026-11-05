@@ -21,9 +21,11 @@ public class InventoryResultHandler {
     private static final Logger log = LoggerFactory.getLogger(InventoryResultHandler.class);
 
     private final OrderRepository orders;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
-    public InventoryResultHandler(OrderRepository orders) {
+    public InventoryResultHandler(OrderRepository orders, org.springframework.context.ApplicationEventPublisher events) {
         this.orders = orders;
+        this.events = events;
     }
 
     public void apply(UUID orderId, String result) {
@@ -46,5 +48,8 @@ public class InventoryResultHandler {
             case "REJECTED" -> order.reject();
             default -> throw new IllegalArgumentException("unknown inventory result: " + result);
         }
+        // delivered to browsers only after this transaction commits (OrderStatusBroadcaster)
+        events.publishEvent(new com.orderflow.order.stream.OrderStatusChanged(
+                order.getId(), order.getCustomerId(), order.getStatus().name()));
     }
 }
