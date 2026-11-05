@@ -24,6 +24,11 @@ spring:
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+orderflow:
+  consumer:
+    backoff-initial-ms: 1000
+    backoff-max-ms: 10000
+    max-attempts: 3
 management:
   tracing:
     sampling:

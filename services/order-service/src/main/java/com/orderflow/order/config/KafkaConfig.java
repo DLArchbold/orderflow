@@ -17,6 +17,13 @@ public class KafkaConfig {
     /** Topic inventory-service writes results to and order-service listens on. */
     public static final String INVENTORY_RESULTS_TOPIC = "inventory.results";
 
+    public static final String INVENTORY_RESULTS_DLT = "inventory.results.DLT";
+
+    @Bean
+    public NewTopic inventoryResultsDlt() {
+        return TopicBuilder.name(INVENTORY_RESULTS_DLT).partitions(1).replicas(1).build();
+    }
+
     @Bean
     public NewTopic inventoryResultsTopic() {
         return TopicBuilder.name(INVENTORY_RESULTS_TOPIC).partitions(1).replicas(1).build();
