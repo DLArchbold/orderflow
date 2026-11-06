@@ -20,12 +20,12 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 ## Results (read the "setup / evidence" column: some numbers are from a stand-in tool or a reduced scale)
 | Metric | Result | Setup / evidence |
 |---|---|---|
-| Throughput (orders/s) | **At least 300 orders/s accepted with 0 failures; the limit was not found** | One i7-14700 machine running the load generator and the whole system together; 30 s per step. Measured with `scripts/load_orders.py`, **not k6** (k6 could not be installed). [perf.md](phase2/docs/perf.md#load-test-plan-step-25) |
-| p95 create-order latency | 32 to 57 ms at 50 orders/s; about 31 ms at 100 to 300 orders/s | same runs |
-| Outbox lag at the top rate | peak 26 s at 300 orders/s, drained 26 s after the step ended; near zero at 150/s or less | same runs |
-| Query time before/after index | **about 60 ms to 0.2 ms** (19,252 to 53 buffers) for "my newest 50 orders" at **3,000,000 orders** (a customer with 30,031 orders) | [perf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |
+| Throughput (orders/s) | **400 orders/s accepted with 0 failures; the API's limit is between 400 and 600** (at 600/s p95 was 1.33 s and 0.12% of requests failed). Orders reach CONFIRMED at about **220/s** once a backlog exists | One i7-14700 machine running the load generator and the whole system (services as containers) together; 30 s per step. Measured with `scripts/load_orders.py`, **not k6** (k6 runs are still to do). [perf.md](phase2/docs/perf.md#load-test-plan-step-25) |
+| p95 create-order latency | about 30 ms at 50 orders/s; 28 to 42 ms from 100 to 400 orders/s | same runs |
+| Outbox lag at the top rate | 19 s to drain after the 300/s step, 36 s after 400/s; peak 124 s at 1,000/s (the generator reached only 663/s there); near zero at 150/s or less | same runs |
+| Query time before/after index | **about 60 ms to 0.2 ms** (19,000 to 53 buffers) for "my newest 50 orders" at **3,000,000 orders** (a customer with about 30,000 orders); measured twice with the same result | [perf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |
 | Failed requests during rolling deploy | **not measured** | the AWS deploy was never run (no AWS account used); [Terraform](phase2/infra/terraform/README.md) is an unvalidated draft |
-| Orders lost / duplicated after failure drills | **0 / 0** in three drills at 20 orders/s (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed) | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_check.py` |
+| Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
 
 What is not done, so nobody has to guess: pushing to GitHub and the first CI run; the kind cluster;
