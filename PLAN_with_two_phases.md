@@ -500,6 +500,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 7, kind cluster (step 23).** Verified: `kind create cluster`, `kind load docker-image` for both images, `kubectl apply -k phase2/infra/k8s`; all four Deployments Available in 30 s (warm node), `/actuator/health` UP on both services through `kubectl port-forward`, Flyway applied in both databases. First attempt had 4 restarts per service (they started before PostgreSQL); fixed with `wait-for-postgres` init containers in `order-service.yaml` and `inventory-service.yaml`, then 0 restarts. Not tested: creating an order in the cluster (no Keycloak there) and the CI `kind-action` job. See [phase2/infra/k8s/README.md](phase2/infra/k8s/README.md).
 
+- **Step 8, demo GIF (step 27 item 4).** Done: `docs/images/demo.gif`, 820x500, about 35 s, **0.12 MB** (limit 5 MB), embedded at the top of the README. Recorded with `scripts/record_demo.mjs` (Playwright, installed Edge, screenshots with captions) and assembled with `scripts/frames_to_gif.py` (Pillow), because no ffmpeg or ScreenToGif is installed. It shows login through Keycloak, an order becoming CONFIRMED live, inventory-service killed, the next order accepted but PENDING, and CONFIRMED after the restart. Limit: the first order confirms faster than the screenshot interval, so its PENDING state is not visible in the GIF (the second order's PENDING is). Not re-recorded after later UI changes.
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.

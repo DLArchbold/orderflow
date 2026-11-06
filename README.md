@@ -5,6 +5,10 @@ An order-management system built to show event-driven design done carefully: a *
 **PostgreSQL** with Flyway, **OAuth2/JWT** login through Keycloak, **Redis** cache with **Resilience4j**, and metrics, tracing and alerts
 (Prometheus, Grafana, Jaeger).
 
+![Demo: log in, create an order and watch it become CONFIRMED live, kill inventory-service, see the next order stay PENDING, restart it and see it CONFIRMED](docs/images/demo.gif)
+
+*The demo (about 35 s, recorded by `scripts/record_demo.mjs` and `scripts/frames_to_gif.py` against the compose stack): sign in, create an order, kill inventory-service, create another order (still accepted, stays PENDING), restart it, and the order is CONFIRMED with nothing lost.*
+
 ```
 browser ──REST + SSE──> order-service ──(same transaction)──> orders DB: orders + outbox
                              │ OutboxPublisher                         
@@ -29,7 +33,7 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
 
 What is not done, so nobody has to guess: pushing to GitHub and the first CI run;
-everything on AWS; the demo GIF; the k6 runs. The files for all of them are in the repository and are marked as untested where they are.
+everything on AWS; the k6 runs. The files for all of them are in the repository and are marked as untested where they are.
 
 ## Quick start
 
