@@ -488,6 +488,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 2, tests against the containers.** Verified: `BASE_URL=http://localhost:5173 npx playwright test` 4 passed (9.6 s) and `mvn -f e2e/pom.xml verify` 2 passed (`OrderFlowIT`), with order-service, inventory-service and the frontend running as containers (no `mvn spring-boot:run`). Set `BASE_URL` so Playwright does not start `npm run dev` or reuse a dev server.
 
+- **Step 3, fresh-clone walkthrough (step 27 "done when").** Verified: `git clone` of the committed branch into an empty folder, then only the README commands: `docker compose -p fresh ... --profile apps up -d --wait --build` took 120 s (image layers cached, so a first-ever build on a new machine will be slower) and all 10 containers were healthy; in the clone `mvn verify` (e2e) 2 passed and `npx playwright test` 4 passed, including the demo flow (alice creates an order, it becomes CONFIRMED live; an over-stock order becomes REJECTED; bob does not see alice's orders). Gaps found and fixed in the README: the `apps` profile was not documented, the 8080/8081/5173 port clash, `BASE_URL` for Playwright against containers, and `PW_CHANNEL` for machines without Edge. Not tested: a Linux or macOS machine, and a machine with an empty Docker image cache (so no first-build time).
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.

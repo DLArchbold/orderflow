@@ -28,13 +28,23 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | Orders lost / duplicated after failure drills | **0 / 0** in three drills at 20 orders/s (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed) | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_check.py` |
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
 
-What is not done, so nobody has to guess: pushing to GitHub and the first CI run; building the Docker images and `docker compose --profile apps`; the kind cluster;
+What is not done, so nobody has to guess: pushing to GitHub and the first CI run; the kind cluster;
 everything on AWS; the demo GIF; the k6 runs. The files for all of them are in the repository and are marked as untested where they are.
 
 ## Quick start
 
-Prerequisites: JDK 21, Maven, Node 22, Docker Desktop (or Docker Engine + the compose plugin). Give Docker about 6 GB of memory.
+Prerequisites: Docker Desktop (or Docker Engine + the compose plugin) with about 6 GB of memory. For the development path below also JDK 21, Maven and Node 22.
 
+### Option A: everything in containers (nothing to install except Docker)
+```bash
+docker compose -f phase2/infra/docker-compose.full.yml --profile apps up -d --wait --build   # about 2 min with a warm image cache
+# UI: http://localhost:5173   API: http://localhost:8080/swagger-ui.html
+docker compose -f phase2/infra/docker-compose.full.yml --profile apps down                   # stop (add -v to delete the data too)
+```
+Ports 8080, 8081 and 5173 must be free: stop any `mvn spring-boot:run` or `npm run dev` first, or compose fails with "ports are not available". To run the browser tests against these containers:
+`cd frontend && npm ci && BASE_URL=http://localhost:5173 npx playwright test` (set `PW_CHANNEL=chromium` and run `npx playwright install chromium` if Microsoft Edge is not installed), and `cd e2e && mvn verify`.
+
+### Option B: infrastructure in containers, services from source (for development)
 ```bash
 # 1. Infrastructure: Postgres, Kafka, Redis, Keycloak, Jaeger, Prometheus, Grafana
 docker compose -f phase2/infra/docker-compose.full.yml up -d --wait
