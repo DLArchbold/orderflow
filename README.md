@@ -28,14 +28,14 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | p95 create-order latency | about 30 ms at 50 orders/s; 28 to 42 ms from 100 to 400 orders/s | same runs |
 | Outbox lag at the top rate | 19 s to drain after the 300/s step, 36 s after 400/s; peak 124 s at 1,000/s (the generator reached only 663/s there); near zero at 150/s or less | same runs |
 | Query time before/after index | **about 60 ms to 0.2 ms** (19,000 to 53 buffers) for "my newest 50 orders" at **3,000,000 orders** (a customer with about 30,000 orders); measured twice with the same result | [perf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |
-| Failed requests during rolling deploy | **not measured** | the AWS deploy was never run (no AWS account used); [Terraform](phase2/infra/terraform/README.md) is an unvalidated draft |
+| Failed requests during rolling deploy | **not measured** | the AWS deploy was never run (no AWS account used); [Terraform](phase2/infra/terraform/README.md) passes `terraform validate` but was never planned or applied |
 | Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
 
 Verified locally (Windows 10, Docker Desktop; not yet on a GitHub runner): the three Docker images, the compose `apps` profile (also from a fresh clone), and a kind cluster
 where both services became Ready ([phase2/infra/k8s/README.md](phase2/infra/k8s/README.md)).
 
-What is not done, so nobody has to guess: pushing to GitHub and the first CI run; `terraform validate` and everything on AWS; the k6 runs (k6 is installed, the script has not been run).
+What is not done, so nobody has to guess: pushing to GitHub and the first CI run; `terraform plan`/`apply` and everything on AWS (`terraform validate` passes); the k6 runs (k6 is installed, the script has not been run).
 The files for all of them are in the repository and are marked as untested where they are.
 
 ## Quick start

@@ -26,7 +26,7 @@ resource "aws_budgets_budget" "monthly" {
 resource "aws_ecr_repository" "app" {
   for_each     = toset(["order-service", "inventory-service", "frontend"])
   name         = "${var.project}-${each.key}"
-  force_delete = true   # so `terraform destroy` works even when images are pushed
+  force_delete = true # so `terraform destroy` works even when images are pushed
 }
 
 # ---- database ----
@@ -38,7 +38,7 @@ resource "random_password" "db" {
 
 resource "aws_secretsmanager_secret" "db" {
   name                    = "${var.project}/db"
-  recovery_window_in_days = 0   # delete immediately on destroy, so the name can be reused the next session
+  recovery_window_in_days = 0 # delete immediately on destroy, so the name can be reused the next session
 }
 
 resource "aws_secretsmanager_secret_version" "db" {
@@ -65,7 +65,7 @@ resource "aws_db_instance" "db" {
   publicly_accessible     = false
   multi_az                = false
   backup_retention_period = 0
-  skip_final_snapshot     = true    # a demo database: nothing to keep after destroy
+  skip_final_snapshot     = true # a demo database: nothing to keep after destroy
   deletion_protection     = false
   apply_immediately       = true
 }

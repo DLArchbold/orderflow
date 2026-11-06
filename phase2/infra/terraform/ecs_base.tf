@@ -74,7 +74,7 @@ resource "aws_ecs_task_definition" "db_init" {
     image     = "postgres:16"
     essential = true
     command = ["sh", "-c",
-      "psql -h ${aws_db_instance.db.address} -U orderflow -d postgres -c 'CREATE DATABASE orders' -c 'CREATE DATABASE inventory'"]
+    "psql -h ${aws_db_instance.db.address} -U orderflow -d postgres -c 'CREATE DATABASE orders' -c 'CREATE DATABASE inventory'"]
     secrets = [{ name = "PGPASSWORD", valueFrom = "${aws_secretsmanager_secret.db.arn}:password::" }]
     logConfiguration = {
       logDriver = "awslogs"

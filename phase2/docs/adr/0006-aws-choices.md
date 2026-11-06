@@ -1,6 +1,6 @@
 # ADR 0006: AWS deployment choices (Terraform, ECS Fargate)
 
-Status: draft. The Terraform in `phase2/infra/terraform` was written but NOT validated or applied (see "State of this work").
+Status: draft. The Terraform in `phase2/infra/terraform` passes `terraform fmt` and `terraform validate` (2026-11-06) but has NOT been planned or applied (see "State of this work").
 
 ## Decisions
 | Topic | Choice | Why, and what it costs |
@@ -20,6 +20,4 @@ During a rolling deploy old and new order-service tasks overlap, so for a short 
 and some events are sent twice. The idempotent consumer in inventory-service (`processed_messages`, step 14) keeps that harmless.
 
 ## State of this work
-No AWS credentials with a valid token, no `terraform` binary and no disk for the AWS provider were available when this was
-written, so `terraform fmt`, `validate`, `plan` and `apply` were never run. (Update 2026-11-05: Terraform 1.16 is installed now, but `validate` still has not been run.) Treat the files as a reviewed draft: run `terraform
-validate` first and expect to fix small errors. No deploy, load test during a deploy, or destroy check has happened.
+`terraform fmt -recursive` changed four files (formatting only), and after that `terraform init -backend=false` and `terraform validate` (Terraform 1.16.6, AWS provider 5.x) reported "The configuration is valid" on 2026-11-06. That checks syntax, references and argument names against the provider schema; it needs no AWS account and proves nothing about whether the resources will create. `plan` and `apply` were never run (no AWS credentials in use), so expect to fix errors on the first plan. No deploy, load test during a deploy, or destroy check has happened.

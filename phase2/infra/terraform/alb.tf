@@ -16,7 +16,7 @@ resource "aws_lb_target_group" "order" {
   protocol             = "HTTP"
   target_type          = "ip"
   vpc_id               = aws_vpc.main.id
-  deregistration_delay = 30   # the default of 300 s makes every deploy slow
+  deregistration_delay = 30 # the default of 300 s makes every deploy slow
   health_check {
     path    = "/actuator/health/readiness"
     matcher = "200"

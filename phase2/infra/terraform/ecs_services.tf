@@ -1,11 +1,11 @@
 # The five ECS services. Kafka and Keycloak are single containers (ADR 0006); the three application images come from ECR.
 
 locals {
-  alb_url      = "http://${aws_lb.main.dns_name}"
-  issuer_url   = "${local.alb_url}/realms/orderflow"   # must equal the token's iss claim, i.e. Keycloak's KC_HOSTNAME
-  image        = { for name, repo in aws_ecr_repository.app : name => "${repo.repository_url}:${var.image_tag}" }
-  db_secret    = aws_secretsmanager_secret.db.arn
-  log_options  = { for name, group in aws_cloudwatch_log_group.app : name => {
+  alb_url    = "http://${aws_lb.main.dns_name}"
+  issuer_url = "${local.alb_url}/realms/orderflow" # must equal the token's iss claim, i.e. Keycloak's KC_HOSTNAME
+  image      = { for name, repo in aws_ecr_repository.app : name => "${repo.repository_url}:${var.image_tag}" }
+  db_secret  = aws_secretsmanager_secret.db.arn
+  log_options = { for name, group in aws_cloudwatch_log_group.app : name => {
     "awslogs-group"         = group.name
     "awslogs-region"        = var.region
     "awslogs-stream-prefix" = "ecs"
@@ -13,7 +13,7 @@ locals {
 
   # The realm file from the repository, with the local frontend URL replaced by the ALB URL
   keycloak_realm = replace(replace(file("${path.module}/../keycloak/orderflow-realm.json"),
-    "http://localhost:5173/*", "${local.alb_url}/*"), "http://localhost:5173", local.alb_url)
+  "http://localhost:5173/*", "${local.alb_url}/*"), "http://localhost:5173", local.alb_url)
 }
 
 # ---- service discovery: kafka.orderflow.local, inventory-service.orderflow.local, keycloak.orderflow.local ----
@@ -119,7 +119,7 @@ resource "aws_ecs_task_definition" "keycloak" {
       { name = "KC_BOOTSTRAP_ADMIN_USERNAME", value = "admin" },
       { name = "KC_HOSTNAME", value = local.alb_url },
       { name = "KC_HTTP_ENABLED", value = "true" },
-      { name = "KC_PROXY_HEADERS", value = "xforwarded" },   # it sits behind the ALB
+      { name = "KC_PROXY_HEADERS", value = "xforwarded" }, # it sits behind the ALB
     ]
     secrets          = [{ name = "KC_BOOTSTRAP_ADMIN_PASSWORD", valueFrom = "${aws_secretsmanager_secret.keycloak.arn}:admin_password::" }]
     logConfiguration = { logDriver = "awslogs", options = local.log_options["keycloak"] }
@@ -134,7 +134,7 @@ resource "aws_ecs_service" "keycloak" {
   launch_type                        = "FARGATE"
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
-  health_check_grace_period_seconds  = 180   # Keycloak needs a minute or two to start and import the realm
+  health_check_grace_period_seconds  = 180 # Keycloak needs a minute or two to start and import the realm
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.keycloak.id]
@@ -173,7 +173,7 @@ resource "aws_ecs_task_definition" "inventory" {
     environment = [
       { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.db.address}:5432/inventory" },
       { name = "SPRING_KAFKA_BOOTSTRAP_SERVERS", value = "kafka.${var.project}.local:9092" },
-      { name = "MANAGEMENT_TRACING_SAMPLING_PROBABILITY", value = "0" },   # no Jaeger here
+      { name = "MANAGEMENT_TRACING_SAMPLING_PROBABILITY", value = "0" }, # no Jaeger here
     ]
     # the password comes from Secrets Manager at start-up; the execution role may read exactly these secrets
     secrets = [
@@ -230,7 +230,7 @@ resource "aws_ecs_task_definition" "order" {
       { name = "SPRING_DATASOURCE_URL", value = "jdbc:postgresql://${aws_db_instance.db.address}:5432/orders" },
       { name = "SPRING_KAFKA_BOOTSTRAP_SERVERS", value = "kafka.${var.project}.local:9092" },
       { name = "ORDERFLOW_INVENTORY_BASE_URL", value = "http://inventory-service.${var.project}.local:8081" },
-      { name = "SPRING_DATA_REDIS_HOST", value = "localhost" },   # no Redis: the stock cache degrades gracefully (step 17c)
+      { name = "SPRING_DATA_REDIS_HOST", value = "localhost" }, # no Redis: the stock cache degrades gracefully (step 17c)
       # The token's iss claim is the public ALB URL; the signing keys are fetched from the internal Keycloak name
       { name = "SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI", value = local.issuer_url },
       { name = "SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI", value = "http://keycloak.${var.project}.local:8080/realms/orderflow/protocol/openid-connect/certs" },
@@ -246,11 +246,11 @@ resource "aws_ecs_task_definition" "order" {
 }
 
 resource "aws_ecs_service" "order" {
-  name                               = "order-service"
-  cluster                            = aws_ecs_cluster.main.id
-  task_definition                    = aws_ecs_task_definition.order.arn
-  desired_count                      = 1
-  launch_type                        = "FARGATE"
+  name            = "order-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.order.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
   # Rolling deploy: the new task starts and must be healthy before the old one stops. For a short time TWO order-service
   # tasks run and both publish the same outbox rows; the idempotent consumer makes the duplicate events harmless.
   deployment_minimum_healthy_percent = 100
