@@ -150,3 +150,28 @@ Setup as in the container re-run above: services as containers, no CPU or memory
 - **Error rate:** 59 failed of 91,000-odd requests across the ramp (all in the two stalled steps); 0 in warm-up and the three steady runs.
 - **End state:** after the lag reached 0 the table still had about 4,600 PENDING orders (the confirmation stage trails the outbox, as found earlier); a few minutes later: 222,610 CONFIRMED, 0 PENDING.
 - Not done: runs longer than 30-60 s per step (the plan says 3 minutes), repeating the stalled steps, any CPU or memory limit.
+
+### Chasing the stall (2026-11-06, repeat of the 300/s and 600/s steps)
+`scripts/stall_hunt.sh` ran 300, 600, 300, 600, 300, 600 orders/s for 30 s each (k6, same script and setup), sampling order-service (Hikari pool, JVM) and Postgres (active and waiting sessions, checkpoints) every second.
+Raw data: [k6-runs/stall-hunt-2026-11-06/](k6-runs/stall-hunt-2026-11-06/).
+
+| Run | Rate | Achieved/s | Failed | p95 ms | Max request | Hikari active (max) | Hikari pending (max) |
+|---|---|---|---|---|---|---|---|
+| 1 | 300 | 299 | 0 | 7 | 157 ms | 5 | 0 |
+| 2 | 600 | 598 | 0 | 7 | 47 ms | 6 | 0 |
+| 3 | 300 | 299 | 0 | 7 | 36 ms | 4 | 0 |
+| 4 | 600 | 599 | 0 | 7 | 39 ms | 5 | 0 |
+| 5 | 300 | 296 | **31** | 8 | **30.0 s** | 4 | 0 |
+| 6 | 600 | 599 | 0 | 8 | 31 ms | 8 | 0 |
+
+- **The failures did not reproduce as a rate limit.** 600/s passed three times out of three (p95 7 to 8 ms, 0 failed), and 300/s passed twice and failed once. Together with the first k6 ramp, 300/s failed 2 of 4 times, 600/s 1 of 4 times, 400, 500 and 800/s 0 of 1 each. The failures follow no rate.
+- **What a stalled run looks like (run 5, and the same in the earlier 300/s and 600/s steps):** a small group of requests (31, 56 and 3 in the three failing runs) hangs for about 30 s and then fails with
+  `wsarecv: An existing connection was forcibly closed by the remote host` on `localhost:8080`. The stuck VUs stay stuck for the whole step (run 5: 32 VUs busy from start to end), so with 100 VUs preallocated nothing else suffers
+  (p95 8 ms, `expected_response:true` max 58 ms); in the first ramp the 300/s step used up all 300 VUs, which is what produced the dropped iterations and the 3.2 s p95.
+- **The hung requests never reached the application's order logic.** In run 5 the database holds 8,969 orders created in the window, equal to k6's count of 201 responses (8,969); the 31 failed requests created no order (9,000 requests sent, 8,969 + 31 = 9,000).
+  So these are *failed, not lost*: nothing was committed. Hikari never had a waiting request (pending 0 in every second sampled) and active connections stayed at 8 or fewer out of 10, so the pool and the database were not the bottleneck.
+- **Most likely cause (not proven): the Docker Desktop port forward on Windows (`localhost:8080` to the container) hanging a few connections** that are opened in the initial burst, then resetting them. Evidence for it: the app and database show no pressure, the
+  stuck requests created no orders, and they all end with a reset from the "remote host". Evidence against or missing: I did not capture a packet trace, and Tomcat's own access log is not enabled, so I cannot show that the request never arrived at Tomcat.
+  The sampled Tomcat and GC metrics columns in `samples.txt` are all 0 because I used metric names that do not exist in this build, so GC and Tomcat thread pressure are **not ruled out by this data** (Hikari and Postgres are).
+- **What this means for the numbers:** the p95 and failure results of the ramp steps at 300 and 600/s are properties of this machine's Docker networking (or a similar front-end issue), not of order-service. Quote the clean runs (0 failed at 50, 100, 200, 400, 500, 800/s and in 5 of 6 repeats at 300 and 600/s) with that caveat, not "limit between X and Y".
+- **To settle it:** run k6 from a container on the compose network (so it does not go through the Windows port forward), or turn on the Tomcat access log and compare. I did not do either.
