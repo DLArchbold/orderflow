@@ -1,0 +1,10 @@
+run1 rate 300 start 1793996530
+run1 rate 300 end 1793996562
+run1 drain_seconds 21
+run2 rate 600 start 1793996603
+run2 rate 600 end 1793996635
+run2 drain_seconds 87
+run3 rate 300 start 1793996742
+run3 rate 300 end 1793996776
+run3 drain_seconds 21
+run4 rate 600 start 1793996817
