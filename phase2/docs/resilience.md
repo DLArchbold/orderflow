@@ -65,7 +65,17 @@ Limits of the "0 lost" claim: it covers orders the client got a `201` for. Reque
 no `Idempotency-Key`, so a client that retries after a lost response could create a second order. Order-service also runs one replica (two would publish the same outbox
 rows), so a crash is an outage of the create API until it restarts.
 
-Not captured: a Grafana screenshot for each drill (the image renderer plugin is not installed); the lag and PENDING samples above stand in for it.
+Grafana screenshots of the OrderFlow dashboard for each run are in `docs/images/` (taken afterwards with `scripts/grafana_screenshots.mjs` and Playwright, because the Grafana image-renderer plugin is not installed; each window has 60 s of context on both sides). The dashboard has no PENDING-orders panel, so the PENDING counts still come from the drill samples.
+
+| Run | Screenshot |
+|---|---|
+| Kafka stopped 60 s (container run) | [grafana-drill-kafka-stopped-60s.png](../../docs/images/grafana-drill-kafka-stopped-60s.png) |
+| inventory-service killed 60 s | [grafana-drill-inventory-killed-60s.png](../../docs/images/grafana-drill-inventory-killed-60s.png) |
+| order-service killed | [grafana-drill-order-killed.png](../../docs/images/grafana-drill-order-killed.png) |
+| Kafka stopped 244 s (drill 4) | [grafana-drill-kafka-stopped-244s.png](../../docs/images/grafana-drill-kafka-stopped-244s.png), alert state: [prometheus-alert-OutboxLagHigh.png](../../docs/images/prometheus-alert-OutboxLagHigh.png) (the `pending` series, then `firing`) |
+| Perf ramp to 1,000 orders/s | [grafana-perf-ramp-to-1000.png](../../docs/images/grafana-perf-ramp-to-1000.png) |
+
+Grafana shows local time (UTC-5) and the Prometheus graph shows UTC, so the clocks differ by five hours on the same event.
 
 ### Drills 1 to 3 repeated with the services as containers (2026-11-05)
 Same method and rate (20 orders/s for 180 s, disruption 30 s in) but order-service, inventory-service and the frontend ran as containers (`--profile apps`); the
@@ -93,16 +103,19 @@ then started. Driver: `python scripts/drill_lag_alert.py <dir>`. Prometheus scra
 | Seconds after Kafka stopped | What Prometheus showed |
 |---|---|
 | 0 | stop; the API kept returning 201 |
-| 88 | `OutboxLagHigh` **Pending** (the lag crossed 60 s about 85 s after the stop) |
+| 63 | the outbox lag crossed 60 s |
+| 88 | `OutboxLagHigh` **Pending** (about 25 s after the lag crossed 60 s: the scrape and the rule evaluation each run every 15 s) |
 | 208 | **Firing**, 2 minutes after Pending, as the rule's `for: 2m` says |
+| 243 | peak outbox lag **242 s** (about the length of the outage) |
 | 244 | Kafka started |
-| about 263 | alert cleared; peak outbox lag **132 s** |
+| about 263 | lag back to 0; alert cleared |
 | 360 (about) | load ended; 3 s later no order was PENDING |
 
 Checks (`scripts/drill_check.py`): 3,600 orders created (201), 3,600 rows, 3,600 CONFIRMED, 0 PENDING, 0 unpublished outbox rows in either service, 0 orders with
 a duplicated event, 1,800 reserved per SKU matching the CONFIRMED quantities. **ALL CHECKS PASS.** This closes the gap noted under drill 1.
 
 Caveat on the evidence: the sampler in the first version of `drill_lag_alert.py` had a bug (it read the `ALERTS` labels from the wrong key), so `samples.txt` shows
-the alert state as an error for the 36 samples while the alert was active. The Pending/Firing times above come from querying Prometheus afterwards
-(`query_range` on `ALERTS{alertname="OutboxLagHigh"}`, step 5 s), not from the script's samples. The bug is fixed in the script but the drill was not re-run with the fix.
+the alert state as an error for the 36 samples while the alert was active. The Pending/Firing times and the lag peak above come from querying Prometheus afterwards
+(`query_range` on `ALERTS{alertname="OutboxLagHigh"}` and `orderflow_outbox_lag_seconds`, step 5 s), not from the script's samples. (The script's own samples stopped recording
+the lag when the error began, so their maximum of 132 s was wrong and is not the peak.) The bug is fixed in the script but the drill was not re-run with the fix.
 The raw run directory was not committed. The alert was seen in Prometheus only; no notification receiver (Alertmanager) is configured.
