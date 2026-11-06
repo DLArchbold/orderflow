@@ -21,5 +21,5 @@ and some events are sent twice. The idempotent consumer in inventory-service (`p
 
 ## State of this work
 No AWS credentials with a valid token, no `terraform` binary and no disk for the AWS provider were available when this was
-written, so `terraform fmt`, `validate`, `plan` and `apply` were never run. Treat the files as a reviewed draft: run `terraform
+written, so `terraform fmt`, `validate`, `plan` and `apply` were never run. (Update 2026-11-05: Terraform 1.16 is installed now, but `validate` still has not been run.) Treat the files as a reviewed draft: run `terraform
 validate` first and expect to fix small errors. No deploy, load test during a deploy, or destroy check has happened.

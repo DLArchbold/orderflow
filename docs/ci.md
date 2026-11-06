@@ -17,6 +17,9 @@ so a pull request is not slowed down for the one thing only the browser can show
 Run it locally with `cd frontend && npx playwright test` (see the README quick-start).
 
 ## Not yet verified
-This pipeline was written and its commands were run locally, but it has not been run on GitHub. The Docker images and the
-compose `apps` profile were validated (`docker compose config`, `docker build --check`) but not built, because the machine
-had under 1 GB of free disk. The first run on GitHub is the first real test of the `images` and `e2e` jobs.
+This pipeline was written and its commands were run locally, but it has not been run on GitHub. What did run locally (2026-11-05, Windows 10,
+Docker Desktop): the three images were built, `docker compose -f phase2/infra/docker-compose.full.yml --profile apps up -d --wait --build` brought the
+whole system up healthy (also from a fresh clone of the repository), and `mvn -f e2e/pom.xml verify` (2 tests) and `npx playwright test` (4 tests, with
+`BASE_URL=http://localhost:5173`) passed against those containers. Not verified: any of it on a GitHub runner (the first run is the first real test of the
+`images` and `e2e` jobs, the GHCR push, the `docker/build-push-action` caching, and Chromium instead of Edge for Playwright), and the `kind` job in step 23
+(the same manifests were applied to a local kind cluster and both Deployments became Available, but not through `helm/kind-action`).

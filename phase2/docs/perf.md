@@ -62,7 +62,8 @@ The result matches the first run (about 300x). The first run's numbers stay as t
 **Tool: `scripts/load_orders.py`, NOT k6.** k6 could not be installed on this machine (winget hung, a binary download was blocked), so the
 numbers below come from a stand-in written for this purpose (standard library Python, same behaviour as `phase2/load-tests/k6/create-orders.js`:
 one Keycloak token per user, a fixed arrival rate that does not wait for responses, SKU-1/SKU-2 mix). They are not k6 numbers and should not
-be quoted as such. The k6 script is written but has never been run.
+be quoted as such. The k6 script is written but has never been run. (Update 2026-11-05: k6 2.3.0 is installed now, but the k6 script has still not been run;
+every number in this file is from `load_orders.py`.)
 
 ### Setup
 - One Windows 10 machine (Intel Core i7-14700) running everything at once: the load generator, both services (`mvn spring-boot:run`, JVM defaults),
@@ -84,7 +85,7 @@ be quoted as such. The k6 script is written but has never been run.
 | ramp 200/s | 6,000 | 0 | 199.8 | 8.9 | 31.4 | 34.4 | 9 s |
 | ramp 300/s | 9,000 | 0 | 299.8 | 9.3 | 31.8 | 35.5 | 26 s |
 
-- **Highest passing rate: at least 300 orders/s.** The thresholds (failures < 1%, p95 < 500 ms) were never broken, so the real limit was **not found**;
+- **Highest passing rate: at least 300 orders/s** (this first run only; the container re-run below found the limit, between 400 and 600 orders/s). The thresholds (failures < 1%, p95 < 500 ms) were never broken, so the real limit was **not found**;
   the single-threaded-schedule Python generator on the same machine is the more likely ceiling, and 300/s is as far as this run went.
 - **Outbox lag peak: 26 s**, at the 300/s step; the publisher (one event at a time, 500 ms poll) fell behind the API there and took 26 s to drain
   after the step ended. At 200/s the drain took 9 s, and at 150/s or less the lag stayed near zero. HTTP latency looked good throughout while the pipeline

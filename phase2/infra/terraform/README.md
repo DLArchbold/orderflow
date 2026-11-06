@@ -1,7 +1,8 @@
 # Terraform (AWS, ECS Fargate)
 
-**Status: a reviewed draft. `terraform fmt`, `validate`, `plan` and `apply` have NOT been run** (no `terraform` binary, no valid AWS
-credentials and no disk for the AWS provider when this was written). Expect to fix small errors on the first `validate`.
+**Status: a reviewed draft. `terraform fmt`, `validate`, `plan` and `apply` have NOT been run** (when this was written there was no `terraform` binary, no valid AWS
+credentials and no disk for the AWS provider; the binary, Terraform 1.16, has been installed since 2026-11-05, but `validate` has not been run yet and there are still no AWS credentials in use).
+Expect to fix small errors on the first `validate`.
 Decisions and their costs: `phase2/docs/adr/0006-aws-choices.md`.
 
 State is local while you experiment; it contains generated passwords, so `*.tfstate` and `*.tfvars` are git-ignored.

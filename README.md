@@ -32,8 +32,11 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
 
-What is not done, so nobody has to guess: pushing to GitHub and the first CI run;
-everything on AWS; the k6 runs. The files for all of them are in the repository and are marked as untested where they are.
+Verified locally (Windows 10, Docker Desktop; not yet on a GitHub runner): the three Docker images, the compose `apps` profile (also from a fresh clone), and a kind cluster
+where both services became Ready ([phase2/infra/k8s/README.md](phase2/infra/k8s/README.md)).
+
+What is not done, so nobody has to guess: pushing to GitHub and the first CI run; `terraform validate` and everything on AWS; the k6 runs (k6 is installed, the script has not been run).
+The files for all of them are in the repository and are marked as untested where they are.
 
 ## Quick start
 
@@ -89,7 +92,9 @@ promtool: docker compose -f phase2/infra/docker-compose.full.yml exec prometheus
 ```
 
 ### Failure drills and load
-`python scripts/load_orders.py --rate 50 --duration 60` (a stand-in for the k6 script in `phase2/load-tests/k6/`), `scripts/perf_run.sh <dir>`, `scripts/drill.sh kafka|inventory|order <dir>`.
+`python scripts/load_orders.py --rate 50 --duration 60` (a stand-in for the k6 script in `phase2/load-tests/k6/`), `RAMP="100 300 600" scripts/perf_run.sh <dir>`, `scripts/drill.sh kafka|inventory|order <dir>`
+(works with the services as containers or started with `mvn spring-boot:run`), `python scripts/drill_lag_alert.py <dir>` (Kafka stopped 4 minutes so the `OutboxLagHigh` alert goes Pending, then Firing),
+`node scripts/grafana_screenshots.mjs docs/images` (dashboard screenshots over a time window, no renderer plugin needed) and `node scripts/record_demo.mjs <dir>` with `python scripts/frames_to_gif.py <dir> docs/images/demo.gif` (the demo above).
 Pipeline and CI: [docs/ci.md](docs/ci.md). Build plan and "done when" checks: [PLAN_with_two_phases.md](PLAN_with_two_phases.md).
 
 ## Layout
@@ -101,4 +106,4 @@ Pipeline and CI: [docs/ci.md](docs/ci.md). Build plan and "done when" checks: [P
 | `e2e` | HTTP end-to-end tests against the running stack |
 | `phase2/infra` | docker-compose, Keycloak realm, Prometheus rules, Grafana dashboard, Kubernetes manifests, Terraform draft |
 | `phase2/docs` | architecture, ADRs 0001 to 0006, security, performance, resilience |
-| `scripts` | seed data, load generator, drill and check scripts |
+| `scripts` | seed data, load generator, drill and check scripts, demo recording, Grafana screenshots |

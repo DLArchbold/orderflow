@@ -2,6 +2,7 @@
 
 Names are the real method or test names from the repository. Counts come from the source: 40 + 11 + 7 + 4 + 2 (e2e) + 3 promtool cases.
 Note: the summary said 12 tests in inventory-service; the source holds 11, so use 11.
+Updated 2026-11-05 (steps 1 to 9): see the last section for what was re-run against the Docker containers and what was not re-run.
 
 ## order-service (40, JUnit; Testcontainers marked TC)
 | Class | Test | Purpose |
@@ -73,7 +74,7 @@ Note: the summary said 12 tests in inventory-service; the source holds 11, so us
 | refetches the list when the stream reconnects | After an SSE reconnect the list reloads (missed events). |
 | keeps a pushed status when an older list arrives afterwards | A slow fetch cannot overwrite a newer pushed status. |
 
-## frontend: Playwright (4, run in Edge locally, needs the stack running)
+## frontend: Playwright (4, run in Edge locally, needs the stack running; re-run 2026-11-05 against the compose containers, twice: 4 passed each time, see the last section)
 | Spec | Test | Purpose |
 |---|---|---|
 | `smoke.spec.ts` | home page loads and offers a login | The app loads and shows a login button. |
@@ -81,7 +82,7 @@ Note: the summary said 12 tests in inventory-service; the source holds 11, so us
 | | an order for more than the stock becomes REJECTED | The REJECTED path through inventory-service. |
 | | bob's page does not show alice's orders | Orders are isolated per user in the browser. |
 
-## e2e: HTTP end to end (2, `OrderFlowIT`)
+## e2e: HTTP end to end (2, `OrderFlowIT`; re-run 2026-11-05 against the compose containers, twice: 2 passed each time)
 | Test | Purpose |
 |---|---|
 | `anOrderThatFitsInStockBecomesConfirmed` | Create via the API with a Keycloak token; polls until CONFIRMED. |
@@ -98,3 +99,22 @@ Note: the summary said 12 tests in inventory-service; the source holds 11, so us
 ## Checks that are scripts, not tests
 `scripts/drill_check.py` (with `drill-check.sql`) runs after each failure drill and prints PASS or FAIL for: no lost orders, nothing PENDING after the drain, no unpublished outbox rows,
 no order with more than one `OrderCreated` or result row, stock never negative, `available + reserved` unchanged, and reserved quantity equal to CONFIRMED quantity per SKU.
+
+## Runs on 2026-11-05 (steps 1 to 9 of the status log in `PLAN_with_two_phases.md`)
+Windows 10, Docker Desktop, the three services as containers (`docker compose -f phase2/infra/docker-compose.full.yml --profile apps up -d --wait --build`). Nothing here ran on GitHub.
+
+| What ran | Result | Where it is recorded |
+|---|---|---|
+| Playwright (4 tests) with `BASE_URL=http://localhost:5173`, against the containers | 4 passed (9.6 s) | PLAN status log, step 2 |
+| `mvn -f e2e/pom.xml verify` (`OrderFlowIT`, 2 tests), against the containers | 2 passed | PLAN status log, step 2 |
+| The same Playwright and e2e tests from a fresh `git clone`, following only the README | 4 passed and 2 passed | PLAN status log, step 3 |
+| `scripts/drill.sh` for Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s for 180 s (second run of each, containers) | `drill_check.py`: ALL CHECKS PASS in all three; 0 lost, 0 duplicated reservations | `phase2/docs/resilience.md` |
+| `scripts/drill_lag_alert.py`: Kafka stopped 244 s at 10 orders/s | 3,600 orders, ALL CHECKS PASS; `OutboxLagHigh` Pending at +88 s, Firing at +208 s (read from Prometheus afterwards, the script's own sampler had a bug) | `phase2/docs/resilience.md`, drill 4 |
+| Index test at 3,000,000 orders (before and after `idx_orders_customer_created`) | about 60 ms to 0.2 ms; about 19,150 page reads to 53 | `phase2/docs/perf.md` |
+| `scripts/perf_run.sh` with `RAMP="100 150 200 300 400 600 800 1000"` | 0 failures up to 400 orders/s; 600/s broke the p95 threshold (1.33 s); not a test with a pass or fail, a measurement | `phase2/docs/perf.md` |
+| kind cluster: `kubectl apply -k phase2/infra/k8s`, `kubectl wait --for=condition=Available deployment --all` | 4 Deployments Available in about 30 s, 0 restarts after the init-container fix; `/actuator/health` UP on both services, Flyway applied in both databases | `phase2/infra/k8s/README.md` |
+
+**Not re-run in this pass:** the 40 order-service and 11 inventory-service JUnit tests (`mvn verify`), the 7 Vitest tests and the promtool rule tests. The counts above are
+still from the source and from the earlier runs. Also not run: the CI pipeline on GitHub, `terraform validate`, and any k6 script.
+
+Drill check, added to the list of script checks: `scripts/drill_check.py` is also used by `scripts/drill_lag_alert.py`.
