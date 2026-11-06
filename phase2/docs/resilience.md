@@ -67,6 +67,25 @@ rows), so a crash is an outage of the create API until it restarts.
 
 Not captured: a Grafana screenshot for each drill (the image renderer plugin is not installed); the lag and PENDING samples above stand in for it.
 
+### Drills 1 to 3 repeated with the services as containers (2026-11-05)
+Same method and rate (20 orders/s for 180 s, disruption 30 s in) but order-service, inventory-service and the frontend ran as containers (`--profile apps`); the
+services were killed with `docker compose kill` and restarted with `docker compose start` (`scripts/drill.sh` detects this). The database already held about 119,000 orders
+from the perf run, so the checks ran against a larger table.
+
+| | Kafka stopped 60 s | inventory-service killed 60 s | order-service killed, started 21 s later |
+|---|---|---|---|
+| Orders sent / answered `201` | 3,600 / 3,600 | 3,600 / 3,600 | 3,600 / 3,000 |
+| API errors | 0 | 0 | 600 (the API was down; never acknowledged, so not "lost") |
+| Latency p95 / p99 of the 201s | 31.0 / 37.6 ms | 31.2 / 37.9 ms | 4,090 / 7,690 ms |
+| Outbox lag peak | 70 s | 0.5 s | 0.5 s |
+| PENDING peak | 1,418 | 1,377 | 279 |
+| Time from end of load to no PENDING | 2 s | 2 s | 2 s |
+| Orders lost / reservations duplicated | **0 / 0** | **0 / 0** | **0 / 0** |
+| Checks | ALL CHECKS PASS | ALL CHECKS PASS | ALL CHECKS PASS |
+
+The results match the first runs (one container run, one run per drill). The order-service drill lost 600 requests instead of 521 because the container needed longer to start than the
+local process did; the restart time was not measured separately. As before, the "0 lost" claim covers orders that got a `201`.
+
 ### Drill 4: Kafka stopped 4 minutes, to see `OutboxLagHigh` fire (2026-11-05)
 Setup: both services and the frontend as containers (`--profile apps`), `scripts/load_orders.py` at **10 orders/s for 360 s**, Kafka stopped 30 s in for **244 s**,
 then started. Driver: `python scripts/drill_lag_alert.py <dir>`. Prometheus scrapes every 15 s with the default settings.

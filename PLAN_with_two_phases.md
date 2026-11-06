@@ -496,6 +496,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 6a, perf re-run and the limit.** Verified with `scripts/load_orders.py` (not k6), services as containers: 0 failures up to 400 orders/s (p95 29 ms); first threshold broken at **600/s** (p95 1.33 s, 21 failed of 18,000); at 800 and 1,000/s the generator achieved only 445/s and 663/s. Peak outbox lag 124 s. New finding: end-to-end confirmation drains at about 220 orders/s, below the API's 400/s. `perf_run.sh` now takes `RAMP`. See [phase2/docs/perf.md](phase2/docs/perf.md).
 
+- **Step 6b, three drills repeated against containers.** Verified: Kafka stopped 60 s (peak lag 70 s), inventory-service killed 60 s, order-service killed (600 requests failed, none acknowledged): 0 lost, 0 duplicated reservations, ALL CHECKS PASS in each. See [phase2/docs/resilience.md](phase2/docs/resilience.md). The `[N]` numbers for the README table now have container-run evidence.
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.
