@@ -46,6 +46,17 @@ Limit  (actual time=0.030..0.165 rows=50)  Buffers: shared hit=53
 19,252 buffers become 53. The plan reads exactly the 50 rows needed and does no sort. Cost: the new index is 116 MB at 3M rows (the primary key is 122 MB,
 the old status index 31 MB), so every insert maintains one more B-tree. The old index served no query the application runs and was dropped by V5.
 
+### 19 re-run on 2026-11-05 (same method, a second independent run)
+Same setup as above, with both services running as containers (`--profile apps`) and a fresh `orders_perf` made with `pg_dump --schema-only`.
+Load: 3,000,000 orders and 6,000,326 order lines in 138 s (`alice` has 29,820 orders). Customer query, three runs each:
+
+| | Runs (ms) | Buffers |
+|---|---|---|
+| before (`customer_id, status` index) | 54.9, 61.5, 66.5 | about 19,150 page reads, bitmap heap scan plus top-N sort of 29,820 rows |
+| after (`customer_id, created_at DESC`) | 0.235, 0.200, 0.246 | 53, index scan, no sort |
+
+The result matches the first run (about 300x). The first run's numbers stay as the ones quoted in the README. The `orders_perf` database was dropped afterwards.
+
 ## Load test (PLAN step 25)
 
 **Tool: `scripts/load_orders.py`, NOT k6.** k6 could not be installed on this machine (winget hung, a binary download was blocked), so the

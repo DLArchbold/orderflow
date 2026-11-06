@@ -490,6 +490,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 3, fresh-clone walkthrough (step 27 "done when").** Verified: `git clone` of the committed branch into an empty folder, then only the README commands: `docker compose -p fresh ... --profile apps up -d --wait --build` took 120 s (image layers cached, so a first-ever build on a new machine will be slower) and all 10 containers were healthy; in the clone `mvn verify` (e2e) 2 passed and `npx playwright test` 4 passed, including the demo flow (alice creates an order, it becomes CONFIRMED live; an over-stock order becomes REJECTED; bob does not see alice's orders). Gaps found and fixed in the README: the `apps` profile was not documented, the 8080/8081/5173 port clash, `BASE_URL` for Playwright against containers, and `PW_CHANNEL` for machines without Edge. Not tested: a Linux or macOS machine, and a machine with an empty Docker image cache (so no first-build time).
 
+- **Step 4, index test at 3,000,000 rows (step 19).** Verified twice: the first pass (already in the README) and a re-run today. Re-run: 3,000,000 orders loaded in 138 s; "my newest 50 orders" 54.9, 61.5, 66.5 ms before the `(customer_id, created_at DESC)` index and 0.235, 0.200, 0.246 ms after (about 19,150 page reads down to 53). Details in [phase2/docs/perf.md](phase2/docs/perf.md). Caveat: one machine, default Postgres settings, a mostly warm cache.
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.
