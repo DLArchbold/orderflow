@@ -28,7 +28,7 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
 
-What is not done, so nobody has to guess: pushing to GitHub and the first CI run; the kind cluster;
+What is not done, so nobody has to guess: pushing to GitHub and the first CI run;
 everything on AWS; the demo GIF; the k6 runs. The files for all of them are in the repository and are marked as untested where they are.
 
 ## Quick start

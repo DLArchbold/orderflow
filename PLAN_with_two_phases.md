@@ -498,6 +498,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 6b, three drills repeated against containers.** Verified: Kafka stopped 60 s (peak lag 70 s), inventory-service killed 60 s, order-service killed (600 requests failed, none acknowledged): 0 lost, 0 duplicated reservations, ALL CHECKS PASS in each. See [phase2/docs/resilience.md](phase2/docs/resilience.md). The `[N]` numbers for the README table now have container-run evidence.
 
+- **Step 7, kind cluster (step 23).** Verified: `kind create cluster`, `kind load docker-image` for both images, `kubectl apply -k phase2/infra/k8s`; all four Deployments Available in 30 s (warm node), `/actuator/health` UP on both services through `kubectl port-forward`, Flyway applied in both databases. First attempt had 4 restarts per service (they started before PostgreSQL); fixed with `wait-for-postgres` init containers in `order-service.yaml` and `inventory-service.yaml`, then 0 restarts. Not tested: creating an order in the cluster (no Keycloak there) and the CI `kind-action` job. See [phase2/infra/k8s/README.md](phase2/infra/k8s/README.md).
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.

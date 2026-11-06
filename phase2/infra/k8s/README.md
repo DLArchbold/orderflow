@@ -12,13 +12,17 @@ docker compose -f phase2/infra/docker-compose.full.yml --profile apps build
 kind load docker-image orderflow-order-service:local orderflow-inventory-service:local --name orderflow
 kubectl apply -k phase2/infra/k8s
 kubectl wait --for=condition=Available deployment --all --timeout=180s
-kubectl port-forward deploy/order-service 8080:8080   # then: curl localhost:8080/actuator/health  ->  {"status":"UP"}
+kubectl port-forward deploy/order-service 18080:8080   # then: curl localhost:18080/actuator/health  ->  {"status":"UP"}  (not 8080: the compose apps profile uses it)
 kind delete cluster --name orderflow
 ```
 
 Check the manifests without a cluster: `kubectl kustomize phase2/infra/k8s`.
 
 Notes
+- Verified on 2026-11-05 (kind 0.33, Docker Desktop, Windows 10): all four Deployments Available about 30 s after `kubectl apply` on a warm node, 0 restarts, `/actuator/health` UP
+  on both services through `port-forward`, Flyway migrations applied in both databases. Creating a kind cluster the first time took about 3 minutes (node image download).
+  Not tested: creating an order inside the cluster (there is no Keycloak here, so no token), and any non-kind cluster.
+- The `wait-for-postgres` init containers exist because without them each service started before PostgreSQL, failed in Flyway and was restarted 4 times by kubelet before it settled.
 - `startupProbe` gives a service up to 3 minutes to boot before the liveness probe starts; without it the liveness
   probe would kill a Spring Boot app that is still starting.
 - `/actuator/health/readiness` exists only because `management.endpoint.health.probes.enabled: true` (step 21a); without

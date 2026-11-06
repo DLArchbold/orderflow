@@ -19,6 +19,13 @@ spec:
     metadata:
       labels: { app: inventory-service }
     spec:
+      initContainers:
+        # Wait for PostgreSQL: without this the service starts first, Flyway cannot connect and the pod crashes and restarts a few times
+        # (kubelet back-off) until the database is up. The postgres image is already on the node, so nothing extra is pulled.
+        - name: wait-for-postgres
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do echo waiting for postgres; sleep 2; done"]
       containers:
         - name: inventory-service
           image: orderflow-inventory-service:local
