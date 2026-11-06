@@ -486,6 +486,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 - **Step 0, environment.** C: has 105 GB free (disk is no longer the blocker). Installed: `kind` 0.33, `kubectl`, `terraform` 1.16, `k6` 2.3, JDK 21, Maven, Node 22.
 - **Step 1, images and compose `apps` profile.** Verified: `docker compose -f phase2/infra/docker-compose.full.yml --profile apps up -d --wait` brings up order-service, inventory-service and the frontend, all `healthy`. Ports 8080/8081 must be free first (a leftover `mvn spring-boot:run` makes the container fail to bind).
 
+- **Step 2, tests against the containers.** Verified: `BASE_URL=http://localhost:5173 npx playwright test` 4 passed (9.6 s) and `mvn -f e2e/pom.xml verify` 2 passed (`OrderFlowIT`), with order-service, inventory-service and the frontend running as containers (no `mvn spring-boot:run`). Set `BASE_URL` so Playwright does not start `npm run dev` or reuse a dev server.
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.
