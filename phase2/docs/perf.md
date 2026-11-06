@@ -91,3 +91,32 @@ be quoted as such. The k6 script is written but has never been run.
   fell behind at the top rate, as predicted: the API accepting orders is not the same as events leaving.
 - **Error rate: 0 failed of 32,200 requests.** After the last drain: 32,156 orders CONFIRMED, 4 REJECTED (from an earlier test), 0 PENDING.
 - These are warm-cache numbers from one machine and a short run each (60 s and 30 s, not the planned 3 minutes). Treat them as a first measurement.
+
+### Re-run with the services as containers, and the ramp extended to 1,000/s (2026-11-05)
+Same tool (`scripts/load_orders.py`, still **not k6**), same thresholds (failures < 1%, p95 < 500 ms), same machine, but order-service, inventory-service and the
+frontend ran as containers (`compose --profile apps`, no CPU or memory limits, 15.5 GB available to Docker), not `mvn spring-boot:run`. Command:
+`RAMP="100 150 200 300 400 600 800 1000" scripts/perf_run.sh <dir>`.
+
+| Run | Orders | Failed | Achieved/s | p50 ms | p95 ms | p99 ms | Outbox lag drained after |
+|---|---|---|---|---|---|---|---|
+| warm-up 20/s | 400 | 0 | 20.0 | 19.3 | 30.7 | 34.2 | |
+| steady 50/s, run 1, 2, 3 | 3,000 each | 0 | 50.0 | 17.6, 17.5, 18.4 | 30.1, 29.7, 29.6 | 31.7, 31.8, 31.2 | 0 s |
+| ramp 100/s | 3,000 | 0 | 100.0 | 15.9 | 29.4 | 32.0 | 0 s |
+| ramp 150/s | 4,500 | 0 | 149.9 | 8.4 | 32.6 | 44.3 | 0 s |
+| ramp 200/s | 6,000 | 0 | 200.0 | 18.7 | 42.0 | 53.8 | 5 s |
+| ramp 300/s | 9,000 | 0 | 299.8 | 6.9 | 28.1 | 31.4 | 19 s |
+| ramp 400/s | 12,000 | 0 | 399.7 | 7.4 | 29.0 | 33.2 | 36 s |
+| **ramp 600/s** | 18,000 | **21 (0.12%)** | 599.8 | 31.8 | **1,333.5** | 2,936.3 | 70 s |
+| ramp 800/s | 24,000 | 83 (0.35%) | **445.3** (the run took 53.9 s, not 30 s) | 211.1 | 3,128.4 | 8,111.3 | 99 s |
+| ramp 1000/s | 30,000 | 0 | **662.5** (45.3 s instead of 30 s) | 29.5 | 1,210.7 | 2,064.8 | 125 s |
+
+- **Limit found: between 400 and 600 orders/s for the create-order API.** 400/s passed cleanly (p95 29 ms). The first threshold broken was p95 at 600/s (1.33 s against 500 ms),
+  with 21 requests failing (status 0, a client timeout or connection error). At 800 and 1,000/s the generator could not hold the arrival rate (achieved 445/s and 663/s),
+  so those two rows say the system or the generator, or both, was saturated; this run cannot separate them. Because 600/s was held on schedule, the generator was not the limit there.
+- **Outbox lag peak: 124 s**, during the 1,000/s step. The lag grows with the rate: 19 s to drain at 300/s, 36 s at 400/s, 125 s at 1,000/s.
+- **End-to-end throughput is lower than API throughput.** After the ramp, 21,325 orders were still PENDING; they drained at about **220 orders/s** (4,400 every 20 s), and
+  everything reached CONFIRMED about 2 minutes later (98,154 CONFIRMED, 0 PENDING, 0 unpublished outbox rows, SKU-1 and SKU-2 each 51,570 reserved
+  which equals the CONFIRMED quantities). So the API accepts about 400/s, but orders are confirmed at about 220/s once a backlog exists, and the part that limits
+  that was not isolated (candidates: the publisher sending one event at a time, the inventory consumer, the broker). The earlier "drain" columns above only watch the outbox lag, not this
+  second stage.
+- Not measured: any CPU or memory limit on the containers (none set), a run longer than 30 s per step, and the same test with k6.

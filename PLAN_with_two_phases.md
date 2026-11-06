@@ -494,6 +494,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 5, long-outage drill for the lag alert.** Verified: Kafka stopped 244 s at 10 orders/s; `OutboxLagHigh` went Pending at +88 s and Firing at +208 s, peak lag 132 s, 3,600 orders with all drill checks passing. New script `scripts/drill_lag_alert.py`. Caveat: the alert times come from a Prometheus `query_range` afterwards, because the script's sampler had a bug (fixed, not re-run). See [phase2/docs/resilience.md](phase2/docs/resilience.md), drill 4.
 
+- **Step 6a, perf re-run and the limit.** Verified with `scripts/load_orders.py` (not k6), services as containers: 0 failures up to 400 orders/s (p95 29 ms); first threshold broken at **600/s** (p95 1.33 s, 21 failed of 18,000); at 800 and 1,000/s the generator achieved only 445/s and 663/s. Peak outbox lag 124 s. New finding: end-to-end confirmation drains at about 220 orders/s, below the API's 400/s. `perf_run.sh` now takes `RAMP`. See [phase2/docs/perf.md](phase2/docs/perf.md).
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.

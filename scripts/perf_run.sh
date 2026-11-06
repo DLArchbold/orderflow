@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PLAN step 25b: warm-up, three runs at a steady rate, then a ramp to find the first rate that breaks a threshold.
 # Samples orderflow_outbox_lag_seconds every 2 s and waits for it to drain between runs.
-#   scripts/perf_run.sh <output-dir>
+#   scripts/perf_run.sh <output-dir>        (RAMP="100 150 200 300 400 600" scripts/perf_run.sh <dir> to change the ramp steps)
 # Uses scripts/load_orders.py (a stand-in for k6). Needs the local stack running (order-service on 8080, Keycloak on 8180).
 set -u
 OUT=${1:?output directory}
@@ -35,7 +35,7 @@ for i in 1 2 3; do
   echo "run $i end $(date +%s)" >> "$OUT/timeline.txt"
   echo "run $i drain_seconds $(drain)" >> "$OUT/timeline.txt"
 done
-for rate in 100 150 200 300; do
+for rate in ${RAMP:-100 150 200 300}; do
   echo "ramp $rate start $(date +%s)" >> "$OUT/timeline.txt"
   python "$HERE/load_orders.py" --rate $rate --duration 30 --label "ramp $rate/s" > "$OUT/ramp$rate.json"
   echo "ramp $rate end $(date +%s)" >> "$OUT/timeline.txt"
