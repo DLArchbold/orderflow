@@ -492,6 +492,8 @@ Each entry is one commit. "Verified" means it ran on this machine (Windows 10, D
 
 - **Step 4, index test at 3,000,000 rows (step 19).** Verified twice: the first pass (already in the README) and a re-run today. Re-run: 3,000,000 orders loaded in 138 s; "my newest 50 orders" 54.9, 61.5, 66.5 ms before the `(customer_id, created_at DESC)` index and 0.235, 0.200, 0.246 ms after (about 19,150 page reads down to 53). Details in [phase2/docs/perf.md](phase2/docs/perf.md). Caveat: one machine, default Postgres settings, a mostly warm cache.
 
+- **Step 5, long-outage drill for the lag alert.** Verified: Kafka stopped 244 s at 10 orders/s; `OutboxLagHigh` went Pending at +88 s and Firing at +208 s, peak lag 132 s, 3,600 orders with all drill checks passing. New script `scripts/drill_lag_alert.py`. Caveat: the alert times come from a Prometheus `query_range` afterwards, because the script's sampler had a bug (fixed, not re-run). See [phase2/docs/resilience.md](phase2/docs/resilience.md), drill 4.
+
 ## Optional, after step 28
 - **.NET variant (only if you want .NET roles):** a second inventory service in ASP.NET Core with EF Core and SQL Server, using the same Kafka events. Done when it passes the same idempotency test as step 14.
 - **Go:** skip unless you decide to pursue Go roles.

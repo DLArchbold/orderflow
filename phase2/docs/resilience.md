@@ -47,7 +47,7 @@ What was seen
 - **Drill 1 (broker).** The API kept returning 201 for the whole minute: the order and its outbox row commit together, so a dead broker does not touch the request path.
   Orders piled up PENDING and the outbox lag climbed to 64 s, then the publisher caught up within seconds of the broker returning.
   **The lag alert did not fire.** `OutboxLagHigh` needs the lag above 60 s *for 2 minutes*; a 60 s outage only just crossed 60 s once. The alert fired in the
-  step 21b test, where the publisher was switched off for five minutes; to see it during a broker outage the outage has to last longer than about three minutes.
+  step 21b test, where the publisher was switched off for five minutes; to see it during a broker outage the outage has to last longer than about three minutes (drill 4 below did that).
 - **Drill 2 (consumer).** Orders stayed PENDING while inventory-service was down (the events wait in `orders.events`), the outbox lag stayed near zero (order-service
   was healthy), and every order reached CONFIRMED after the restart. After a kill the restarted consumer waits for the old group member's session to expire, which
   delayed the catch-up by up to 45 s. No stock was reserved twice (`reserved` equals the CONFIRMED quantity, per SKU).
@@ -65,5 +65,25 @@ Limits of the "0 lost" claim: it covers orders the client got a `201` for. Reque
 no `Idempotency-Key`, so a client that retries after a lost response could create a second order. Order-service also runs one replica (two would publish the same outbox
 rows), so a crash is an outage of the create API until it restarts.
 
-Not captured: a Grafana screenshot for each drill (the image renderer plugin is not installed); the lag and PENDING samples above stand in for it. The optional
-Kafka-outage-long-enough-to-fire-the-alert drill was not run.
+Not captured: a Grafana screenshot for each drill (the image renderer plugin is not installed); the lag and PENDING samples above stand in for it.
+
+### Drill 4: Kafka stopped 4 minutes, to see `OutboxLagHigh` fire (2026-11-05)
+Setup: both services and the frontend as containers (`--profile apps`), `scripts/load_orders.py` at **10 orders/s for 360 s**, Kafka stopped 30 s in for **244 s**,
+then started. Driver: `python scripts/drill_lag_alert.py <dir>`. Prometheus scrapes every 15 s with the default settings.
+
+| Seconds after Kafka stopped | What Prometheus showed |
+|---|---|
+| 0 | stop; the API kept returning 201 |
+| 88 | `OutboxLagHigh` **Pending** (the lag crossed 60 s about 85 s after the stop) |
+| 208 | **Firing**, 2 minutes after Pending, as the rule's `for: 2m` says |
+| 244 | Kafka started |
+| about 263 | alert cleared; peak outbox lag **132 s** |
+| 360 (about) | load ended; 3 s later no order was PENDING |
+
+Checks (`scripts/drill_check.py`): 3,600 orders created (201), 3,600 rows, 3,600 CONFIRMED, 0 PENDING, 0 unpublished outbox rows in either service, 0 orders with
+a duplicated event, 1,800 reserved per SKU matching the CONFIRMED quantities. **ALL CHECKS PASS.** This closes the gap noted under drill 1.
+
+Caveat on the evidence: the sampler in the first version of `drill_lag_alert.py` had a bug (it read the `ALERTS` labels from the wrong key), so `samples.txt` shows
+the alert state as an error for the 36 samples while the alert was active. The Pending/Firing times above come from querying Prometheus afterwards
+(`query_range` on `ALERTS{alertname="OutboxLagHigh"}`, step 5 s), not from the script's samples. The bug is fixed in the script but the drill was not re-run with the fix.
+The raw run directory was not committed. The alert was seen in Prometheus only; no notification receiver (Alertmanager) is configured.
