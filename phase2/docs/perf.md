@@ -62,8 +62,7 @@ The result matches the first run (about 300x). The first run's numbers stay as t
 **Tool: `scripts/load_orders.py`, NOT k6.** k6 could not be installed on this machine (winget hung, a binary download was blocked), so the
 numbers below come from a stand-in written for this purpose (standard library Python, same behaviour as `phase2/load-tests/k6/create-orders.js`:
 one Keycloak token per user, a fixed arrival rate that does not wait for responses, SKU-1/SKU-2 mix). They are not k6 numbers and should not
-be quoted as such. The k6 script is written but has never been run. (Update 2026-11-05: k6 2.3.0 is installed now, but the k6 script has still not been run;
-every number in this file is from `load_orders.py`.)
+be quoted as such. The k6 script was first run on 2026-11-06: see "k6 runs" at the end of this file. (Update 2026-11-06: the tables above are from `load_orders.py`; the last section is from k6.)
 
 ### Setup
 - One Windows 10 machine (Intel Core i7-14700) running everything at once: the load generator, both services (`mvn spring-boot:run`, JVM defaults),
@@ -121,3 +120,33 @@ frontend ran as containers (`compose --profile apps`, no CPU or memory limits, 1
   that was not isolated (candidates: the publisher sending one event at a time, the inventory consumer, the broker). The earlier "drain" columns above only watch the outbox lag, not this
   second stage.
 - Not measured: any CPU or memory limit on the containers (none set), a run longer than 30 s per step, and the same test with k6.
+
+### k6 runs (2026-11-06, step 25b)
+**Tool: k6 2.3.0** running `phase2/load-tests/k6/create-orders.js` (constant-arrival-rate, `preAllocatedVUs` 100, `maxVUs` 300, thresholds `http_req_failed < 1%` and `p(95) < 500 ms`), through `scripts/perf_run_k6.sh`
+(the same sequence as `perf_run.sh`: 20 s warm-up at 20/s, three 60 s runs at 50/s, then 30 s steps, waiting for the outbox lag to reach 0 between runs).
+Command: `RAMP="100 200 300 400 500 600 800" scripts/perf_run_k6.sh phase2/docs/k6-runs/perf-2026-11-06`. Raw k6 summaries, the lag samples and the timeline are in [k6-runs/perf-2026-11-06/](k6-runs/perf-2026-11-06/).
+Setup as in the container re-run above: services as containers, no CPU or memory limits, 28 CPUs and 15.5 GB visible to Docker, Hikari pool 10, Tomcat 200 threads, outbox poll 500 ms, batch 100, one event sent at a time. The load generator shares the machine, so the numbers are conservative that way.
+
+| Run | Requests | Failed | Achieved/s | p50 ms | p95 ms | Dropped iterations | Outbox lag drained after | Thresholds |
+|---|---|---|---|---|---|---|---|---|
+| warm-up 20/s | 402 | 0 | 20.0 | 19.4 | 49.0 | 0 | | pass |
+| steady 50/s, run 1 | 3,003 | 0 | 50.0 | 5.2 | 13.0 | 0 | 0 s | pass |
+| steady 50/s, run 2 | 3,003 | 0 | 49.9 | 5.3 | 7.6 | 0 | 0 s | pass |
+| steady 50/s, run 3 | 3,003 | 0 | 50.0 | 5.2 | 7.2 | 0 | 0 s | pass |
+| ramp 100/s | 3,002 | 0 | 99.9 | 5.4 | 36.1 | 0 | 1 s | pass |
+| ramp 200/s | 6,003 | 0 | 199.2 | 21.5 | 49.7 | 0 | 4 s | pass |
+| **ramp 300/s** | 5,849 | **56 (0.96%)** | **170.8** | 653.9 | **3,230** | **3,154** | 15 s | **p95 failed** |
+| ramp 400/s | 12,002 | 0 | 399.3 | 5.0 | 8.0 | 0 | 36 s | pass |
+| ramp 500/s | 15,002 | 0 | 499.2 | 5.0 | 8.0 | 0 | 54 s | pass |
+| **ramp 600/s** | 16,235 | 3 (0.02%) | **469.8** | 6.0 | **671** | **1,767** | 59 s | **p95 failed** |
+| ramp 800/s | 24,003 | 0 | 798.1 | 5.0 | 8.0 | 0 | 104 s | pass |
+
+- **The ramp did not give a clean limit, and I did not isolate why.** The 300/s and 600/s steps stalled (maximum request time about 30 s, all VUs busy, so k6 dropped iterations and the achieved rate fell), while 400, 500 and 800/s
+  passed with p95 of 8 ms. A system at its limit would not pass 800/s after failing 300/s, so this looks like an intermittent stall (candidates: a GC pause, Postgres checkpoint or autovacuum after the large inserts, a
+  Docker Desktop scheduling pause), not a rate limit. The order-service log shows nothing relevant (one SSE broken-pipe warning). I did not repeat the failing steps or profile them.
+- **What can be claimed:** every step up to 200/s passed in this run (and 400/s passed in both tools); 400, 500 and 800/s each passed once; 300/s and 600/s failed once. The highest rate that passed at every attempt is
+  **200 orders/s** with k6 (300/s failed here, passed in the Python run). The earlier Python result (limit between 400 and 600/s) is neither confirmed nor refuted, and **800/s with p95 8 ms is a single passing run, not a sustained capacity**.
+- **Outbox lag:** peak **100.8 s** (the 800/s step); drain time after each step grows with the rate (0 s at 50/s, 36 s at 400/s, 104 s at 800/s). Lag samples are in `lag.txt`.
+- **Error rate:** 59 failed of 91,000-odd requests across the ramp (all in the two stalled steps); 0 in warm-up and the three steady runs.
+- **End state:** after the lag reached 0 the table still had about 4,600 PENDING orders (the confirmation stage trails the outbox, as found earlier); a few minutes later: 222,610 CONFIRMED, 0 PENDING.
+- Not done: runs longer than 30-60 s per step (the plan says 3 minutes), repeating the stalled steps, any CPU or memory limit.

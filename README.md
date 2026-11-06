@@ -35,7 +35,7 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 Verified locally (Windows 10, Docker Desktop; not yet on a GitHub runner): the three Docker images, the compose `apps` profile (also from a fresh clone), and a kind cluster
 where both services became Ready ([phase2/infra/k8s/README.md](phase2/infra/k8s/README.md)).
 
-What is not done, so nobody has to guess: pushing to GitHub and the first CI run; `terraform plan`/`apply` and everything on AWS (`terraform validate` passes); the k6 runs (k6 is installed, the script has not been run).
+What is not done, so nobody has to guess: pushing to GitHub and the first CI run; `terraform plan`/`apply` and everything on AWS (`terraform validate` passes); a clean k6 limit (k6 ran, but its ramp stalled erratically at 300/s and 600/s; see [perf.md](phase2/docs/perf.md)).
 The files for all of them are in the repository and are marked as untested where they are.
 
 ## Quick start

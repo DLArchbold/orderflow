@@ -1,0 +1,47 @@
+time="2026-11-06T14:31:53-05:00" level=warning msg="Insufficient VUs, reached 300 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=orders
+time="2026-11-06T14:32:19-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:60036->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:32:19-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:60037->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:32:21-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:60129->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✗ 'p(95)<500' p(95)=671.02ms
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.01%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 16233  469.721538/s
+    checks_succeeded...: 99.98% 16230 out of 16233
+    checks_failed......: 0.01%  3 out of 16233
+
+    ✗ created
+      ↳  99% — ✓ 16230 / ✗ 3
+
+    CUSTOM
+    orders_created.................: 16230 469.634729/s
+
+    HTTP
+    http_req_duration..............: avg=235.7ms  min=2.79ms med=6ms max=30.01s p(90)=545.07ms p(95)=671.02ms
+      { expected_response:true }...: avg=230.2ms  min=2.79ms med=6ms max=9.32s  p(90)=544.54ms p(95)=670.82ms
+    http_req_failed................: 0.01% 3 out of 16235
+    http_reqs......................: 16235 469.77941/s
+
+    EXECUTION
+    dropped_iterations.............: 1767  51.130288/s
+    iteration_duration.............: avg=235.77ms min=2.79ms med=6ms max=30.01s p(90)=545.14ms p(95)=671.02ms
+    iterations.....................: 16233 469.721538/s
+    vus............................: 1     min=1          max=300
+    vus_max........................: 300   min=100        max=300
+
+    NETWORK
+    data_received..................: 11 MB 308 kB/s
+    data_sent......................: 21 MB 595 kB/s
+
+
+
+time="2026-11-06T14:32:22-05:00" level=error msg="thresholds on metrics 'http_req_duration' have been crossed"

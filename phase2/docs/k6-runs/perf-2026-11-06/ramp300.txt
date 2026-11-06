@@ -1,0 +1,100 @@
+time="2026-11-06T14:28:32-05:00" level=warning msg="Insufficient VUs, reached 300 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=orders
+time="2026-11-06T14:28:59-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59133->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59141->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59140->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59142->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59143->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59144->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59145->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59173->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59174->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59192->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59193->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59194->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59197->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59195->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59196->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59199->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59198->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59200->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59201->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59203->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59202->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59204->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59205->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59206->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59207->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59208->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59210->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59211->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59209->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59213->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59215->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59216->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59261->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59262->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59264->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:01-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59263->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59271->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59275->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59280->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59285->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59286->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59287->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59288->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59289->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59291->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59290->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59292->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59293->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59295->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59294->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59296->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59298->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59297->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59300->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59299->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+time="2026-11-06T14:29:02-05:00" level=warning msg="Request Failed" error="Post \"http://localhost:8080/api/orders\": read tcp 127.0.0.1:59301->127.0.0.1:8080: wsarecv: An existing connection was forcibly closed by the remote host."
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✗ 'p(95)<500' p(95)=3.23s
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.95%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 5847   170.790288/s
+    checks_succeeded...: 99.04% 5791 out of 5847
+    checks_failed......: 0.95%  56 out of 5847
+
+    ✗ created
+      ↳  99% — ✓ 5791 / ✗ 56
+
+    CUSTOM
+    orders_created.................: 5791   169.154533/s
+
+    HTTP
+    http_req_duration..............: avg=1.45s min=12.87ms med=653.88ms max=30.01s p(90)=1.35s p(95)=3.23s
+      { expected_response:true }...: avg=1.17s min=12.87ms med=650.73ms max=22.53s p(90)=1.24s p(95)=3.13s
+    http_req_failed................: 0.95%  56 out of 5849
+    http_reqs......................: 5849   170.848708/s
+
+    EXECUTION
+    dropped_iterations.............: 3154   92.128026/s
+    iteration_duration.............: avg=1.45s min=12.87ms med=654.3ms  max=30.01s p(90)=1.35s p(95)=3.23s
+    iterations.....................: 5847   170.790288/s
+    vus............................: 20     min=20         max=300
+    vus_max........................: 300    min=128        max=300
+
+    NETWORK
+    data_received..................: 3.8 MB 111 kB/s
+    data_sent......................: 7.4 MB 216 kB/s
+
+
+
+time="2026-11-06T14:29:02-05:00" level=error msg="thresholds on metrics 'http_req_duration' have been crossed"
