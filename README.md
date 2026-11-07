@@ -30,7 +30,7 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | Query time before/after index | **about 60 ms to 0.2 ms** (19,000 to 53 buffers) for "my newest 50 orders" at **3,000,000 orders** (a customer with about 30,000 orders); measured twice with the same result | [perf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |
 | Failed requests during rolling deploy | **not measured** | the AWS deploy was never run (no AWS account used); [Terraform](phase2/infra/terraform/README.md) passes `terraform validate` but was never planned or applied |
 | Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
-| Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL and Dependabot have **not run yet** (nothing pushed) | [security.md](phase2/docs/security.md) |
+| Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL ran on PR #1: 0 results (default suites, not proof of safety). Dependabot has 9 open alerts on `main` (vite, esbuild) that should close when the branch is merged | [security.md](phase2/docs/security.md) |
 
 Verified locally (Windows 10, Docker Desktop; not yet on a GitHub runner): the three Docker images, the compose `apps` profile (also from a fresh clone), and a kind cluster
 where both services became Ready ([phase2/infra/k8s/README.md](phase2/infra/k8s/README.md)).
