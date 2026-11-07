@@ -1,6 +1,6 @@
 
 > <ide_selection>The user selected the lines 1 to 2 from
-  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes\implmentations\ch
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes\implmentations\initial_run\ch
   at_export_13_f_to_27_complete_history.txt:
   Implement steps 13f to 27 including all substeps. For each substep and step
     completed, perform a commit before starting the next step

@@ -1,0 +1,980 @@
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work 2023-05-12
+  \Project\orderflow\notes\implmentations\remaining_steps_after_initial\implementing_1_9_remaining_steps.txt
+  in the IDE. This may or may not be related to the current
+  task.</ide_opened_file>
+
+> Implement the remaining steps below, including any substeps. For each substep
+  and step
+    completed, perform a commit before starting the next step. Update the notes
+  in PLAN_with_two_phases.md as needed.
+
+   |
+  10 | Terraform validate | Needs no AWS account | You install the terraform
+  binary |
+  | 11 | k6 install and runs | I won't work around the earlier block | You
+  install k6, then I rerun 25a and 25b |
+  | 12 | Push to GitHub, first CI run, CodeQL, Dependabot, branch protection |
+  I won't push without your go-ahead | A remote, and your yes |
+  | 13 | AWS apply, deploy under load, destroy | Costs money | Your credentials
+  and an explicit yes |
+
+● I'll start by reading the plan and notes to see where things stand.
+
+  Searched for 2 patterns, read 1 file, ran 3 shell commands (ctrl+o to expand)
+
+● Step 10: Terraform validate.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow/phase2/infra/terraform"; terraform fmt -check
+-recursive; terraform init -backend=false -input=false 2>&1 | tail -15;
+terraform validate 2>&1 | tail -30; git status --short ." completed (exit code
+0)
+
+  Read 1 file (ctrl+o to expand)
+
+● Validate passes. fmt flagged four files, so I'll format them and re-validate.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● Now the plan's status log and the stale Terraform "no binary" statements.
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● Step 11: k6. I'll check whether the local stack is up and how the earlier perf
+  runs were set up.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Stack is up. First the 25a smoke run (30 s, 50/s).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 25a passes: 1,501 of 1,501 created, 0 failures, p95 60.7 ms. I'll commit that,
+  then write the k6 runner for 25b.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Running the k6 version of the full 25b sequence (warm-up, 3×60 s at 50/s, then
+  a ramp to 800/s) in the background.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  Invalid tool parameters
+
+● The k6 ramp is running in the background (about 15 minutes). I'll pick it up
+  when it finishes.
+
+  Steps 10 and 11a are done and committed. Steps 12 and 13 stay on hold, as your
+  table says.
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow"; RAMP="100 200 300 400 500 600 800" bash
+scripts/perf_run_k6.sh phase2/docs/k6-runs/perf-2026-11-06 >
+phase2/docs/k6-runs/perf.log 2>&1; echo finished; cat
+phase2/docs/k6-runs/perf-2026-11-06/timeline.txt" completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The results aren't monotonic: 300/s broke, 400 and 500 passed cleanly, 600
+  broke, and 800 passed. I'll check the service logs for a cause before I write
+  this up.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The one WARN is an SSE broken pipe, unrelated to the stalls. Everything has
+  drained: 222,610 CONFIRMED and 0 PENDING. I'll record the results as they are,
+  including the erratic ones.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Steps 10 and 11 are done and committed. I did not do steps 12 and 13.
+
+  Step 10, Terraform validate (48907ec)
+  - terraform fmt changed whitespace in four files.
+  - terraform init -backend=false and terraform validate then reported the
+    configuration valid, on Terraform 1.16.6 with no AWS account.
+  - plan and apply have never been run, so the resources have never been
+    created.
+  - I committed .terraform.lock.hcl. ADR 0006, the Terraform README, the project
+    README and the notes now say "validates" instead of "unvalidated".
+
+  Step 11a, k6 smoke run (1bc1c2c)
+  - Over 30 s at 50/s, all 1,501 requests returned 201, with 0 failed and p95 at
+    60.7 ms. Both thresholds passed and the script needed no change.
+
+  Step 11b, k6 ramp (1d976bc)
+  - The warm-up and three 60 s runs at 50/s were clean, with p95 between 7 and
+    13 ms.
+  - The ramp was erratic:
+
+  | Step         | Result
+     |
+  |--------------|--------------------------------------------------------------
+  ----|
+  | 300/s        | Failed: p95 3.2 s, 56 failed requests, 3,154 dropped
+  iterations. |
+  | 400/s, 500/s | Passed, p95 8 ms.
+     |
+  | 600/s        | Failed: p95 671 ms, 1,767 dropped iterations.
+     |
+  | 800/s        | Passed, p95 8 ms.
+     |
+
+  - Passing at 800/s after failing at 300/s looks like an intermittent stall,
+    not a rate limit. I didn't find the cause or repeat the failed steps. The
+    service log showed nothing relevant.
+  - So there is no clean k6 limit. The highest rate that passed at every attempt
+    is 200/s, and 800/s is a single passing run, not a sustained capacity.
+  - The outbox lag peaked at 100.8 s. Once everything drained, all 222,610
+    orders were CONFIRMED and none PENDING.
+  - perf.md, the plan status log and the README say this plainly. I added
+    scripts/perf_run_k6.sh and put the raw k6 outputs in phase2/docs/k6-runs/.
+
+  Steps 12 and 13
+  - Step 12: a remote is configured (origin, DLArchbold/orderflow), but I
+    haven't pushed. Pushing goes to a third party, and I read your table as
+    "wait for your yes". Say "push" and I'll push the branch, check the first CI
+    run, and set up CodeQL, Dependabot and branch protection. gh isn't
+    installed, so branch protection and anything else that needs the CLI would
+    need you to install it and run gh auth login.
+  - Step 13: this deploys to AWS and costs money, so I need your credentials and
+    an explicit yes. I'll start with the billing alarm and destroy everything
+    at the end of the session.
+
+  Do you want me to repeat the 300/s and 600/s steps to chase the stall? I'd do
+  that before quoting any k6 throughput figure.
+
+> Install GitHub CLI
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● GitHub CLI 2.103.3 is installed at C:\Program Files\GitHub CLI\gh.exe. It
+  isn't logged in yet.
+
+  To log in, run gh auth login in a terminal. It's interactive, so I can't do it
+  for you. Choose GitHub.com, HTTPS, and browser login. The token needs the
+  repo and workflow scopes. Open a new terminal afterwards, because the current
+  shell's PATH won't include gh until then.
+
+  I still haven't pushed anything. Tell me when you're logged in and say "push"
+  if you want step 12 to go ahead.
+
+> Repeat the 300/s and 600/s steps to chase the stall
+
+● I'll repeat each step three times and sample the pool, GC, threads and
+  Postgres activity every second, so a stall can be matched to a cause.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The six repeat runs are going in the background (about 10 minutes). I'll
+  analyse them when they finish.
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow"; cat > scripts/stall_hunt.sh <<'EOF'
+#!/usr/bin/env bash # Repeats the k6 steps that stalled (300/s and 600/s) and
+samples order-service and Postgres every second to find the cause. #
+scripts/stall_hunt.sh <output-dir> (RATES="300 600 300 600 300 600" to change
+the sequence) set -u OUT=${1:?output directory}; mkdir -p "$OUT" HERE=$(cd
+"$(dirname "$0")" && pwd); K6="$HERE/../phase2/load-tests/k6/create-orders.js"
+PSQL="docker exec infra-postgres-1 psql -U orderflow -d orders -Atc" ( echo "ts
+hikari_active hikari_pending hikari_timeouts tomcat_busy gc_pause_sum_s gc_count
+proc_cpu pg_active pg_waiting ckpt_timed ckpt_req" > "$OUT/samples.txt" while
+true; do m=$(curl -s -m 2 localhost:8080/actuator/prometheus) g() { echo "$m" |
+grep -E "$1" | awk '{s+=$2} END{print s+0}'; } pg=$($PSQL "select count(*)
+filter (where state='active'), count(*) filter (where wait_event_type='Lock' or
+wait_event_type='LWLock'), (select checkpoints_timed from pg_stat_bgwriter),
+(select checkpoints_req from pg_stat_bgwriter) from pg_stat_activity where
+datname='orders'" 2>/dev/null | tr '|' ' ') echo "$(date +%s) $(g
+'^hikaricp_connections_active') $(g '^hikaricp_connections_pending') $(g
+'^hikaricp_connections_timeout_total') $(g '^tomcat_threads_busy_threads') $(g
+'^jvm_gc_pause_seconds_sum') $(g '^jvm_gc_pause_seconds_count') $(g
+'^process_cpu_usage') $pg" >> "$OUT/samples.txt" sleep 1 done ) & SPID=$!; trap
+'kill $SPID 2>/dev/null' EXIT drain() { local s=$(date +%s); while :; do
+l=$(curl -s -m 2 localhost:8080/actuator/prometheus | grep
+'^orderflow_outbox_lag_seconds' | cut -d' ' -f2); [ "${l%.*}" = "0" ] && break;
+[ $(( $(date +%s)-s )) -gt 300 ] && break; sleep 2; done; echo $(( $(date +%s)-s
+)); } n=0 for rate in ${RATES:-300 600 300 600 300 600}; do n=$((n+1)); echo
+"run$n rate $rate start $(date +%s)" >> "$OUT/timeline.txt" k6 run --quiet -e
+RATE=$rate -e DURATION=30s --summary-export "$OUT/run$n-$rate.json" "$K6" >
+"$OUT/run$n-$rate.txt" 2>&1 echo "run$n rate $rate end $(date +%s)" >>
+"$OUT/timeline.txt" echo "run$n drain_seconds $(drain)" >> "$OUT/timeline.txt"
+sleep 20 done echo done >> "$OUT/timeline.txt" EOF bash scripts/stall_hunt.sh
+phase2/docs/k6-runs/stall-hunt-2026-11-06 > /dev/null 2>&1; echo finished"
+completed (exit code 0)
+  Ran 1 shell command (ctrl+o to expand)
+
+● Five of six runs were clean, including three at 600/s, which failed last time.
+  Run 5 (300/s) had 31 requests hang for 30 s. I'll look at that one.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Each hung request sat for the whole run and was reset together at the end, and
+  31 VUs stayed stuck for 30 s. I'll check whether those 31 requests reached
+  the app and committed an order.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The DB holds 8,969 orders in the window, which is exactly k6's 201 count, so
+  the 31 hung requests never created an order. I'll write this up and commit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I repeated the 300/s and 600/s steps. The stall is almost certainly not a
+  limit of order-service, but I haven't proven what causes it. It's committed as
+  340bfba.
+
+  I ran 300, 600, 300, 600, 300 and 600 orders/s for 30 s each, with per-second
+  sampling of the Hikari pool, the JVM and Postgres.
+
+  - Mostly clean: 5 of 6 runs passed with p95 at 7–8 ms and 0 failures. 600/s
+    passed all three times, which is the step that failed before.
+  - One stall: run 5 (300/s) had 31 requests hang for 30 s. They then failed
+    together with connection forcibly closed by the remote host.
+  - Those 31 requests created no orders. The database holds 8,969 orders for
+    that window, which is exactly k6's count of 201 responses. They were failed
+    requests, not lost ones.
+  - The database wasn't the bottleneck: no request ever waited for a Hikari
+    connection (pending 0 in every sample), and active connections never went
+    above 8 of 10.
+  - No pattern by rate: across both rounds 300/s failed 2 of 4 times and 600/s
+    failed 1 of 4. The 400, 500 and 800/s steps passed in their single runs.
+    Failures show up in a few connections from the start of a run, not at a
+    particular load.
+  - Likely cause, unproven: Docker Desktop's localhost:8080 port forward on
+    Windows hanging a few new connections.
+  - Not ruled out: my sampler used wrong metric names for Tomcat and GC, so
+    those columns are all 0 and say nothing.
+  - To settle it: run k6 from a container on the compose network, or turn on the
+    Tomcat access log. I haven't done either. I can do the k6 container run if
+    you want.
+  - How to quote the numbers: use the clean runs, labelled as local-Docker
+    numbers. Don't quote a "limit between X and Y".
+
+  perf.md, the plan log and scripts/stall_hunt.sh are updated, and the raw data
+  is in phase2/docs/k6-runs/stall-hunt-2026-11-06/.
+
+> Repeat the 300/s and 600/s steps to chase the stall by running k6 from a
+  container on the compose network.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● KC_HOSTNAME pins the token issuer, so a token fetched via keycloak:8080 inside
+  the network should still be valid. I'll pull the k6 image and run a smoke
+  test.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● It works from inside the network. Before the run I'll fix the sampler's Tomcat
+  and GC metric names.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The GC metrics were there, but awk $2 broke on label values with spaces and
+  summed to zero; I'm switching to $NF, using active HTTP requests in place of
+  the missing Tomcat metric, and adding a container mode. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Eight runs (four each at 300/s and 600/s) are going through the containerised
+  k6. I'll analyse them when they finish, in about 13 minutes.
+
+> Implement the remaining steps below, including any substeps. For each substep
+  and step
+    completed, perform a commit before starting the next step. Update the notes
+  in PLAN_with_two_phases.md as needed.
+
+  | 12 | Push to GitHub, first CI run, CodeQL, Dependabot, branch protection
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The repo is public, so I'll scan for secrets and state files before pushing,
+  and check the workflow triggers.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The scan is clean and the push is a fast-forward. Pushing the branch now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Earlier pushes already triggered CI runs that succeeded, which the notes don't
+  mention. I'll wait for the current run and look at the jobs.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The frontend and both backend jobs passed. The e2e and kind jobs are still
+  running, and I'm waiting on them.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow"; export PATH="$PATH:/c/Program Files/GitHub CLI";
+gh run watch 42291870099 --exit-status 2>&1 | tail -25; gh run list --limit 60
+--json workflowName,conclusion,headBranch,createdAt | python -c "import
+json,sys,collections;d=json.load(sys.stdin);print(len(d),collections.Counter((x[
+'workflowName'],x['conclusion']) for x in d), min(x['createdAt'] for x in d))""
+completed (exit code 0)
+
+● The full CI run is green, with only images skipped, which I'm checking. To
+  trigger CodeQL, I'm opening a PR without merging it, and I'll look at the
+  Dependabot state after that. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Two constraints: Dependabot version updates and scheduled CodeQL only read the
+  default branch, and main is still at an old commit. I'll record 12a first and
+  then open the PR.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● That commit also picked up the still-running container stall-hunt's partial
+  output, and I'll finish it in its own commit. Opening the PR now (not merging)
+  to trigger CodeQL.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● JavaScript CodeQL passed and the Dependabot config check passed. While Java
+  CodeQL and the PR's CI run, I'll enable Dependabot alerts and security
+  updates.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● CodeQL succeeded, but that query only covers the default branch. I'll check
+  the PR ref, and Dependabot reports 9 alerts.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● CodeQL reported zero results across both languages, and the Dependabot alerts
+  on vite and esbuild come from the default branch's lockfile, so I'm comparing
+  that against my branch next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+● The vite and esbuild alerts come from main's old lockfile and should clear
+  once my branch merges. I'm recording 12b and 12c next, committing each.
+  · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Branch protection on main is set to require a pull request, the CI and CodeQL
+  checks, and blocks force pushes and deletions. I left admin enforcement off
+  and set approvals to 0 so the sole owner can still merge. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Step 12 is done, in four commits (90baf5f, 7306299, bfc81e4, 882937c). Only
+  the local-versus-main merge remains for you to decide. I did not merge PR #1.
+
+  - 12a, push and CI: I pushed q_i_step_commit to the public repo after a scan
+    found no keys, tokens, state files or .env files.
+    - Run 42291870099 passed on GitHub: frontend, both backends, e2e and kind.
+    - images was skipped by design, since it runs only on main.
+    - The branch already had green CI runs from 2026-11-05, so the notes' claim
+      that nothing had run on GitHub was wrong. I corrected it.
+  - 12b, CodeQL: CodeQL only runs on PRs and main, so I opened PR #1 into main.
+    Java/Kotlin and JS/TS both succeeded with 0 results, covering 76 and 87
+    rules. That is a clean result for those query sets, not proof the code is
+    safe.
+  - 12c, Dependabot: The config check passed. The repo had security updates off,
+    so I turned on alerts and security updates. GitHub then reported 9 alerts
+    on vite and esbuild, one of them high. They come from main's old lockfile.
+    My branch has vite 7.3.7 and esbuild 0.28.2, and npm audit reports 0 there.
+    They should close on merge, but I haven't seen that happen. Dependabot's
+    weekly update PRs also won't start until dependabot.yml is on main.
+  - 12d, branch protection: main now requires a PR, the seven CI and CodeQL
+    checks, and conversation resolution. Force pushes and deletion are blocked.
+    Approvals are set to 0, because you can't approve your own PR. Admin
+    enforcement is off, so you can still bypass the rules as the owner. I did
+    not test a direct push for that reason.
+
+  Not done
+  - PR #1: the PR's own CI re-run for the two backends was still pending when I
+    last looked.
+  - Merging: merging is what clears the Dependabot alerts and starts the
+    scheduled CodeQL and images jobs. Tell me if you want me to merge once the
+    checks pass.
+  - Unpushed commits: the last three commits are local only.
+  - Container stall run: the k6 container run (8 runs at 300/s and 600/s) was
+    still in progress. Its partial output was swept into the 12a commit. I'll
+    analyse it and commit the result when it finishes.
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow"; python - <<'EOF' p='scripts/stall_hunt.sh'
+s=open(p,newline='').read() s=s.replace("awk '{s+=$2} END{print s+0}'","awk
+'{s+=$NF} END{print s+0}'")
+s=s.replace("tomcat_busy","http_active").replace("$(g
+'^tomcat_threads_busy_threads')","$(g
+'^http_server_requests_active_seconds_gcount')") s=s.replace("#
+scripts/stall_hunt.sh <output-dir> (RATES=\"300 600 300 600 300 600\" to change
+the sequence)", "# scripts/stall_hunt.sh <output-dir> (RATES=\"300 600 300 600
+300 600\" to change the sequence)\n# K6_MODE=docker scripts/stall_hunt.sh <dir>
+runs k6 in a container on the compose network (grafana/k6:2.3.0, no Windows port
+forward)") s=s.replace(' k6 run --quiet -e RATE=$rate -e DURATION=30s
+--summary-export "$OUT/run$n-$rate.json" "$K6" > "$OUT/run$n-$rate.txt" 2>&1\n',
+''' if [ "${K6_MODE:-host}" = docker ]; then MSYS_NO_PATHCONV=1 docker run --rm
+--network infra_default -v "$(cd "$HERE/.." && pwd -W 2>/dev/null ||
+pwd):/work" \\ -e BASE_URL=http://order-service:8080 -e
+KEYCLOAK_URL=http://keycloak:8080 -e RATE=$rate -e DURATION=30s \\
+grafana/k6:2.3.0 run --quiet --summary-export "/work/${OUT#$(cd "$HERE/.." &&
+pwd)/}/run$n-$rate.json" /work/phase2/load-tests/k6/create-orders.js >
+"$OUT/run$n-$rate.txt" 2>&1 else k6 run --quiet -e RATE=$rate -e DURATION=30s
+--summary-export "$OUT/run$n-$rate.json" "$K6" > "$OUT/run$n-$rate.txt" 2>&1 fi
+''') open(p,'w',newline='').write(s) EOF grep -n "OUT=" scripts/stall_hunt.sh;
+K6_MODE=docker RATES="300 600 300 600 300 600 300 600" bash
+scripts/stall_hunt.sh phase2/docs/k6-runs/stall-hunt-container-2026-11-06 >
+/dev/null 2>&1; echo finished" completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The timeline has a gap of about 9,500 s inside run 4, and runs 5–8 each ended
+  within 3 s. I'll see what happened to them.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Docker Desktop stopped partway through, so runs 4–8 are invalid and only runs
+  1–3 are usable. I'm restarting Docker and rerunning. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The containers exited when Docker went down, but their volumes are intact.
+  I'll restart the stack with the same compose files.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The first container run was cut short, so I've restarted the stack and started
+  a fresh 8-run sequence. Three things from that run:
+
+  - Runs 4–8: these are invalid because Docker Desktop went down mid-run.
+  - Runs 1–3: these were clean (0 failures, p95 8–25 ms), but three runs aren't
+    enough to say anything.
+  - Run 4: its numbers were distorted by the gap, so I'm discarding it.
+
+  I'll analyse the new run and commit when it finishes, in about 13 minutes.
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow"; K6_MODE=docker RATES="300 600 300 600 300 600 300
+600" bash scripts/stall_hunt.sh
+phase2/docs/k6-runs/stall-hunt-container-2-2026-11-06 > /dev/null 2>&1; echo
+finished" completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The container run behaves differently: no failed requests, but the app
+  saturated in several runs (Hikari at 10 of 10, Tomcat's 200 threads busy, p95
+  up to 2.3 s), which undercuts my port-forward theory. I'm running a short
+  diagnostic to see what the Postgres sessions are waiting on for locks.
+  · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The diagnostic is running (6 runs at 300/s, with per-second Postgres wait
+  events). I'll read it when it finishes.
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow"; OUT=phase2/docs/k6-runs/pg-waits-2026-11-06;
+mkdir -p $OUT ( while true; do echo "== $(date +%s)" >> $OUT/waits.txt; docker
+exec infra-postgres-1 psql -U orderflow -d orders -Atc "select
+coalesce(wait_event_type,'-')||':'||coalesce(wait_event,'-')||' '||state||'
+'||left(regexp_replace(query,'\s+',' ','g'),90), count(*) from pg_stat_activity
+where datname='orders' and pid<>pg_backend_pid() and state<>'idle' group by 1
+order by 2 desc" >> $OUT/waits.txt 2>&1; sleep 1; done ) & SP=$! for i in 1 2 3
+4 5 6; do echo "run$i start $(date +%s)" >> $OUT/timeline.txt MSYS_NO_PATHCONV=1
+docker run --rm --network infra_default -v "$(pwd -W):/work" -e
+BASE_URL=http://order-service:8080 -e KEYCLOAK_URL=http://keycloak:8080 -e
+RATE=300 -e DURATION=30s grafana/k6:2.3.0 run --quiet --summary-export
+/work/$OUT/run$i.json /work/phase2/load-tests/k6/create-orders.js >
+$OUT/run$i.txt 2>&1 echo "run$i end $(date +%s)" >> $OUT/timeline.txt sleep 25
+done; kill $SP python - <<'EOF' import json for i in range(1,7): m=json.load(ope
+n(f'phase2/docs/k6-runs/pg-waits-2026-11-06/run{i}.json'))['metrics']
+print(i,'p95',round(m['http_req_duration']['p(95)'],1),'max',round(m['http_req_d
+uration']['max']),'dropped',m.get('dropped_iterations',{}).get('count',0)) EOF"
+completed (exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● WAL commit waits point at Postgres disk sync, but this run degraded (p95 up to
+  49 s), possibly because my per-second docker exec sampling is contributing.
+  I'm checking the stack's health and what runs 5–6 looked like. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Run 6 died with error waiting for container: unexpected EOF, and now docker ps
+  and the health endpoint both time out. The Docker engine itself seems to have
+  failed. I'll check.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The Docker engine is hung, so I'm killing the stuck CLI processes and
+  restarting Docker Desktop, then I'll bring the stack back up since the volumes
+  persist. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Background command "cd "c:/Users/WJ/Desktop/Work
+2023-05-12/Project/orderflow/phase2/docs/k6-runs/pg-waits-2026-11-06"; head -c
+400 run6.txt; grep -E "http_req_failed|iterations\.|http_reqs" run5.txt
+run6.txt; curl -s -m 5 localhost:8080/actuator/health | head -c 100; echo;
+docker exec infra-postgres-1 psql -U orderflow -d orders -Atc "show
+synchronous_commit; show fsync; show wal_sync_method; show max_wal_size; show
+checkpoint_timeout; select checkpoints_timed,checkpoints_req from
+pg_stat_bgwriter" | tr '\n' ' '; grep -c "^==" waits.txt; docker exec
+infra-postgres-1 psql -U orderflow -d orders -Atc "select status,count(*) from
+orders group by 1"" failed with exit code 1
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The stack is back and the data is intact: 480,187 CONFIRMED and 2,895 PENDING,
+  which is draining. I'll write up what the container runs showed, including
+  that they weaken my earlier theory.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Running k6 from a container on the compose network didn't reproduce the
+  connection-reset stall, but it showed the app itself saturating in some runs.
+  It's committed as b93f6cc, and nothing from the last few commits has been
+  pushed.
+
+  Container run, 8 runs at 300 and 600/s
+  - There were 0 failed requests and no connection resets. The earlier
+    hung-and-reset requests didn't come back, which fits the Windows port
+    forward as their cause but doesn't prove it.
+  - Runs 2, 5 and 7 did saturate the app. Hikari was at 10 of 10 with up to 191
+    requests waiting, all 200 Tomcat threads were busy, p95 reached 758 ms to
+    2.3 s, and k6 dropped up to 5,954 iterations. Runs 3, 4, 6 and 8 at the same
+    or higher rates were clean, with p95 at 7–17 ms. The episodes cleared on
+    their own and followed no pattern by rate.
+  - This weakens my earlier theory. The earlier stall showed no pressure in the
+    app, so I now see two separate effects.
+
+  Postgres wait events
+  - During load, Postgres sessions were mostly waiting on LWLock:WALWrite and
+    IO:WALSync inside COMMIT. Commits were queuing behind the WAL flush, which
+    suggests a slow or variable disk sync on Docker Desktop. That is my leading
+    explanation. I haven't measured disk sync latency, so it isn't confirmed.
+  - I took those wait events with a docker exec every second, which loaded the
+    machine. Latencies in that diagnostic got worse each run, and Docker's
+    engine hung during run 6. Only the kind of wait it recorded is usable.
+
+  Docker problems that cost runs
+  - Docker Desktop stopped during the first container attempt, probably when the
+    machine suspended. Runs 4–8 are invalid, and I kept the data but labelled
+    it.
+  - After the engine hang I restarted Docker Desktop and the compose stack. The
+    data survived: 480,187 orders CONFIRMED, and the remaining PENDING ones were
+    draining when I last looked.
+
+  Conclusion for the numbers
+  - Order-service held 50/s cleanly with p95 at 7–13 ms in every run. At
+    300–800/s it was clean in most runs and saturated in some.
+  - Don't quote a "maximum orders/s" from this machine. It would be more honest
+    to measure on another disk, such as Linux or the AWS deploy.
+  - Three cheap checks I haven't run, in order of value:
+    - Timing pg_test_fsync in the Postgres container.
+    - Repeating 300/s with synchronous_commit=off to see if the episodes vanish.
+    - Raising the Hikari pool.
+
+  Merging PR #1 is still waiting on your call.
+
+> <ide_selection>The user selected the lines 483 to 483 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md:
+  Status log: verification runs after the first implementation pass
+  (2026-11-05)
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Is it required to run k6 from a container again to show that load testing
+  using the compose network is not failing?
+
+● No, you don't need to rerun it. The existing container runs already show that
+  no requests failed, though "not failing" overstates it.
+
+  - No failures: across the 8 valid container runs there were 0 failed requests
+    and 0 connection resets. That evidence is in
+    phase2/docs/k6-runs/stall-hunt-container-2-2026-11-06/, and a rerun would
+    only add more of the same.
+  - Not clean either: 3 of those 8 runs saturated the app. Hikari reached 10 of
+    10, Tomcat's 200 threads were busy, p95 reached 758 ms to 2.3 s, and k6
+    dropped iterations. So the container path stops failing requests but doesn't
+    make the latency clean. Any claim should say that.
+  - Still thin: 8 runs is a small sample. If you want a stronger statement than
+    "0 failed in 8 runs", more repeats would help, but they won't explain the
+    saturation.
+
+  If you want to spend effort, I'd do the cheaper checks that test the cause:
+  pg_test_fsync in the Postgres container, and one 300/s repeat with
+  synchronous_commit=off. If the saturation disappears with the second, the WAL
+  flush is confirmed. Do you want me to run those?
+
+  I also noticed the status log you have selected, around line 483 of
+  PLAN_with_two_phases.md, is dated 2026-11-05. It now holds steps 10–12 and
+  11a–d from 2026-11-06 under that heading. I can retitle it so the dates match.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\docs\k6-runs\stall-hunt-container-2-2026-
+  11-06\samples.txt in the IDE. This may or may not be related to the current
+  task.</ide_opened_file>
+
+> Can you elaborate more on this part?
+  "Not clean either: 3 of those 8 runs saturated the app. Hikari reached 10 of
+  10, Tomcat's 200 threads were busy, p95 reached 758 ms to 2.3 s, and k6
+  dropped iterations. So the container path stops failing requests but doesn't
+  make the latency clean. Any claim should say that."
+
+  Also, please retitle it so the dates match.
+
+● First I'll retitle the heading, then explain.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I retitled the heading to "(2026-11-05 to 2026-11-06)" and committed it as
+  b56fe63. Here is what that sentence means.
+
+  What one order costs the app
+  - Each POST /api/orders takes one of Hikari's 10 database connections.
+  - It inserts into orders, order_lines and the outbox table, then commits.
+  - Tomcat has 200 request threads. Each thread holds its connection until the
+    commit finishes.
+
+  What "saturated" means
+  - If commits slow down, connections come back more slowly than requests
+    arrive. All 10 are in use ("Hikari 10 of 10"), and the requests that can't
+    get one wait.
+  - Tomcat threads pile up behind them until all 200 are busy. In runs 2, 5 and
+    7, up to 191 requests were waiting for a connection and active HTTP requests
+    hit 200.
+  - k6 holds the arrival rate by starting each new request on schedule, so it
+    ran out of free virtual users and recorded "dropped iterations". Those are
+    orders it never sent, which is why the achieved rate fell. Run 2 achieved
+    397/s against a target of 600/s, and run 7 achieved 187/s against 300/s.
+  - The requests that did go through just got slow. They waited for a connection
+    or a thread, so p95 went from about 7 ms to 758 ms, and in run 7 to 2.3 s.
+
+  Why 0 failed requests
+  - Nothing hit k6's request timeout, because the waits were seconds, not 60.
+    Everything eventually got a connection and returned 201. Slow was not the
+    same as failed.
+
+  The numbers behind "3 of 8"
+  - I counted the three runs where p95 went over 500 ms: runs 2, 5 and 7. That
+    is a stricter cut than the table shows.
+  - Run 1 had 127 requests waiting and 53 dropped iterations, but p95 stayed at
+    12 ms. Run 8 dropped 232 iterations, with p95 at 17 ms.
+  - So some pressure showed up in 5 of the 8 runs, and 3 of them broke the 500
+    ms threshold. I should have said that.
+
+  Why it matters for what you claim
+  - A reader who sees "0 failed requests from the container" could conclude the
+    system was fine at 300–600/s. It wasn't. About one run in three was too
+    slow, and in the worst cases it delivered a fraction of the intended rate.
+  - The true statement is "no errors, but intermittent latency collapse".
+> <ide_selection>The user selected the lines 64 to 64 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\docs\resilience.md:
+  Limits of the "0 lost" claim
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Can you elaborate more on these parts? What does "free virtual users" mean?
+  Do "dropped iterations" just mean requests that were not retuning 201?
+
+  "k6 holds the arrival rate by starting each new request on schedule, so it
+  ran out of free virtual users and recorded "dropped iterations". Those are
+  orders it never sent, which is why the achieved rate fell. Run 2 achieved
+  397/s against a target of 600/s, and run 7 achieved 187/s against 300/s."
+
+  Why is 500ms important here?: "I counted the three runs where p95 went over
+  500 ms: runs 2, 5 and 7. That is a stricter cut than the table shows."
+  "Run 1 had 127 requests waiting and 53 dropped iterations, but p95 stayed at
+  12 ms. Run 8 dropped 232 iterations, with p95 at 17 ms."
+
+● Those are fair questions. One of my sentences was wrong, which I explain under
+  your last question.
+
+  What "free virtual users" means
+  - A virtual user (VU) in k6 is a worker that runs the script's default
+    function one pass at a time. Here one pass is one POST /api/orders request
+    and its response check. That pass is called an iteration.
+  - A VU can only work on one iteration at a time. While it waits for a
+    response, it's busy.
+  - This test uses the constant-arrival-rate executor, which means "start 600
+    iterations every second, whether or not earlier ones have finished." To
+    start one, k6 needs a free VU. The script allows 100 pre-allocated VUs and
+    up to 300 in total (preAllocatedVUs: 100, maxVUs: 300).
+  - Busy VUs ≈ rate × response time. At 600/s with 5 ms responses, about 3 VUs
+    are busy. If responses take 2 s, about 1,200 would be needed, but only 300
+    exist. Once all 300 are waiting on slow responses, there is no free VU left.
+
+  Whether "dropped iterations" means requests that didn't return 201
+  - No, it's different. A dropped iteration is one k6 scheduled but never
+    started because no VU was free. No request was sent, so it can't be a
+    non-201 and it doesn't count in http_req_failed (which stayed at 0%).
+  - It means the load generator couldn't deliver the load you asked for. In run
+    2, 5,954 of the 18,000 scheduled orders were never sent, so the server saw
+    397 requests/s, not 600.
+  - A failed request is one that was sent and got an error or timeout. That's
+    what happened in the host runs, with the hung and reset requests.
+
+  Why 500 ms matters, and a correction
+  - 500 ms is the pass line in the k6 script, http_req_duration: ['p(95)<500'],
+    with http_req_failed < 1% alongside it. I used it as the cut for "bad" runs.
+  - I wrote that it's "a stricter cut than the table shows". That was wrong. The
+    table has no pass/fail column, and 500 ms is the project's own threshold,
+    not a stricter one. Runs 2, 5 and 7 are the ones that would fail it.
+  - p95 is the time that 95% of requests came in under. Run 1 and run 8 had a
+    p95 of 12 and 17 ms, so they pass. Yet they still had pressure: 127 requests
+    waiting in run 1, and 53 and 232 dropped iterations.
+
+  A gap this shows
+  - The script has no threshold on dropped iterations. A run that fails to
+    deliver the requested rate can still pass.
+  - Run 8 passed at 583 achieved against 600, and run 1 passed with 293
+    against 300.
+  - A threshold like dropped_iterations: ['count<1'], or a check that the
+    achieved rate is at least 95% of the target, would make k6 flag those runs.
+    Do you want me to add it to create-orders.js?
+
+> Please link the latest answers to PLAN_with_two_phases.md as well as under
+  .md or .txt files where appropriate, and let me review them before commiting.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The tree is clean, so everything I add will be uncommitted for your review.
+  I'll put the explanation in perf.md and add linked entries to the plan and
+  resilience.md.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● I've written the answers into three files and left them uncommitted for your
+  review. git status shows only these three as modified.
+
+  - phase2/docs/perf.md:202 (phase2/docs/perf.md#L202) has a new section,
+    "Reading the k6 numbers". It covers what a virtual user is, why k6 needs a
+    free one to start an iteration, and why a dropped iteration is not a failed
+    request or a lost order. It also covers the 500 ms pass line, the runs that
+    had pressure but still passed, and the script gap on dropped iterations. It
+    includes the correction that "a stricter cut than the table shows" was
+    wrong, because 500 ms is the project's own threshold.
+  - PLAN_with_two_phases.md:532 (PLAN_with_two_phases.md#L532) has two new
+    bullets at the end of the "Clarifications from review" section. One
+    summarises the VU, dropped-iteration and 500 ms explanation. The other says
+    why "0 failed requests from the container" is not the same as clean. Both
+    link to the perf.md section.
+  - phase2/docs/resilience.md:67 (phase2/docs/resilience.md#L67) has a short
+    paragraph after "Limits of the 0 lost claim". It separates a failed request,
+    a dropped iteration and a lost order, and links to perf.md.
+
+  I did not add a dropped_iterations threshold to create-orders.js; the docs
+  only note the gap. I also left notes/implmentations/ alone, because those
+  files are chat exports.
+
+  Tell me what to change, or say "commit" and I'll commit the three files
+  together.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\docs\resilience.md in the IDE. This may
+  or may not be related to the current task.</ide_opened_file>
+
+> Do the Dependabot bump PRs here need to be merged?
+
+  #3  Bump vite from 5.4.21 to 8.3.6 in /frontend
+  dependabot/npm_and_yarn/frontend/vite-8.3.6      about 7 hours ago
+  #2  Bump esbuild and vite in /frontend
+  dependabot/npm_and_yarn/frontend/multi-3396e...  about 7 hours ago
+  #1  OrderFlow: phase 2 work, verification runs an...  q_i_step_commit
+                           about 7 hours ago
+
+● I'll check what those two PRs target and whether they still make sense.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● No, don't merge #2 or #3. Merging them would also make PR #1 harder to merge.
+
+  - They target main's old lockfile. Both PRs are against main, which still has
+    vite 5.4.21 and esbuild 0.21.5. That lockfile is what produced the 9 alerts.
+  - #1 already fixes the same problem. The branch has vite ^7.3.7 and esbuild
+    0.28.2, and npm audit reports 0 vulnerabilities there. Once #1 merges, the
+    alerts should close and #2 and #3 become redundant.
+  - Merging them first would conflict. All three PRs change
+    frontend/package.json and package-lock.json, so #1 would then need a
+    conflict resolution.
+  - #3 is a big jump. It goes to vite 8.3.6, a major version beyond the 7.x I
+    tested the frontend against (Vitest and Playwright). It deserves its own
+    test run and shouldn't go in as a drive-by.
+  - Their CI is red. frontend and backend show FAILURE on both. I haven't read
+    the logs, so I don't know why. It is probably the old CI on main, which
+    differs from the pipeline on the branch. It isn't a reason to merge them
+    either way.
+
+  The order I'd use is merge #1 first, then close #2 and #3, since Dependabot
+  will rebase or reopen them against the new lockfile if there is still
+  something to bump. If vite 8 comes back, test it on its own. Alternatively, I
+  can read the failing logs on #2 and #3 first to confirm the cause.
+
+  I haven't merged or closed anything.
+
+> read the failing logs on #2 and #3 first to confirm the cause.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● There are two separate causes. I'll get the details of each, and check PR #2's
+  frontend failure too.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both PRs bump to vite 8.3.6, and that conflicts with @vitejs/plugin-react. The
+  backend failure is a different issue, so I'll find the failing assertion.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● main's own CI is already red on b16e3bb, before any of these PRs. I'll check
+  whether that failing test was changed on my branch.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both PRs fail for reasons that have nothing to do with merging them.
+
+  Frontend, on both #2 and #3. npm ci fails with ERESOLVE.
+  - Both PRs bump vite to 8.3.6, even though #2 is titled "Bump esbuild and
+    vite".
+  - The project depends on @vitejs/plugin-react 4.7.0, which only allows vite
+    ^4.2 || ^5 || ^6 || ^7. The dependency tree can't be resolved.
+  - This is a real incompatibility, not a flaky run. Merging either PR would
+    break the frontend build. A vite 8 bump would first need a newer
+    @vitejs/plugin-react that supports it, plus a test run.
+
+  Backend, on both #2 and #3. The failure is
+  OutboxPublisherKafkaTest.eventArrivesExactlyOnceAfterCommit, which expected 1
+  Kafka record and got 0.
+  - The PRs only change frontend/package*.json, so they didn't cause it.
+  - main's own CI run on its current commit (b16e3bb, 2026-11-05) failed the
+    same way before these PRs existed.
+  - This is a Step 13 test-first state. The test was added while the publisher
+    still didn't work. The branch has the commits that fix it, such as cc6fee4
+    ("Complete OutboxPublisher.publishPending()"). CI on the branch passed 3
+    of 3.
+  - I haven't confirmed that test is the only reason main's CI is red. It's the
+    failure these logs show. Merging PR #1 should turn main green.
+
+  So there's no reason to merge #2 or #3, and the earlier plan stands: merge #1
+  first, then close #2 and #3. If Dependabot keeps proposing vite 8, I'd hold it
+  until @vitejs/plugin-react supports it.
+
+  I haven't merged, closed or changed anything. Do you want me to record this in
+  the plan notes, or merge #1 now?
+
+> PR #1 has been merged to main.
+
+● I'll check what the merge did: the CI run on main, CodeQL, the Dependabot
+  alerts, #2 and #3, and which of my local commits made it in.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The merge landed and CI is running on main. I'll wait for it, then check
+  CodeQL, the Dependabot alerts and the images job.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+  Update Readme.md as this part is incorrect "Verified locally (Windows 10,
+  Docker Desktop; not yet on a GitHub runner): the three Docker images, the
+  compose apps profile (also from a fresh clone), and a kind cluster where both
+  services became Ready (phase2/infra/k8s/README.md).
+
+  What is not done, so nobody has to guess: pushing to GitHub and the first CI
+  run; terraform plan/apply and everything on AWS (terraform validate passes);
+  a clean k6 limit (k6 ran, but its ramp stalled erratically at 300/s and
+  600/s; see perf.md). The files for all of them are in the repository and are
+  marked as untested where they are." and push the changes after committing.
+
+> Update any .md or .txt file where appropriate but do not commit changes.
+
+● Your two messages conflict on committing. The later one says not to commit, so
+  I'll edit the files and leave them uncommitted, and I won't push. First I'll
+  check where CI on main stands.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Frontend and both backends passed on main, while e2e, kind and images are
+  still queued and Dependabot shows 14 open alerts. Next I'm searching the docs
+  for stale "not on GitHub / not pushed / not run" claims. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The README still says "not yet on a GitHub runner" and lists the push and
+  first CI run as not done. I'll gather current facts before editing: the
+  Dependabot alerts and main's CI status.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Main CI is green except e2e, kind and images, which are still queued. Fourteen
+  Dependabot alerts remain open, 13 in e2e/pom.xml and 1 in the frontend
+  lockfile, and I'm checking the stale lines next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll make the edits now and leave them uncommitted.
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● I've updated seven doc files and left them uncommitted. I did not push either,
+  since the later message said not to commit and a push needs a commit. Say
+  "commit and push" when you've reviewed them.
+
+  README.md
+  - I took out "not yet on a GitHub runner".
+  - A new "Verified on GitHub" paragraph records the first CI run, CodeQL's 0
+    results, the merge of PR #1, and branch protection.
+  - On main, the frontend, both backends and CodeQL passed. e2e, kind and the
+    first images build were still queued when I last checked, so I wrote that
+    and recorded no results for them.
+  - "Not done" no longer lists the push or first CI run. It now lists Terraform
+    plan/apply, the k6 limit, and the open Dependabot work.
+  - I fixed the Dependabot row. The vite and esbuild alerts closed, but 14 are
+    open, and I haven't looked into them. 13 are Maven dependencies in
+    e2e/pom.xml (jackson-databind and assertj, several rated high), and 1 is a
+    medium vite 6.4.3 entry in the frontend lockfile.
+  - I also fixed the throughput row, which said "k6 runs are still to do".
+
+  Other files
+  - docs/ci.md and phase2/docs/security.md now carry the post-merge state. They
+    also say Maven dependencies are now scanned by Dependabot, with open alerts.
+  - PLAN_with_two_phases.md has a new step 12e entry. It records the merge, the
+    main CI state and the 17 open Dependabot PRs, and notes that I read only the
+    failing logs of #2 and #3. It also covers why #2 and #3 fail, and that I
+    haven't merged or closed any of them.
+  - notes/implmentations/ (three files) is updated for the CI, terraform
+    validate and k6 changes. I replaced the "not run" lines and the interview
+    wording. I left the chat exports alone.
+
+  Last time I checked, main's e2e, kind and images jobs hadn't finished, so
+  those results aren't in any file yet. I can re-check them and fill them in.
+● Background command "export PATH="$PATH:/c/Program Files/GitHub CLI"; cd
+"c:/Users/WJ/Desktop/Work 2023-05-12/Project/orderflow"; git status --short |
+head -5; id=$(gh run list --branch main --workflow ci --limit 1 --json
+databaseId --jq '.[0].databaseId'); echo run $id; gh run watch $id --exit-status
+>/dev/null 2>&1; gh run view $id --json conclusion,jobs --jq '.conclusion,
+(.jobs[]|"\(.name) \(.conclusion)")'; gh run list --branch main --workflow
+codeql --limit 2 --json conclusion,status,event --jq '.[]|"codeql \(.event)
+\(.status) \(.conclusion)"'" completed (exit code 0)
+
+  Read 1 file (ctrl+o to expand)
+
+● The CI run on main finished, and every job passed, including e2e, kind and the
+  three images builds. I'll replace the "still queued" wording in the files.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The CI run on main finished and every job passed. That includes e2e, kind and
+  the three image builds, and the CodeQL run on main passed too. I've replaced
+  the "still queued" wording in four files. They are the README, docs/ci.md, the
+  step 12e entry in PLAN_with_two_phases.md, and
+  notes/implmentations/errors-by-resume-bullet.md.
+
+  The images job includes the push to GHCR. I didn't open the packages page, so
+  I haven't confirmed the images are actually there, and the docs say so.
+
+  The seven files are still uncommitted and nothing is pushed. Say "commit and
+  push" when you're ready.
