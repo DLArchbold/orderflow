@@ -64,6 +64,7 @@ What was seen
 Limits of the "0 lost" claim: it covers orders the client got a `201` for. Requests that failed during the order-service outage are not counted, and the API has
 no `Idempotency-Key`, so a client that retries after a lost response could create a second order. Order-service also runs one replica (two would publish the same outbox
 rows), so a crash is an outage of the create API until it restarts.
+Three different things are easy to confuse in the load-test output (details in [perf.md](perf.md), "Reading the k6 numbers"): a *failed request* (sent, no 2xx), a *dropped iteration* (k6 never sent it, because no virtual user was free; not in `http_req_failed`) and a *lost order* (defined above). The drills above count the first and third; dropped iterations only reduce the load that was applied.
 
 Grafana screenshots of the OrderFlow dashboard for each run are in `docs/images/` (taken afterwards with `scripts/grafana_screenshots.mjs` and Playwright, because the Grafana image-renderer plugin is not installed; each window has 60 s of context on both sides). The dashboard has no PENDING-orders panel, so the PENDING counts still come from the drill samples.
 
