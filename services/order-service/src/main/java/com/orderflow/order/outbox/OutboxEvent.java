@@ -23,6 +23,8 @@ public class OutboxEvent {
     @Column(nullable = false, columnDefinition = "text") private String payload;
     @Column(nullable = false) private Instant createdAt = Instant.now();
     private Instant publishedAt;
+    private String traceContext;     // W3C traceparent of the request that wrote the row
+    private String correlationId;
 
     protected OutboxEvent() {}
 
@@ -37,5 +39,11 @@ public class OutboxEvent {
     public String getType() { return type; }
     public String getPayload() { return payload; }
     public Instant getPublishedAt() { return publishedAt; }
+    public String getTraceContext() { return traceContext; }
+    public String getCorrelationId() { return correlationId; }
+    public void attachContext(String traceContext, String correlationId) {
+        this.traceContext = traceContext;
+        this.correlationId = correlationId;
+    }
     public void markPublished() { this.publishedAt = Instant.now(); }
 }

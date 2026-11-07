@@ -1,0 +1,30 @@
+time="2026-11-06T23:27:04Z" level=warning msg="Request Failed" error="Post \"http://keycloak:8080/realms/orderflow/protocol/openid-connect/token\": lookup keycloak on 127.0.0.11:53: no such host"
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(95)<500' p(95)=0s
+
+    http_req_failed
+    ✗ 'rate<0.01' rate=100.00%
+
+
+  █ TOTAL RESULTS 
+
+    HTTP
+    http_req_duration...: avg=0s min=0s med=0s max=0s p(90)=0s p(95)=0s
+    http_req_failed.....: 100.00% 1 out of 1
+    http_reqs...........: 1       0.435424/s
+
+    EXECUTION
+    vus.................: 0       min=0      max=0  
+    vus_max.............: 100     min=100    max=100
+
+    NETWORK
+    data_received.......: 0 B     0 B/s
+    data_sent...........: 0 B     0 B/s
+
+
+
+time="2026-11-06T23:27:04Z" level=error msg="GoError: could not get a token for alice: 0 null\n\tat go.k6.io/k6/v2/internal/js/modules/k6.(*K6).Fail-fm (native)\n\tat file:///work/phase2/load-tests/k6/create-orders.js:43:33(40)\n\tat map (native)\n\tat setup (file:///work/phase2/load-tests/k6/create-orders.js:38:19(4))\n" hint="script exception" source=stacktrace

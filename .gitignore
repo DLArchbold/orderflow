@@ -11,3 +11,11 @@ test-results/
 *.tfstate
 *.tfstate.*
 .terraform/
+
+**/e2e/.auth/
+
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl.bak
+crash.log

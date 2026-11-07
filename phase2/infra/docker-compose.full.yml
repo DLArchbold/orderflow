@@ -19,14 +19,22 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # Two listeners because a client connects to whatever address the broker advertises: the host (and the tests)
+      # use localhost:9092, containers use kafka:29092. A container that connected to localhost:9092 would reach itself.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      retries: 12
+      start_period: 20s
 
   redis:
     image: redis:7
@@ -43,6 +51,7 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/alerts_test.yml:/etc/prometheus/alerts_test.yml:ro
     ports: ["9090:9090"]
     extra_hosts: ["host.docker.internal:host-gateway"]   # lets Prometheus scrape services run on the host (Linux too)
 
@@ -50,6 +59,77 @@ services:
     image: grafana/grafana:11.3.0
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["3000:3000"]
 
-  # TODO (PLAN step 10): add Keycloak (or another OIDC provider) for JWT issuance.
+  keycloak:          # http://localhost:8180 (admin / $KEYCLOAK_ADMIN_PASSWORD, default admin); dev mode, not production-grade
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: http://localhost:8180      # the token issuer (iss claim) must equal the services' issuer-uri
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak/orderflow-realm.json:/opt/keycloak/data/import/orderflow-realm.json:ro
+    ports: ["8180:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/orderflow HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 10s
+      retries: 18
+      start_period: 30s
+
+  # ---- The applications themselves: docker compose --profile apps up -d --wait --build ----
+  # Stop any copy started with mvn spring-boot:run first: the host ports 8080 and 8081 would clash.
+  order-service:
+    profiles: [apps]
+    build: { context: ../../services/order-service }
+    image: orderflow-order-service:local
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orders
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_DATA_REDIS_HOST: redis
+      ORDERFLOW_INVENTORY_BASE_URL: http://inventory-service:8081
+      # The token's iss claim is the URL it was requested through (the public one) and must equal issuer-uri exactly.
+      # Containers cannot reach that URL (localhost is themselves), so the keys come from the internal address.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8180/realms/orderflow
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/orderflow/protocol/openid-connect/certs
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://jaeger:4318/v1/traces
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 10s
+      retries: 12
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  inventory-service:
+    profiles: [apps]
+    build: { context: ../../services/inventory-service }
+    image: orderflow-inventory-service:local
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://jaeger:4318/v1/traces
+    ports: ["8081:8081"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8081/actuator/health/readiness || exit 1"]
+      interval: 10s
+      retries: 12
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  frontend:
+    profiles: [apps]
+    build: { context: ../../frontend }
+    image: orderflow-frontend:local
+    environment:
+      OIDC_AUTHORITY: http://localhost:8180/realms/orderflow   # the public Keycloak URL, as the browser sees it
+      ORDER_SERVICE_URL: http://order-service:8080
+    ports: ["5173:80"]   # 5173 is the redirect URI registered for orderflow-frontend in the realm
+    depends_on:
+      order-service: { condition: service_healthy }

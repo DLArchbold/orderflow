@@ -1,0 +1,836 @@
+
+> <ide_selection>The user selected the lines 1 to 2 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes\implmentations\ch
+  at_export_13_f_to_27_complete_history.txt:
+  Implement steps 13f to 27 including all substeps. For each substep and step
+    completed, perform a commit before starting the next step
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Suggested order of work (each step depends on the ones above it where noted)
+
+  | Order | Item | Why this position | Needs |
+  |---|---|---|---|
+  | 0 | Check free disk, Docker's disk location, and installed tools (kind,
+  kubectl, terraform, k6) | Settles what's possible before any build | Nothing
+  |
+  | 1 | Build Docker images and run the compose apps profile | CI, kind and the
+  fresh-clone walkthrough all depend on the images | Nothing (disk was the
+  only blocker) |
+  | 2 | Re-run Playwright and the e2e test against the containers | Shows the
+  images behave like the mvn spring-boot:run setup | Step 1 |
+  | 3 | Fresh-clone walkthrough from the README | Tests the README and the
+  images together, and gaps found here need fixing before the GIF | Step 1 |
+  | 4 | Index test at 3 million rows (step 19) | Independent of the images, and
+  it gives a real number for the resume | Nothing |
+  | 5 | Long-outage drill for the lag alert (Kafka stopped 3 to 4 minutes) |
+  Lets OutboxLagHigh go Pending, then Firing, and closes the known gap |
+  Running stack |
+  | 6 | Re-run perf and the three drills, looking for the limit above 300
+  orders/s | You said you will re-run tests, and this fills the [N] numbers |
+  Running stack |
+  | 7 | kind cluster: apply the manifests, wait for both services to be Ready |
+  Needs the images from step 1 | Step 1, and kind and kubectl installed |
+  | 8 | Demo GIF (under 5 MB) | Record it last, once the flow and README are
+  stable | Steps 3 and 5 |
+  | 9 | Grafana drill screenshots | Needs the image renderer plugin, or you
+  take them by hand | Step 6 |
+  | 10 | Terraform validate | Needs no AWS account | You install the terraform
+  binary |
+  | 11 | k6 install and runs | I won't work around the earlier block | You
+  install k6, then I rerun 25a and 25b |
+  | 12 | Push to GitHub, first CI run, CodeQL, Dependabot, branch protection |
+  I won't push without your go-ahead | A remote, and your yes |
+  | 13 | AWS apply, deploy under load, destroy | Costs money | Your credentials
+  and an explicit yes |
+
+  Steps 0 to 9 need nothing from you. Steps 10 to 13 are the ones that need
+  your install, your yes, or your accounts.
+
+● I'll start with step 0: checking disk space, Docker's disk location, and which
+  tools are installed.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● C: now has 105 GB free and kind, kubectl, terraform and k6 are installed, with
+  Docker running 7 containers. I'm checking what those containers are and what
+  the compose file contains next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The three app images (orderflow-*:local) are already built, so step 1 is
+  partly done. The infra stack is up but the apps profile isn't running. I'll
+  check how the profile is defined and start it.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The running containers belong to compose project infra, and the full compose
+  file shares that project name. I'll run the apps profile now. It should reuse
+  the existing containers and volumes.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+> <ide_selection>The user selected the lines 163 to 163 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md:
+  orderflow.outbox.en
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Implement steps 1-9 including any substeps. For each substep and step
+    completed, perform a commit before starting the next step. Update the notes
+  in PLAN_with_two_phases.md as needed.
+
+● The apps profile failed because port 8080 is already in use. I'll find what's
+  holding it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Local dev instances of order-service (8080) and inventory-service (8081) are
+  holding the ports the containers need, so I'm stopping them and their Maven
+  parents. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● User answered Claude's questions:
+  ⎿  · Ports 8080 and 8081 are held by your local `mvn spring-boot:run`
+     order-service and inventory-service. How should I get the containers
+     running? → You stop them
+
+● I'll wait for you to stop them, then check the ports before continuing.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Ports 8080 and 8081 are free now. I'll start the apps profile.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 1 works: all containers are healthy, including both services and the
+  frontend. Before committing I'll look at how the plan notes and README record
+  status.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The plan has no status log, so I'll add a short one before the "Optional"
+  section and record each step there as I commit it. First, step 1.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 2 is next: the e2e test and Playwright against the containers. I'll check
+  how each is run.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Playwright passed 4 of 4 against the containers. mvn -q printed nothing, so
+  I'll confirm the e2e result from the surefire/failsafe reports.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Step 3 is the fresh-clone walkthrough. I'll read the README quick start.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The README's quick start covers only the host-run path, not the apps profile,
+  which is a gap for a fresh clone. I'm stopping the existing stack, keeping its
+  volumes, and then following the README from a clean clone in the scratchpad.
+  · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now I'll run the clone as a newcomer would, using the apps profile with a
+  separate project name so it gets fresh volumes.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The full stack came up from a clean clone in 120 seconds, and I'm running the
+  README demo flow and then the clone's own e2e and Playwright tests next.
+  · summary
+  Ran 1 shell command (ctrl+o to expand)
+
+● The /api/stock path was my own guess, so the 404 isn't a gap in the project.
+  I'm running the clone's e2e and Playwright suites next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The clone passes all tests, and the walkthrough exposed four README gaps,
+  which I'll fix before tearing down the clone's stack and restoring the
+  original. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Step 4 is the index test at 3 million rows. The README already cites a
+  3,000,000-order result, so I'll check what perf.md says before deciding what's
+  left to do.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● perf.md already has a 3,000,000-order before/after run, so step 4 was done
+  earlier. I'll check whether that data is still in the database, to decide
+  between re-verifying and just recording it.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The orders_perf copy was dropped after the earlier run, so I'll re-run it.
+  First the seed script header and perf.md, to reuse the exact method and
+  queries.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The method is a schema-only copy, with the V1 customer_id, status index
+  swapped back in for the "before". I'll replicate it in a scratch database.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Loaded 3,000,000 orders and 6,000,326 order lines in 138 s. Now the customer
+  query three times before the index, then three times after.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The re-run matches the earlier figures: 55–67 ms before versus 0.20–0.25 ms
+  after at 3,000,000 orders. I'm now removing the scratch database and
+  committing the re-run results to perf.md and the status log. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 5 is the long-outage drill for the OutboxLagHigh alert. I'll look at the
+  alert rule, the drill script, and what resilience.md records as the known gap.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The drill.sh script assumes services run via mvn spring-boot:run, but mine are
+  containers, so I'm writing a separate script that polls Prometheus alert
+  state. First I'm checking that Prometheus has the rule loaded and can scrape
+  order-service. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Prometheus already has the rule loaded and is scraping the containers. Next
+  I'll write a Python orchestrator for the long-outage drill that runs the load,
+  stops Kafka for 4 minutes, and samples alert state and lag every 5 seconds.
+  · summary
+
+● Write(scripts\drill_lag_alert.py)
+  ⎿  Wrote 97 lines to scripts\drill_lag_alert.py
+       1 #!/usr/bin/env python3
+         LagHigh alert to go Pending and then Firing.
+       3
+         [--rate 10]
+       6 Timeline: load for (30 s + outage + 90 s); Kafka stopped at 30 s
+          and started again after --outage seconds.
+         nd the outbox lag are written to <output-dir>/samples.txt.
+       8 Works with the services as containers (compose --profile apps) o
+       9 published ports, `docker compose` and scripts/load_orders.py. At
+      10 """
+     … +111 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Raw drill output isn't committed in this repo, so I'll run into the scratchpad
+  and quote the results in resilience.md. The drill takes about 6.5 minutes, so
+  it runs in the background.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The drill is running. I'll wait for it to finish before touching anything that
+  could disturb the stack.
+  ⎿  Invalid tool parameters
+
+● The step 5 drill is running in the background and takes about 6.5 minutes.
+  Steps 0–4 are done and committed:
+
+  ┌──────┬─────────────────────────────────────────────────────────┬─────────┐
+  │ Step │                         Result                          │ Commit  │
+  ├──────┼─────────────────────────────────────────────────────────┼─────────┤
+  │ 1    │ All three images built and the compose apps profile     │ 87d9cf2 │
+  │      │ starts healthy.                                         │         │
+  ├──────┼─────────────────────────────────────────────────────────┼─────────┤
+  │ 2    │ Playwright passed 4 of 4 and e2e passed 2 of 2 against  │ ce6818a │
+  │      │ the containers.                                         │         │
+  ├──────┼─────────────────────────────────────────────────────────┼─────────┤
+  │ 3    │ A fresh clone came up in 120 s and passed the same      │ 983e00e │
+  │      │ tests. I fixed four README gaps.                        │         │
+  ├──────┼─────────────────────────────────────────────────────────┼─────────┤
+  │ 4    │ 3,000,000-row re-run: 55–67 ms before the index, 0.2 ms │ a8019c5 │
+  │      │  after.                                                 │         │
+  └──────┴─────────────────────────────────────────────────────────┴─────────┘
+
+  The step 1 commit also added a status log to PLAN_with_two_phases.md; each
+  later step appends to it.
+
+  For step 1 the port conflict was blocked by auto mode, so you stopped your
+  local services. They aren't running now, so start them again if you want them
+  for development.
+
+  I'll resume with step 5's results, then do steps 6 to 9 in order, committing
+  after each.
+
+● Background command "Run long Kafka-outage lag-alert drill" completed (exit
+code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The drill passed with no orders lost or duplicated and a peak lag of 132 s,
+  but my sampler's bug (wrong metric key) left the 36 alert samples errored.
+  I'll fix the script and pull the drill window's alert states from Prometheus
+  instead. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The alert behaved as the rule says. Pending at 88 s after Kafka stopped,
+  Firing at 208 s (2 minutes later), and it cleared about 20 s after Kafka came
+  back. Now I'll update resilience.md.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Step 6 is next: re-run the perf ramp and the three drills, looking for the
+  limit above 300 orders/s. I'll read the perf script and the existing load-test
+  results.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● perf_run.sh only ramps to 300/s, so I'm making the ramp configurable with the
+  default unchanged and extending it to 1,000 orders/s, while checking that the
+  Python generator doesn't cap throughput first. · summary
+  Ran 1 shell command (ctrl+o to expand)
+
+● While the ramp runs, I'll update drill.sh to work with containerized services.
+  It currently kills processes by port and restarts with mvn.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The script is updated. The perf ramp is still running in the background, so
+  I'll wait for it to finish.
+
+● The perf ramp is still running in the background. I've updated
+  scripts/drill.sh to work with the containerized services, and I'll wait for
+  the ramp to finish before running the three drills.
+
+● Background command "Run extended perf ramp up to 1000/s" completed (exit code
+0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The ramp topped out at 400/s with p95 at 29 ms, but 600/s broke the 500 ms
+  limit at 1,334 ms with 21 failed requests. I'm checking that everything the
+  ramp created resolved correctly next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 21,325 orders are still PENDING and Kafka is busy. The ramp's drain check only
+  watched the outbox lag, not the downstream consumers. I'll check whether the
+  backlog is still draining.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The backlog drained at about 220 orders/s, so the API takes roughly 400/s
+  while end-to-end confirmation runs at 220/s. I'm recording that in perf.md and
+  committing it. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● 6b is next: the three drills, one after another, against the containers. That
+  takes about 15 minutes, so they run in the background.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The three drills are running in the background. I'll pick up the results when
+  they finish, update resilience.md, and commit step 6b.
+
+● Background command "Run three failure drills against containers" completed
+(exit code 0)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All three drills pass every check again, this time against containers. I'll
+  add them to resilience.md next to the earlier numbers and commit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The README results table should carry the new numbers too. Let me see the rows
+  that cite perf.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Step 7 is the kind cluster. I'll look at the manifests first.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The manifests look complete, with no TODOs left. I'll create the cluster, load
+  the images and apply.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The cluster is up (kind pulled its node image first, hence the 176 s) and both
+  images are loaded. Now I'll apply the kustomization and wait for the
+  Deployments.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both Deployments are Available, but each service restarted 4 times. I'll find
+  out why, and check /actuator/health through port-forward as the plan requires.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The restarts come from services starting before Postgres accepts connections,
+  so Flyway fails and kubelet keeps restarting the pods. I'm adding a pg_isready
+  init container to each service, using the postgres:16 image already on the
+  node. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Zero restarts now, and everything is Ready in about 30 s. I'll re-verify
+  health through port-forward and confirm the Flyway tables exist in the
+  cluster's Postgres.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both services are healthy and the Flyway migrations all succeeded. I'll update
+  the k8s README and the "not done" line, log the step, tear the throwaway
+  cluster down, and commit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Step 8 is the demo GIF: create an order, watch the live status change, and
+  show one failure drill. First I'll check what tools I have for recording and
+  converting.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Playwright and Pillow will stand in for ffmpeg and ScreenToGif, so I'll script
+  a browser run with captioned screenshots and assemble them into a GIF;
+  checking the saved auth state and the app's UI comes first. · summary
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll have the recorder log in through the Keycloak form, create and confirm an
+  order, then stop inventory-service to show it stuck in PENDING before
+  restarting it. · summary
+
+● Write(scripts\record_demo.mjs)
+  ⎿  Wrote 88 lines to scripts\record_demo.mjs
+       1 // PLAN step 27(4): records the demo as numbered PNG frames (no
+         ages/demo.gif.
+       3 // Needs the compose apps stack running (UI on :5173). Flow: log
+          in through Keycloak, create an order and watch it become CONFIR
+       4 // then kill inventory-service, create another order (accepted,
+         NFIRMED.
+         est/index.mjs';
+       6 import { execFileSync } from 'node:child_process';
+       8 import path from 'node:path';
+      10 const out = process.argv[2];
+     … +106 lines (ctrl+o to expand)
+
+● Write(scripts\frames_to_gif.py)
+  ⎿  Wrote 39 lines to scripts\frames_to_gif.py
+       1 #!/usr/bin/env python3
+       2 """Turns the frames written by scripts/record_demo.mjs (f0000_<m
+         s>.png) into one GIF, shrinking it until it is under --max-mb.
+       4   python scripts/frames_to_gif.py <frames-dir> docs/images/demo.
+         gif [--max-mb 5]
+       5 """
+       6 import argparse, glob, os, re
+       8
+       9
+      10 def build(files, durations, out, scale, colors):
+     … +39 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The GIF is only 0.11 MB, but Pillow merged identical consecutive frames down
+  to 15. I'll look at them to check the content tells the story.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● The GIF shows the full flow, but the "PENDING, then CONFIRMED" caption
+  describes a state the viewer never sees, since the first order confirmed too
+  quickly to screenshot. I'll fix the caption to match what's shown and
+  re-record. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The GIF is 0.12 MB, far under the 5 MB limit. Now I'll embed it in the README,
+  update the "not done" line and the plan, and commit.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Next I'll find the OrderFlow dashboard in Grafana, since Prometheus still
+  holds today's drill data, and capture each drill's window with Playwright.
+  · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'm capturing the four-panel dashboard over each drill's window, plus a perf
+  ramp and a Prometheus graph of the ALERTS series, since that's the
+  Pending/Firing evidence the buggy sampler lost. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I have the time windows, and I'm writing a Playwright script to log in to
+  Grafana, capture each dashboard in kiosk mode, and pull the Prometheus ALERTS
+  graph for the lag drill. · summary
+
+● Write(scripts\grafana_screenshots.mjs)
+  ⎿  Wrote 48 lines to scripts\grafana_screenshots.mjs
+       1 // PLAN step 26 (screenshots): the Grafana image renderer plugin
+          instead.
+       3 // Opens the OrderFlow dashboard (kiosk mode) for the time windo
+         w of each run, and the Prometheus graph of the OutboxLagHigh ale
+       4 // The windows are the unix times printed in each run's timeline
+         ays by default).
+         est/index.mjs';
+       6 import fs from 'node:fs';
+       8
+      10 fs.mkdirSync(out, { recursive: true }
+     … +54 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now I'll look at the screenshots to check they show data.
+
+  Read 2 files (ctrl+o to expand)
+
+● The outbox lag actually peaks near 4 minutes, not the 132 s I recorded,
+  because the buggy sampler stopped logging it once the alert fired. I'm pulling
+  the real peak from Prometheus next. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The true peak was 242 s, nearly the whole 244 s outage, with lag crossing 60 s
+  at +63 s and Pending at +88 s; I'm correcting my earlier 132 s figure
+  everywhere it appears, then retaking the Prometheus screenshot with the legend
+  visible. · summary
+
+  Read 2 files, ran 2 shell commands (ctrl+o to expand)
+
+● The screenshots confirm the alert timing and the outbox lag spike during the
+  outage. I'm linking them from resilience.md, fixing the "not captured" notes,
+  then logging the step and committing. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Steps 1–9 are done, with a commit after each substep. The working tree is
+  clean. Everything ran on this machine; nothing is pushed, there is no CI run,
+  and AWS and Terraform are untouched.
+
+  ┌──────┬───────────────────────────────────────────────────────────────────┐
+  │ Step │                              Result                               │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │      │ The compose apps profile starts order-service, inventory-service  │
+  │ 1    │ and the frontend, all healthy. You stopped your local dev         │
+  │      │ services to free ports 8080/8081, and they are still stopped.     │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │ 2    │ Against the containers, Playwright passed 4 of 4 and e2e passed 2 │
+  │      │  of 2.                                                            │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │      │ A fresh clone came up in 120 s with a warm image cache and passed │
+  │ 3    │  the same tests. I fixed four README gaps: the apps profile, the  │
+  │      │ port clash, BASE_URL, and PW_CHANNEL.                             │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │ 4    │ At 3,000,000 orders the customer query took 55–67 ms before the   │
+  │      │ index and 0.2 ms after. The earlier run gave the same result.     │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │ 5    │ With Kafka stopped for 244 s, OutboxLagHigh went Pending at +88 s │
+  │      │  and Firing at +208 s. All 3,600 orders were accounted for.       │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │      │ The API's limit is between 400 and 600 orders/s, with 0 failures  │
+  │ 6    │ at 400. At 600/s p95 was 1.33 s and 21 of 18,000 requests failed. │
+  │      │  The three drills were repeated against containers: 0 lost, 0     │
+  │      │ duplicated.                                                       │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │ 7    │ On kind, both services were Available in about 30 s, health was   │
+  │      │ UP, and Flyway applied.                                           │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │ 8    │ docs/images/demo.gif is 0.12 MB and is embedded in the README.    │
+  ├──────┼───────────────────────────────────────────────────────────────────┤
+  │ 9    │ Five Grafana screenshots and one Prometheus alert screenshot are  │
+  │      │ in docs/images/, linked from resilience.md.                       │
+  └──────┴───────────────────────────────────────────────────────────────────┘
+
+  Things you should know
+  - Corrected number: my first lag peak for step 5 (132 s) was wrong. The true
+    peak was 242 s. My sampler script had a bug that stopped it recording lag
+    once the alert was active, so the alert times and the real peak come from
+    Prometheus afterwards. The sampler is fixed but I didn't re-run the drill
+    with it. All docs and the plan now say 242 s, but the step 5 commit message
+    still says 132 s, which I didn't amend.
+  - New finding: the API accepts about 400 orders/s, but orders only reach
+    CONFIRMED at about 220/s once a backlog builds. I didn't isolate which stage
+    limits that.
+  - Perf limits: at 800 and 1,000/s the Python load generator couldn't hold the
+    arrival rate (445 and 663/s achieved), so the system and the generator can't
+    be separated there. These are still not k6 numbers; k6 is installed now,
+    but its runs belong to step 11.
+  - Kubernetes fix: the services crashed and restarted four times each because
+    they started before Postgres. I added wait-for-postgres init containers, and
+    the redeploy had 0 restarts. I didn't create an order inside the cluster,
+    because it has no Keycloak.
+  - Demo GIF: the first order confirms faster than the screenshot interval, so
+    its PENDING state isn't visible. The second order's PENDING is.
+  - Plan notes: PLAN_with_two_phases.md now has a status log with one entry per
+    step, including what wasn't tested.
+
+  Steps 10–13 (Terraform validate, k6 runs, GitHub push and CI, AWS) are still
+  open. Terraform and k6 are installed, so 10 and 11 need nothing from you. I
+  won't push or run AWS without your yes.
+
+> Please answer the questions below or elaborate on the statements below:
+
+  Question: Where were the 3,000,000 orders inserted? I don't see them in my VS
+  Code database viewer extension
+
+  Statement and Questions: OutboxLagHigh went Pending at +88 s and Firing at
+  +208 s. All 3,600 orders were accounted for. What is OutboxLagHigh? What does
+  "went Pending" or "Firing" at a certain time like  +88s mean? What does it
+  eman for all 3,600 orders to be accounted for?
+
+  Question: For this line "The API's limit is between 400 and 600 orders/s,
+  with 0 failures at 400. At 600/s p95 was 1.33 s and 21 of 18,000 requests
+  failed. The three drills were repeated against containers: 0 lost, 0
+  duplicated.", does "failure" and "lost" mean orders that were committed and
+  not published? What does the 21 requests failed mean?
+
+● I'll check two facts before answering: what the load generator's timeout is,
+  and what's in the databases now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Where the 3,000,000 orders went
+
+  They were inserted into a scratch database called orders_perf inside the
+  compose Postgres container (infra-postgres-1). I dropped it when the test
+  finished, so it's gone. It was a schema-only copy of orders, so the 3M
+  synthetic rows never touched your real data. I did it that way so the index
+  test couldn't pollute the app's database.
+
+  Today's database list is orders, inventory, orderflow and postgres. The orders
+  database holds 129,683 rows from the load tests and drills. To see it in VS
+  Code, connect to localhost:5432, database orders, user orderflow, password
+  orderflow. The 3M copy can be rebuilt in about 2.5 minutes using the commands
+  in perf.md. I can leave it in place this time if you want to browse it.
+
+  OutboxLagHigh, "Pending" and "Firing"
+
+  - Outbox lag: order-service writes the order and an "OrderCreated" event row
+    to its outbox table in one transaction. A publisher then sends unpublished
+    rows to Kafka. The lag is how old the oldest unpublished row is. Normally
+    it's about 0 s. With Kafka stopped, rows can't be sent, so the lag grows by
+    1 s every second.
+  - OutboxLagHigh: a Prometheus alert rule, orderflow_outbox_lag_seconds > 60
+    for 2 minutes. It means events have been stuck for over a minute and that
+    has lasted 2 minutes.
+  - Pending: the condition is true but hasn't yet lasted the required 2 minutes.
+  - Firing: it has been true for 2 minutes without a break, so the alert is
+    active.
+  - "+88 s" and "+208 s": seconds after I stopped Kafka. The lag crossed 60 s at
+    +63 s, and Pending began at +88 s. Firing began at +208 s, exactly 2
+    minutes later.
+  - "Accounted for": that comes from drill_check.py, which compares what the
+    client was told with what the database holds:
+    - the load tool received 3,600 201 responses;
+    - the orders table has 3,600 new rows;
+    - all 3,600 reached CONFIRMED, with none stuck PENDING;
+    - 0 outbox rows are left unpublished in either service;
+    - no order has duplicate events;
+    - the reserved stock per SKU matches the confirmed quantities exactly.
+
+    So every order the API acknowledged was delivered and processed exactly
+    once.
+
+  "Failed" versus "lost"
+
+  They are not the same, and neither means "committed but not published".
+
+  - Failed request: the load tool got no 201 back. In load_orders.py a failure
+    is a non-2xx HTTP status or an exception, which is recorded as status 0. The
+    21 failures at 600/s were all status 0, meaning the client waited 10 s (its
+    timeout) or the connection broke. The service was overloaded and answered
+    too slowly. The slowest request in that run took 10.03 s, which fits the 10
+    s timeout. I haven't traced why those 21 requests timed out, so overload is
+    my inference. I also can't say whether the server created an order for any
+    of them, because the client never learned the result.
+  - Lost: an order the client got a 201 for that isn't in the database, or that
+    stayed PENDING forever. The drill checks guard that definition.
+  - Committed but not published: that's the outbox's job. Those rows wait and
+    get sent when Kafka returns. The "0 unpublished outbox rows" check confirms
+    none were left behind after draining.
+
+  So "0 failed at 400/s" means every request got a timely 201. "0 lost in the
+  drills" means every acknowledged order ended up processed. The
+  order-service-kill drill had 600 failed requests because the API was down, and
+  those were never acknowledged, so they don't count as lost.
+
+> <ide_selection>The user selected the lines 493 to 493 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md:
+  d twice: the first pass (already in the README) and a re-run today. Re-run:
+  3,000,000 orders loaded in 138 s; "my newest 50 orders" 54.9, 61.5, 66.5 ms
+  before the (customer_id, created_at DESC) index and 0.235, 0.200, 0.246 ms
+  after (about 19,150 page re
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Append the latest feedback to PLAN_with_two_phases.md
+
+  Also, why were the "order-service-kill drill that had 600 failed requests"
+  not acknowledged?
+
+● I'll append the clarifications to the plan, then answer your question.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I appended a "Clarifications from review" section to PLAN_with_two_phases.md,
+  after the status log, and committed it (a39b91b). It covers last answer's
+  points: where orders_perf was, what OutboxLagHigh is, what "accounted for"
+  means, and failed versus lost. It also includes the answer below.
+
+  Why the 600 failed requests in the order-service-kill drill were never
+  acknowledged
+
+  An acknowledgement is the HTTP 201, and order-service sends it only after the
+  order and its outbox row are committed to Postgres. During the kill:
+  - New requests: nothing was listening on port 8080 while the container was
+    dead, so they got "connection refused".
+  - Requests in flight at the kill: the process died mid-request, so the
+    connection was reset or hung until the client's 10 s timeout. That is why
+    that run's p95 was 4 s.
+  - Count: 600 failed because the API was down for about 30 s at 20 orders/s.
+    That is the 20 s I waited plus the container's start-up time, and I didn't
+    time the restart separately.
+
+  The check shows these requests left nothing behind. After the drill, orders
+  held 129,679 rows, which is the 126,679 baseline plus exactly the 3,000
+  requests that got a 201. No failed request created an order.
+
+  This is one run, though. If the kill had landed after the commit but before
+  the response, there would be an order the client never heard about, and the
+  row count would have been higher than the 201 count. This run didn't hit that
+  window, but nothing in the design prevents it. The API has no idempotency key,
+  so a client that retries could create a duplicate. resilience.md already
+  lists both as limits of the "0 lost" claim.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+> Append the latest feedback to PLAN_with_two_phases.md
+
+● There is nothing new to append. The last thing you asked about was why the
+  order-service-kill drill's 600 failed requests were never acknowledged, and I
+  appended that answer in the last turn (commit a39b91b). It's the last bullet
+  in the "Clarifications from review of the status log (2026-11-06)" section of
+  PLAN_with_two_phases.md, just above "Optional, after step 28". Adding it again
+  would duplicate it.
+
+  If you meant something else, tell me which and I'll add it. It could be:
+  - my full summary of steps 1–9, which is already in the plan's status log, one
+    entry per step;
+  - your three earlier questions in their original wording, instead of the
+    cleaned-up answers;
+  - anything I said in this conversation that isn't in the plan yet.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\README.md in the IDE. This may or may not be
+  related to the current task.</ide_opened_file>
+
+> Given the feedback and output from running steps 1-9, update any .md file in
+  the project and C:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes
+  as appropriate. Do not commit the changes this time.
+
+● I'll survey the markdown files and the notes first, to see what each one
+  currently claims.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Several notes are out of date now that the step 1–9 runs changed things, so
+  I'm grepping all the markdown for stale claims about row counts, image builds,
+  kind runs and the alert drill. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Some docs are stale: docs/ci.md claims images were never built, and the ADR
+  0006 and Terraform README say there's no terraform binary. I'm reading
+  architecture.md, the CI doc and the ADR before editing. · summary
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The user-added "see Clarifications below" markers in the plan are theirs, so
+  I'll leave them. I'll also check perf.md and resilience.md for stale k6 and
+  setup statements.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I have the full list now. I'll apply the doc edits first (CI doc, Terraform
+  and ADR status, perf.md, README, architecture), without committing anything.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The helper landed in a Git Bash /tmp path that Windows Python can't see. I'll
+  put it in the scratchpad and rerun.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The project docs are done, and I'm updating the three notes files next,
+  starting with errors-by-resume-bullet.md. · summary
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now errors-to-interview-stories.md. The pasted chat text at the end of that
+  file is yours, so I'm leaving it alone.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Last, tests-that-ran-and-passed.md. The test counts there are from the source,
+  so I'll add what was actually re-run on 2026-11-05 and say plainly what
+  wasn't re-run.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I updated the markdown files below to match what the step 1–9 runs showed, and
+  committed nothing. PLAN_with_two_phases.md shows as modified only because of
+  your own "[see Clarifications below]" edits, which I left alone.
+
+  Project docs
+  - README.md:
+    - It now lists the new scripts: drill_lag_alert.py, grafana_screenshots.mjs,
+      record_demo.mjs and frames_to_gif.py.
+    - drill.sh is described as working with containers, and perf_run.sh takes
+      RAMP.
+    - It now says the images, the compose apps profile and kind are verified
+      locally. GitHub CI, terraform validate, AWS and the k6 runs are still
+      listed as not done.
+  - docs/ci.md: the "Not yet verified" section no longer says the images were
+    never built. It lists what ran locally and what still needs a GitHub runner.
+  - phase2/infra/terraform/README.md and phase2/docs/adr/0006-aws-choices.md:
+    they said there was no terraform binary. Terraform 1.16 is installed now,
+    and both say validate has still not been run.
+  - phase2/docs/perf.md: the first-run "limit not found" and "k6 couldn't be
+    installed" lines now point to the container re-run and note that k6 is
+    installed but unrun.
+  - phase2/docs/architecture.md: the Kafka row has the real lag growth and alert
+    timing. There's a new failure-mode row for load above about 400 orders/s,
+    where confirmation runs at about 220/s.
+
+  Notes in notes/implmentations/
+  - errors-by-resume-bullet.md: rows 8, 14, 16 and 24 are corrected.
+    - It has new rows 26–32: port clash, the sampler bug and wrong lag peak,
+      kind restarts, README gaps, the 600/s limit and 220/s confirmation, the
+      GIF caption, and drill.sh.
+    - It has three new interview traps: throughput limit, whether the pipeline
+      keeps up, and whether the lag alert was tested.
+    - The resume text now says four drills, 400 orders/s at p95 about 29 ms, and
+      about 60 ms down to 0.2 ms on 3M rows. The "about 24,000 acknowledged
+      orders" total is my sum of the earlier 10,279 figure from that note, the
+      container reruns (3,600 + 3,600 + 3,000) and the 3,600-order lag drill.
+  - errors-to-interview-stories.md: rows 7, 20, 25, 26 and the "unfinished"
+    paragraph are corrected, and rows 28–34 are new. The chat text pasted at the
+    end of that file is untouched.
+  - tests-that-ran-and-passed.md: it has a new section on what was run on
+    2026-11-05. It says explicitly that the 40 order-service and 11
+    inventory-service JUnit tests, the 7 Vitest tests and the promtool tests
+    were not re-run in this pass.
+
+  I left docs/PLAN.md (the old plan), the other ADRs and security.md alone,
+  since nothing from these runs changes them.
+
+  The resume bullets are only drafts. They still carry the [handle] and date
+  placeholders, and the CodeQL and Terraform claims stay held back until those
+  have actually run.

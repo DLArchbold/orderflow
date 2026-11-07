@@ -37,6 +37,7 @@ public class OrderEntity {
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
+    @org.hibernate.annotations.BatchSize(size = 100)   // a page of orders loads its lines in one extra query, not one per order
     private List<OrderLineEntity> lines = new ArrayList<>();
 
     protected OrderEntity() {}
@@ -51,6 +52,7 @@ public class OrderEntity {
     }
 
     public void confirm() { transitionTo(OrderStatus.CONFIRMED); }
+    public void reject() { transitionTo(OrderStatus.REJECTED); }
     public void cancel() { transitionTo(OrderStatus.CANCELLED); }
 
     private void transitionTo(OrderStatus next) {

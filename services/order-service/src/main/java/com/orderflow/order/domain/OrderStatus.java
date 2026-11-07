@@ -8,8 +8,7 @@ public enum OrderStatus {
     public Set<OrderStatus> allowedNext() {
         return switch (this) {
             case PENDING -> Set.of(CONFIRMED, REJECTED, CANCELLED);
-            case CONFIRMED -> Set.of(CANCELLED);
-            case REJECTED, CANCELLED -> Set.of();
+            case CONFIRMED, REJECTED, CANCELLED -> Set.of();
         };
     }
 }

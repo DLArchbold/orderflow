@@ -19,6 +19,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
+    @ExceptionHandler(com.orderflow.order.service.ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> forbidden(com.orderflow.order.service.ForbiddenException e) {
+        return error(HttpStatus.FORBIDDEN, e.getMessage());
+    }
+
     // Thrown by OrderEntity.transitionTo when the status change isn't allowed
     @ExceptionHandler(InvalidTransitionException.class)
     public ResponseEntity<ErrorResponse> conflict(InvalidTransitionException e) {
@@ -40,10 +45,22 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "Malformed request body");
     }
 
+    // e.g. /api/orders?size=0
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> badParameter(jakarta.validation.ConstraintViolationException e) {
+        return error(HttpStatus.BAD_REQUEST, "Invalid request parameter");
+    }
+
     // e.g. /api/orders/not-a-uuid
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> badPathValue(MethodArgumentTypeMismatchException e) {
         return error(HttpStatus.BAD_REQUEST, "Invalid value for '" + e.getName() + "'");
+    }
+
+    // inventory-service answered 404 for an unknown SKU (StockClient)
+    @ExceptionHandler(org.springframework.web.client.HttpClientErrorException.NotFound.class)
+    public ResponseEntity<ErrorResponse> unknownSku(org.springframework.web.client.HttpClientErrorException.NotFound e) {
+        return error(HttpStatus.NOT_FOUND, "Unknown SKU");
     }
 
     private static ResponseEntity<ErrorResponse> error(HttpStatus status, String message) {

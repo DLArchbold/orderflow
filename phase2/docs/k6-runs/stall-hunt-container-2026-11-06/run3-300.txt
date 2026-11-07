@@ -1,0 +1,40 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(95)<500' p(95)=10.39ms
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 9001    295.778376/s
+    checks_succeeded...: 100.00% 9001 out of 9001
+    checks_failed......: 0.00%   0 out of 9001
+
+    ✓ created
+
+    CUSTOM
+    orders_created.................: 9001   295.778376/s
+
+    HTTP
+    http_req_duration..............: avg=7.84ms min=2.68ms med=5.51ms max=352.06ms p(90)=8.12ms p(95)=10.39ms
+      { expected_response:true }...: avg=7.84ms min=2.68ms med=5.51ms max=352.06ms p(90)=8.12ms p(95)=10.39ms
+    http_req_failed................: 0.00%  0 out of 9003
+    http_reqs......................: 9003   295.844097/s
+
+    EXECUTION
+    iteration_duration.............: avg=7.97ms min=3.49ms med=5.67ms max=251.57ms p(90)=8.32ms p(95)=10.54ms
+    iterations.....................: 9001   295.778376/s
+    vus............................: 2      min=1         max=55 
+    vus_max........................: 100    min=100       max=100
+
+    NETWORK
+    data_received..................: 5.9 MB 194 kB/s
+    data_sent......................: 11 MB  376 kB/s
+
+
+

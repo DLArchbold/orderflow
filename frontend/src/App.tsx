@@ -1,57 +1,107 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { Order, cancelOrder, confirmOrder, createOrder, listOrders } from './api';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { getUserName, initAuth, login, logout } from './auth';
+import { useOrderStream } from './hooks/useOrderStream';
+import { Order, StockInfo, cancelOrder, createOrder, getStock, listOrders } from './api';
 
 export function App() {
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);   // null while the login state is being read
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState('customer-1');
   const [sku, setSku] = useState('SKU-1');
   const [quantity, setQuantity] = useState(1);
+
+  const [stock, setStock] = useState<StockInfo | null>(null);
+
+  // stock of the typed SKU; a failed lookup just hides the line, ordering does not depend on it
+  useEffect(() => {
+    if (signedIn !== true) return;   // a 401 before sign-in would start its own login redirect
+    let cancelled = false;
+    getStock(sku)
+      .then((s) => !cancelled && setStock(s))
+      .catch(() => !cancelled && setStock(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [sku, orders, signedIn]);
+
+  // Latest status pushed by the stream, per order. A list fetched just before an event can arrive just after it;
+  // statuses only move forward (PENDING to a final one), so applying the pushed status over the fetched list is safe.
+  const pushed = useRef<Record<string, string>>({});
 
   const refresh = () =>
     listOrders()
       .then((data) => {
-        setOrders(data);
+        setOrders(data.map((o) => (pushed.current[o.id] ? { ...o, status: pushed.current[o.id] as Order['status'] } : o)));
         setError(null);
       })
       .catch((e: Error) => setError(e.message));
 
   useEffect(() => {
-    void refresh();
+    initAuth()
+      .then((ok) => {
+        setSignedIn(ok);
+        if (ok) void refresh();
+      })
+      .catch((e: Error) => {
+        setSignedIn(false);
+        setError(e.message);
+      });
   }, []);
+
+  // PENDING -> CONFIRMED / REJECTED arrives here without a refresh
+  useOrderStream({
+    enabled: signedIn === true,
+    onStatus: (orderId, status) => {
+      pushed.current[orderId] = status;
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: status as Order['status'] } : o)));
+    },
+    onReconnect: () => void refresh(),
+  });
 
   const run = (action: Promise<unknown>) =>
     action.then(refresh).catch((e: Error) => setError(e.message));
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    void run(createOrder(customerId, [{ sku, quantity }]));
+    void run(createOrder([{ sku, quantity }]));
   };
+
+  if (signedIn === null) return <main className="app"><p>Loading...</p></main>;
+  if (!signedIn) {
+    return (
+      <main className="app">
+        <h1>OrderFlow</h1>
+        {error && <p role="alert" className="error">Error: {error}</p>}
+        <button onClick={() => void login()}>Log in</button>
+      </main>
+    );
+  }
 
   return (
     <main className="app">
       <h1>OrderFlow</h1>
+      <p>
+        Signed in as {getUserName()} <button onClick={() => void logout()}>Log out</button>
+      </p>
 
       <form onSubmit={onSubmit} className="form">
-        <input value={customerId} onChange={(e) => setCustomerId(e.target.value)} placeholder="Customer" required />
-        <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" required />
-        <input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
+        <input aria-label="SKU" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" required />
+        <input aria-label="Quantity" type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
         <button type="submit">Create order</button>
       </form>
+      {stock && (
+        <p aria-label="stock">
+          In stock for {stock.sku}: {stock.available === null ? 'unknown' : stock.available}
+        </p>
+      )}
 
       {error && <p role="alert" className="error">Error: {error}</p>}
 
       <ul aria-label="orders">
         {orders.map((o) => (
           <li key={o.id}>
-            <strong>{o.status}</strong> {o.customerId}: {o.items.map((i) => `${i.quantity} x ${i.sku}`).join(', ')}
-            {o.status === 'PENDING' && (
-              <>
-                <button onClick={() => void run(confirmOrder(o.id))}>Confirm</button>
-                <button onClick={() => void run(cancelOrder(o.id))}>Cancel</button>
-              </>
-            )}
-            {o.status === 'CONFIRMED' && <button onClick={() => void run(cancelOrder(o.id))}>Cancel</button>}
+            <strong>{o.status}</strong> {o.items.map((i) => `${i.quantity} x ${i.sku}`).join(', ')}
+            {o.status === 'PENDING' && <button onClick={() => void run(cancelOrder(o.id))}>Cancel</button>}
           </li>
         ))}
       </ul>

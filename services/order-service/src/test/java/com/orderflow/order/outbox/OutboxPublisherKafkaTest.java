@@ -56,6 +56,8 @@ class OutboxPublisherKafkaTest {
         //.properties.max.block.ms are user-defined and not validated by Spring which causes Kfaka to log it as unknown config.
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
         registry.add("spring.kafka.producer.properties.max.block.ms", () -> "2000");
+        // Kafka requires delivery.timeout.ms >= linger.ms + request.timeout.ms (default 30000), so shorten request.timeout.ms too
+        registry.add("spring.kafka.producer.properties.request.timeout.ms", () -> "2000");
         registry.add("spring.kafka.producer.properties.delivery.timeout.ms", () -> "5000");
         //Ground truth of orderflow.outbox.* is in OutboxPublisher; See notes\outbox\what_is_orderflow_outbox_property_and_its_uses
         registry.add("orderflow.outbox.poll-ms", () -> "200");   // poll fast so the test does not wait long
@@ -66,7 +68,7 @@ class OutboxPublisherKafkaTest {
     @Autowired OutboxRepository outboxRepository;
 
     private final CreateOrderRequest request = new CreateOrderRequest(
-            "CUST-1", List.of(new CreateOrderRequest.Item("SKU-1", 2)));
+            List.of(new CreateOrderRequest.Item("SKU-1", 2)));
 
     @BeforeEach
     void cleanTables() {
@@ -81,7 +83,7 @@ class OutboxPublisherKafkaTest {
     // and catches a publisher that re-sends a row it has already sent. 
     // (A 2 s window cannot prove there is never a duplicate, but it catches the obvious bugs.)
     void eventArrivesExactlyOnceAfterCommit() {
-        OrderResponse created = orderService.create(request);
+        OrderResponse created = orderService.create("CUST-1", request);
         String orderId = created.id().toString();
 
         try (KafkaConsumer<String, String> consumer = newConsumer()) {
@@ -102,6 +104,13 @@ class OutboxPublisherKafkaTest {
             assertThat(matching).as("records for order %s", orderId).hasSize(1);
             assertThat(matching.get(0).value()).contains(orderId);
 
+            // PLAN step 14a: the record carries a stable `message-id` header (the outbox row id) so a consumer
+            // can recognise a re-delivery; the offset changes on every re-send, the row id does not.
+            org.apache.kafka.common.header.Header messageId = matching.get(0).headers().lastHeader("message-id");
+            assertThat(messageId).as("message-id header").isNotNull();
+            assertThat(new String(messageId.value(), java.nio.charset.StandardCharsets.UTF_8))
+                    .isEqualTo(outboxRepository.findAll().get(0).getId().toString());
+
             // keep listening for 2 s: a duplicate would show up here
             Instant quietUntil = Instant.now().plusSeconds(2);
             while (Instant.now().isBefore(quietUntil)) {
@@ -117,6 +126,74 @@ class OutboxPublisherKafkaTest {
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(outboxRepository.findAll()).hasSize(1)
                         .allSatisfy(e -> assertThat(e.getPublishedAt()).isNotNull()));
+    }
+
+    // PLAN step 13d. Kafka is paused (not stopped) to simulate an outage: a stopped and restarted container
+    // would get a new random port that the already-created producer does not know about.
+    @Test
+    void unpublishedRowIsRetriedAndDeliveredAfterKafkaReturns() {
+        String orderId;
+
+        kafka.getDockerClient().pauseContainerCmd(kafka.getContainerId()).exec();
+        try {
+            orderId = orderService.create("CUST-1", request).id().toString();
+
+            // During the outage the row must stay unpublished for 5 s (about 25 polls at 200 ms).
+            // This holds even for the no-op publisher, so it is not what makes the test fail today.
+            await().during(Duration.ofSeconds(5)).atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                    assertThat(outboxRepository.findAll()).hasSize(1)
+                            .allSatisfy(e -> assertThat(e.getPublishedAt()).isNull()));
+        } finally {
+            // always bring Kafka back, even if an assertion above failed, so later tests are not stuck with a paused broker
+            kafka.getDockerClient().unpauseContainerCmd(kafka.getContainerId()).exec();
+        }
+
+        // After Kafka returns, a later poll must deliver the row that failed earlier and mark it published.
+        // This is the assertion that fails until OutboxPublisher.publishPending() is implemented (step 13e).
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(outboxRepository.findAll()).hasSize(1)
+                        .allSatisfy(e -> assertThat(e.getPublishedAt()).isNotNull()));
+
+        // The record must be on the topic exactly once: the failed attempts during the outage must not have produced copies.
+        try (KafkaConsumer<String, String> consumer = newConsumer()) {
+            consumer.subscribe(List.of(KafkaConfig.ORDERS_EVENTS_TOPIC));
+
+            List<ConsumerRecord<String, String>> matching = new ArrayList<>();
+            Instant deadline = Instant.now().plusSeconds(15);
+            while (matching.isEmpty() && Instant.now().isBefore(deadline)) {
+                collectForKey(consumer, orderId, matching, Duration.ofMillis(500));
+            }
+            Instant quietUntil = Instant.now().plusSeconds(2);
+            while (Instant.now().isBefore(quietUntil)) {
+                collectForKey(consumer, orderId, matching, Duration.ofMillis(500));
+            }
+            assertThat(matching).as("records for order %s", orderId).hasSize(1);
+        }
+    }
+
+    // PLAN step 21c: the correlation id of the request that wrote the outbox row travels in a Kafka header
+    @Test
+    void theCorrelationIdTravelsInAKafkaHeader() {
+        String orderId;
+        org.slf4j.MDC.put("correlationId", "corr-test-1");
+        try {
+            orderId = orderService.create("CUST-1", request).id().toString();
+        } finally {
+            org.slf4j.MDC.clear();
+        }
+
+        try (KafkaConsumer<String, String> consumer = newConsumer()) {
+            consumer.subscribe(List.of(KafkaConfig.ORDERS_EVENTS_TOPIC));
+            List<ConsumerRecord<String, String>> matching = new ArrayList<>();
+            Instant deadline = Instant.now().plusSeconds(15);
+            while (matching.isEmpty() && Instant.now().isBefore(deadline)) {
+                collectForKey(consumer, orderId, matching, Duration.ofMillis(500));
+            }
+            assertThat(matching).hasSize(1);
+            org.apache.kafka.common.header.Header header = matching.get(0).headers().lastHeader("correlation-id");
+            assertThat(header).as("correlation-id header").isNotNull();
+            assertThat(new String(header.value(), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("corr-test-1");
+        }
     }
 
     private static void collectForKey(KafkaConsumer<String, String> consumer, String key,

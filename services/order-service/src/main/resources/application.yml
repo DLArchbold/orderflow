@@ -11,8 +11,31 @@ spring:
     hibernate:
       ddl-auto: validate      # Flyway creates the tables; Hibernate only checks they match your entities
     open-in-view: false
+  data:
+    redis:
+      host: localhost
+      timeout: 500ms           # fail fast when Redis is down; the cache error handler then carries on
+      connect-timeout: 500ms
+  cache:
+    redis:
+      time-to-live: 30s
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/orderflow
   kafka:
     bootstrap-servers: localhost:9092
+    template:
+      observation-enabled: true     # a span (and trace headers) for every send
+    listener:
+      observation-enabled: true     # a span for every consumed record, continuing the producer's trace
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest   # a result written while order-service was down is still read on start
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     producer:
       # the broker confirms only after the write is fully replicated, 
       #otherwise OutboxPublished could execute markPublished() prematurely 
@@ -25,11 +48,54 @@ spring:
       properties:
         enable.idempotence: true    # retries cannot create duplicate records within one producer session
         max.block.ms: 5000          # fail fast (instead of 60 s) when Kafka is unreachable
+orderflow:
+  consumer:
+    backoff-initial-ms: 1000
+    backoff-max-ms: 10000
+    max-attempts: 3
+resilience4j:
+  circuitbreaker:
+    instances:
+      inventory:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+        ignore-exceptions:
+          - org.springframework.web.client.HttpClientErrorException   # a 404 for an unknown SKU is not an outage
+  bulkhead:
+    instances:
+      inventory:
+        max-concurrent-calls: 10
+        max-wait-duration: 0
 management:
+  tracing:
+    sampling:
+      probability: 1.0     # the default is 0.1; this is a learning project, trace everything
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+  endpoint:
+    health:
+      probes:
+        enabled: true     # /actuator/health/liveness and /readiness for Kubernetes (step 23)
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true   # needed for histogram_quantile (p95) in Grafana
+  health:
+    redis:
+      enabled: false      # the cache is optional; a Redis outage must not make the service unready
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,prometheus
+logging:
+  pattern:
+    # trace id and span id come from Micrometer Tracing; the correlation id is the one a client can quote
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}] [%X{correlationId:-}]"
 springdoc:
   swagger-ui:
     path: /swagger-ui.html    # open http://localhost:8080/swagger-ui.html

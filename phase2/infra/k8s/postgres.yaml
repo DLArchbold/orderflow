@@ -1,0 +1,63 @@
+# Throwaway PostgreSQL for the kind cluster: no persistent volume, dev-only credentials.
+# Both services run Flyway at startup, so without a database they crash and never become Ready.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+stringData:
+  POSTGRES_USER: orderflow
+  POSTGRES_PASSWORD: orderflow          # dev only; real deployments take this from a secret store (step 24: Secrets Manager)
+  SPRING_DATASOURCE_USERNAME: orderflow
+  SPRING_DATASOURCE_PASSWORD: orderflow
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+data:
+  init.sql: |
+    CREATE DATABASE orders;
+    CREATE DATABASE inventory;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports: [{ containerPort: 5432 }]
+          envFrom:
+            - secretRef: { name: db-credentials }
+          volumeMounts:
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+            - { name: data, mountPath: /var/lib/postgresql/data }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "orderflow"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: init
+          configMap: { name: postgres-init }
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]

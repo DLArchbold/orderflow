@@ -1,12 +1,13 @@
-# Metric names are placeholders: create these metrics in PLAN step 14, then adjust the names here.
 groups:
   - name: orderflow
     rules:
+      # The health signal of the outbox pattern: orders are still accepted while the publisher is stopped,
+      # only this number grows. Unit-tested in alerts_test.yml.
       - alert: OutboxLagHigh
-        expr: orderflow_outbox_unpublished > 100
+        expr: orderflow_outbox_lag_seconds > 60
         for: 2m
         labels: { severity: warning }
-        annotations: { summary: "Outbox backlog above 100 events for 2 minutes" }
+        annotations: { summary: "Oldest unpublished outbox row is older than 60 s for 2 minutes" }
       - alert: DeadLetterQueueGrowing
         expr: increase(orderflow_dlt_messages_total[5m]) > 0
         labels: { severity: warning }

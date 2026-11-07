@@ -1,0 +1,388 @@
+== 1794008832
+== 1794008833
+IPC:BufferIO active select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at,l1_0.orde|4
+-:- active select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at,l1_0.orde|3
+IO:DataFileRead active select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at,l1_0.orde|1
+== 1794008834
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008836
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008837
+LWLock:WALWrite active COMMIT|1
+== 1794008838
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008839
+LWLock:WALWrite active COMMIT|3
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008841
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008842
+LWLock:WALWrite active COMMIT|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008843
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008844
+Client:ClientRead idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008845
+LWLock:WALWrite active COMMIT|2
+== 1794008847
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008848
+LWLock:WALWrite active COMMIT|8
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008849
+LWLock:WALWrite active COMMIT|9
+IO:DataFileRead active update outbox set aggregate_id=$1,correlation_id=$2,created_at=$3,payload=$4,published_at=|1
+== 1794008851
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008852
+LWLock:WALWrite active COMMIT|9
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008853
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008854
+Client:ClientRead idle in transaction insert into orders (created_at,customer_id,status,updated_at,id) values ($1,$2,$3,$4,$5)|6
+Client:ClientRead idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008856
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+Client:ClientRead idle in transaction update outbox set aggregate_id=$1,correlation_id=$2,created_at=$3,payload=$4,published_at=|1
+== 1794008857
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+Client:ClientRead idle in transaction update outbox set aggregate_id=$1,correlation_id=$2,created_at=$3,payload=$4,published_at=|1
+== 1794008858
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+Client:ClientRead idle in transaction update outbox set aggregate_id=$1,correlation_id=$2,created_at=$3,payload=$4,published_at=|1
+== 1794008859
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008860
+LWLock:WALWrite active COMMIT|8
+IO:DataFileRead active insert into orders (created_at,customer_id,status,updated_at,id) values ($1,$2,$3,$4,$5)|1
+IO:WALSync active COMMIT|1
+== 1794008862
+LWLock:WALWrite active COMMIT|9
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008863
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008864
+LWLock:WALWrite active COMMIT|5
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008866
+LWLock:WALWrite active COMMIT|1
+== 1794008867
+IO:WALSync active COMMIT|1
+== 1794008868
+IO:WALSync active COMMIT|1
+== 1794008869
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008871
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008872
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008873
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008874
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008875
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008876
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008878
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008879
+LWLock:WALWrite active COMMIT|1
+== 1794008880
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008881
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008882
+LWLock:WALWrite active COMMIT|2
+== 1794008884
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008892
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008893
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008898
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008901
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008902
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008904
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008906
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008907
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008908
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008910
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008911
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008913
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794008914
+LWLock:WALWrite active COMMIT|8
+IO:WALSync active COMMIT|1
+== 1794008916
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:DataFileRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008918
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008919
+LWLock:WALWrite active COMMIT|2
+Client:ClientRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+== 1794008920
+LWLock:WALWrite active COMMIT|2
+== 1794008922
+-:- active select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at,l1_0.orde|1
+== 1794008923
+-:- idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008924
+IO:DataFileRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+== 1794008925
+-:- active COMMIT|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at,l1_0.orde|1
+== 1794008927
+IO:DataFileRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+== 1794008928
+== 1794008929
+LWLock:WALWrite active COMMIT|2
+IO:WALSync active COMMIT|1
+== 1794008930
+-:- active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008932
+LWLock:WALWrite active COMMIT|2
+IO:DataFileRead active select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at,l1_0.orde|1
+IO:WALSync active COMMIT|1
+== 1794008933
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008934
+Client:ClientRead idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+LWLock:WALWrite active COMMIT|1
+== 1794008935
+LWLock:WALWrite active COMMIT|5
+-:- active insert into orders (created_at,customer_id,status,updated_at,id) values ($1,$2,$3,$4,$5)|1
+IO:WALSync active COMMIT|1
+== 1794008937
+LWLock:WALWrite active COMMIT|2
+-:- idle in transaction update outbox set aggregate_id=$1,correlation_id=$2,created_at=$3,payload=$4,published_at=|1
+== 1794008938
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008939
+IO:WALSync active COMMIT|1
+== 1794008940
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.created_at,oe1_0.customer_id,oe1_0.status,oe1_0.updated_at from orde|1
+== 1794008942
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008943
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008944
+LWLock:WALWrite active COMMIT|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008945
+IO:WALSync active COMMIT|1
+== 1794008947
+LWLock:WALWrite active COMMIT|1
+== 1794008948
+IO:WALSync active COMMIT|1
+== 1794008949
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008950
+== 1794008951
+LWLock:WALWrite active COMMIT|1
+== 1794008953
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008954
+IO:WALSync active COMMIT|1
+== 1794008955
+IO:WALSync active COMMIT|1
+== 1794008956
+== 1794008958
+== 1794008959
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008960
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794008961
+LWLock:WALWrite active COMMIT|1
+== 1794008962
+LWLock:WALWrite active COMMIT|1
+== 1794008964
+== 1794008965
+== 1794008966
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008967
+== 1794008968
+IO:WALSync active COMMIT|1
+== 1794008970
+LWLock:WALWrite active COMMIT|1
+== 1794008971
+LWLock:WALWrite active COMMIT|1
+== 1794008972
+LWLock:WALWrite active COMMIT|1
+== 1794008973
+LWLock:WALWrite active COMMIT|8
+Client:ClientRead idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+== 1794008975
+LWLock:WALWrite active COMMIT|2
+IO:WALSync active COMMIT|1
+== 1794008976
+LWLock:WALWrite active COMMIT|3
+== 1794008977
+LWLock:WALWrite active COMMIT|2
+IO:WALSync active COMMIT|1
+== 1794008978
+LWLock:WALWrite active COMMIT|2
+IO:WALSync active COMMIT|1
+== 1794008980
+IO:WALSync active COMMIT|1
+== 1794008981
+LWLock:WALWrite active COMMIT|2
+-:- active BEGIN|1
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008982
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008983
+LWLock:WALWrite active COMMIT|9
+IO:WALSync active COMMIT|1
+== 1794008985
+LWLock:WALWrite active COMMIT|8
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794008986
+LWLock:WALWrite active COMMIT|2
+== 1794008987
+IO:WALSync active COMMIT|1
+== 1794008988
+Client:ClientRead idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|3
+-:- idle in transaction insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+Client:ClientRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:DataFileRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|1
+IO:WALSync active COMMIT|1
+LWLock:WALWrite active COMMIT|1
+== 1794008990
+LWLock:WALWrite active COMMIT|7
+IO:DataFileRead active insert into order_lines (line_no,order_id,quantity,sku) values ($1,$2,$3,$4) returning id|2
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+== 1794009027
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794009047
+LWLock:WALWrite active COMMIT|1
+== 1794009052
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+IO:WALSync active COMMIT|1
+== 1794009054
+LWLock:WALWrite active COMMIT|1
+== 1794009055
+IO:WALSync active COMMIT|1
+== 1794009057
+LWLock:WALWrite active COMMIT|1
+== 1794009059
+IO:WALSync active COMMIT|1
+== 1794009063
+IO:WALSync active COMMIT|1
+== 1794009067
+LWLock:WALWrite active COMMIT|1
+== 1794009073
+IO:WALSync active COMMIT|1
+== 1794009075
+IO:WALSync active COMMIT|1
+== 1794009077
+LWLock:WALWrite active COMMIT|1
+== 1794009087
+LWLock:WALWrite active COMMIT|1
+== 1794009137
+Client:ClientRead idle in transaction select oe1_0.id,oe1_0.aggregate_id,oe1_0.correlation_id,oe1_0.created_at,oe1_0.payload,oe1|1
+LWLock:WALWrite active COMMIT|1
+== 1794009143
+IO:WALSync active COMMIT|1
+== 1794009148
+IO:WALSync active COMMIT|1
+== 1794009153
+LWLock:WALWrite active COMMIT|1
+== 1794009157
+LWLock:WALWrite active COMMIT|1
+== 1794009158
+IO:WALSync active COMMIT|1
+== 1794009161
+IO:WALSync active COMMIT|1
+== 1794009164
+LWLock:WALWrite active COMMIT|1
+== 1794009170
+LWLock:WALWrite active COMMIT|1
+== 1794009181
+LWLock:WALWrite active COMMIT|1
+== 1794009192
+unable to upgrade to tcp, received 502
+== 1794009718
+-:- active select coalesce(wait_event_type,'-')||':'||coalesce(wait_event,'-')||' '||state||' '||left|1
+IO:WALSync active COMMIT|1
+== 1794009765
+== 1794009771
+== 1794009778
+request returned 502 Bad Gateway for API route and version http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.56/containers/infra-postgres-1/json, check if the server supports the requested API version
+== 1794010277
+LWLock:WALWrite active COMMIT|1

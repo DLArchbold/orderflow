@@ -1,0 +1,23 @@
+# ADR 0006: AWS deployment choices (Terraform, ECS Fargate)
+
+Status: draft. The Terraform in `phase2/infra/terraform` passes `terraform fmt` and `terraform validate` (2026-11-06) but has NOT been planned or applied (see "State of this work").
+
+## Decisions
+| Topic | Choice | Why, and what it costs |
+|---|---|---|
+| Compute | ECS Fargate, one service per container, rolling deploy | No servers to patch; 0.5 vCPU and 1 GB per Java service. |
+| Network | VPC, 2 AZs; **public subnets for the ALB and the tasks, no NAT gateway** | A NAT gateway is about $32 a month plus data. Tasks get public IPs and security groups are the only guard. Acceptable for a demo; a real deployment puts tasks in private subnets behind a NAT or VPC endpoints. |
+| Database | RDS PostgreSQL `db.t4g.micro`, single AZ, `skip_final_snapshot`, no deletion protection, in private subnets, password generated and kept in Secrets Manager | RDS is the slowest and costliest piece, so it is created once and early. Nothing survives `terraform destroy`, on purpose. Terraform cannot create databases inside RDS: a one-off Fargate task (`db-init`) runs `psql`. |
+| Kafka | **One `apache/kafka` container on ECS** with a Cloud Map DNS name (`kafka.orderflow.local`) | MSK Serverless is a few hundred dollars a month and the smallest MSK cluster tens of dollars. The container has no volume, so the topics are gone when the task restarts. Accepted for a demo; the outbox republishes unpublished rows, but already-published events are lost. |
+| Redis | **None** | The cache error handler (step 17c) means the stock endpoint still answers without it, at about 1 s per call. |
+| Identity | **Keycloak in dev mode** as one more ECS service with the realm import, reached through the ALB at `/realms/*`, `KC_HOSTNAME` = the ALB URL | Not production-grade (dev mode, H2 database, the realm's throwaway user passwords are in the repository). The token issuer must equal `issuer-uri` exactly; the services therefore validate the issuer against the public ALB URL but fetch the signing keys from the internal `keycloak.orderflow.local` name (`jwk-set-uri`). If this proves too fiddly, drop the `issuer-uri` and keep only `jwk-set-uri`, which skips the issuer check; say so in the README. |
+| HTTPS | **HTTP only** | With no domain there is no ACM certificate. Tokens and passwords cross the internet in clear text. A real deployment needs a domain and a certificate. |
+| State | **Local state**, one person on one machine | Simple. `terraform.tfstate` holds the generated passwords, so it is git-ignored. For sharing, use an S3 backend with `use_lockfile = true` (check the docs for the Terraform version in use). |
+| Deployments | `minimum_healthy_percent = 100`, `maximum_percent = 200`, circuit breaker with rollback, target group `deregistration_delay` 30 s. Kafka and Keycloak use 0 / 100 (stop, then start) | Two Kafka brokers or two Keycloak instances with separate storage would split the data. |
+
+## Consequence worth saying out loud when presenting the deploy
+During a rolling deploy old and new order-service tasks overlap, so for a short time **two instances publish the same outbox rows**
+and some events are sent twice. The idempotent consumer in inventory-service (`processed_messages`, step 14) keeps that harmless.
+
+## State of this work
+`terraform fmt -recursive` changed four files (formatting only), and after that `terraform init -backend=false` and `terraform validate` (Terraform 1.16.6, AWS provider 5.x) reported "The configuration is valid" on 2026-11-06. That checks syntax, references and argument names against the provider schema; it needs no AWS account and proves nothing about whether the resources will create. `plan` and `apply` were never run (no AWS credentials in use), so expect to fix errors on the first plan. No deploy, load test during a deploy, or destroy check has happened.

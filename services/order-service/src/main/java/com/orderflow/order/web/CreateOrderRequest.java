@@ -10,8 +10,6 @@ import java.util.List;
 
 //Instead of writing a normal class with private fields, a constructor, getters, equals(), hashCode(), and toString() methods by hand, a record lets you declare all of that in a single line
 public record CreateOrderRequest(
-        @Schema(description = "ID of the customer placing the order", example = "CUST-1001")
-        @NotBlank String customerId,
         @Schema(description = "Items to order; at least one is required")
         @NotEmpty @Valid List<Item> items) {
 

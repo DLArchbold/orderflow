@@ -45,7 +45,7 @@ class OrderServiceOutboxTest {
     @Autowired PlatformTransactionManager txManager;
 
     private final CreateOrderRequest request = new CreateOrderRequest(
-            "CUST-1", List.of(new CreateOrderRequest.Item("SKU-1", 2)));
+            List.of(new CreateOrderRequest.Item("SKU-1", 2)));
 
     
     //So tests don't see each other's rows as datasource overriden in "postgres" lines on top.
@@ -68,7 +68,7 @@ class OrderServiceOutboxTest {
         // fails.
         assertThatThrownBy(() -> new TransactionTemplate(txManager).execute(status -> {
             // create() joins this outer transaction, so throwing afterwards rolls back everything it wrote
-            orderService.create(request);
+            orderService.create("CUST-1", request);
             throw new RuntimeException("force rollback");
         })).hasMessage("force rollback");
 
@@ -81,7 +81,7 @@ class OrderServiceOutboxTest {
 
     @Test
     void commitWritesOrderAndOutboxRow() {
-        OrderResponse created = orderService.create(request);
+        OrderResponse created = orderService.create("CUST-1", request);
 
         assertThat(orderRepository.count()).isEqualTo(1);
         //OutboxEvent will be published to Kafka by OutboxPublisher

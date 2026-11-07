@@ -1,0 +1,4 @@
+time="2026-11-06T18:58:07-05:00" level=error msg="error waiting for container: unexpected EOF"
+docker: request returned 502 Bad Gateway for API route and version http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.56/containers/68f84fac980c2547757f6a904a519ac905a2a3f063426de3021dda2de8d462e7/start, check if the server supports the requested API version
+
+Run 'docker run --help' for more information
