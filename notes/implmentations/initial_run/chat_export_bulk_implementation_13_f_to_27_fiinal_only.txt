@@ -25,7 +25,7 @@ I worked through steps 13f to 27 and committed after every substep, 49 commits i
 
 **Things I got wrong or changed along the way**
 - I briefly committed Playwright session cookies (`frontend/e2e/.auth`). I fixed the ignore rule and amended that unpushed commit; they are not in history.
-- One earlier `git add -A` also committed your `notes/chat_export_...` file.
+- One earlier `git add -A` also committed your `notes/implmentations/initial_run/chat_export_until_15_c_2026-11-05-091606-difference-between-awaitduring-and-awaita.txt` file.
 - Real bugs the browser tests exposed are fixed: the SSE response headers, a dead-connection exception, a UI race, and a double code exchange under StrictMode. `npm test` was also picking up the Playwright specs, which would have failed CI.
 - Upgrading to Vite 7 and Vitest 5 cleared the `npm audit` findings (3 advisory groups).
 

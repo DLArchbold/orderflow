@@ -24,19 +24,24 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 ## Results (read the "setup / evidence" column: some numbers are from a stand-in tool or a reduced scale)
 | Metric | Result | Setup / evidence |
 |---|---|---|
-| Throughput (orders/s) | **400 orders/s accepted with 0 failures; the API's limit is between 400 and 600** (at 600/s p95 was 1.33 s and 0.12% of requests failed). Orders reach CONFIRMED at about **220/s** once a backlog exists | One i7-14700 machine running the load generator and the whole system (services as containers) together; 30 s per step. Measured with `scripts/load_orders.py`, **not k6** (k6 runs are still to do). [perf.md](phase2/docs/perf.md#load-test-plan-step-25) |
+| Throughput (orders/s) | **400 orders/s accepted with 0 failures; the API's limit is between 400 and 600** (at 600/s p95 was 1.33 s and 0.12% of requests failed). Orders reach CONFIRMED at about **220/s** once a backlog exists | One i7-14700 machine running the load generator and the whole system (services as containers) together; 30 s per step. Measured with `scripts/load_orders.py`, **not k6**. A later k6 run (2026-11-06) was clean at 50 orders/s (p95 7 to 13 ms) but intermittently slow at 300 to 800/s, so no k6 limit is claimed; see [perf.md](phase2/docs/perf.md). [perf.md](phase2/docs/perf.md#load-test-plan-step-25) |
 | p95 create-order latency | about 30 ms at 50 orders/s; 28 to 42 ms from 100 to 400 orders/s | same runs |
 | Outbox lag at the top rate | 19 s to drain after the 300/s step, 36 s after 400/s; peak 124 s at 1,000/s (the generator reached only 663/s there); near zero at 150/s or less | same runs |
 | Query time before/after index | **about 60 ms to 0.2 ms** (19,000 to 53 buffers) for "my newest 50 orders" at **3,000,000 orders** (a customer with about 30,000 orders); measured twice with the same result | [perf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |
 | Failed requests during rolling deploy | **not measured** | the AWS deploy was never run (no AWS account used); [Terraform](phase2/infra/terraform/README.md) passes `terraform validate` but was never planned or applied |
 | Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
-| Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL ran on PR #1: 0 results (default suites, not proof of safety). Dependabot has 9 open alerts on `main` (vite, esbuild) that should close when the branch is merged | [security.md](phase2/docs/security.md) |
+| Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL ran on PR #1: 0 results (default suites, not proof of safety). Dependabot: the 8 vite/esbuild alerts closed after PR #1 was merged; **14 are still open** (13 on Maven dependencies of `e2e/pom.xml`: jackson-databind and assertj, several high; 1 medium on a vite 6.4.3 entry in `frontend/package-lock.json`), not yet triaged | [security.md](phase2/docs/security.md) |
 
-Verified locally (Windows 10, Docker Desktop; not yet on a GitHub runner): the three Docker images, the compose `apps` profile (also from a fresh clone), and a kind cluster
+Verified locally (Windows 10, Docker Desktop): the three Docker images, the compose `apps` profile (also from a fresh clone), and a kind cluster
 where both services became Ready ([phase2/infra/k8s/README.md](phase2/infra/k8s/README.md)).
 
-What is not done, so nobody has to guess: pushing to GitHub and the first CI run; `terraform plan`/`apply` and everything on AWS (`terraform validate` passes); a clean k6 limit (k6 ran, but its ramp stalled erratically at 300/s and 600/s; see [perf.md](phase2/docs/perf.md)).
-The files for all of them are in the repository and are marked as untested where they are.
+Verified on GitHub (public repo, hosted runners): the first full CI run on the pushed branch (run `42291870099`, commit `340bfba`) passed `frontend`, both `backend` jobs, `e2e` and `kind`;
+CodeQL passed on PR #1 for Java/Kotlin and JavaScript/TypeScript with 0 results (default suites, not proof of safety); PR #1 was merged into `main` on 2026-11-06, and after the merge the
+full CI run on `main` (run `42338278394`) passed every job: `frontend`, both `backend` jobs, `e2e`, `kind` and the three `images` builds (the images job includes the push to GHCR; I did not open the packages page to confirm the images are there), and the CodeQL push run passed too. Branch protection is on for `main` (pull request and 7 required checks; the owner can bypass it). See [docs/ci.md](docs/ci.md).
+
+What is not done, so nobody has to guess: `terraform plan`/`apply` and everything on AWS (`terraform validate` passes); a clean k6 limit (k6 ran, but runs at 300/s and 600/s were intermittently slow,
+with the leading explanation being the local Docker disk; see [perf.md](phase2/docs/perf.md)); triage of the 14 open Dependabot alerts and of the 17 Dependabot pull requests opened against `main`
+(for example the vite 8 bumps fail because `@vitejs/plugin-react` 4.7.0 does not support vite 8). The files for the unfinished parts are in the repository and are marked as untested where they are.
 
 ## Quick start
 

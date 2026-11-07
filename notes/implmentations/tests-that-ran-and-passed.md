@@ -115,6 +115,6 @@ Windows 10, Docker Desktop, the three services as containers (`docker compose -f
 | kind cluster: `kubectl apply -k phase2/infra/k8s`, `kubectl wait --for=condition=Available deployment --all` | 4 Deployments Available in about 30 s, 0 restarts after the init-container fix; `/actuator/health` UP on both services, Flyway applied in both databases | `phase2/infra/k8s/README.md` |
 
 **Not re-run in this pass:** the 40 order-service and 11 inventory-service JUnit tests (`mvn verify`), the 7 Vitest tests and the promtool rule tests. The counts above are
-still from the source and from the earlier runs. Also not run: the CI pipeline on GitHub, `terraform validate`, and any k6 script.
+still from the source and from the earlier runs. Update 2026-11-06: since then the CI pipeline ran on GitHub (frontend, both backends, e2e and kind green on the branch; CodeQL 0 results), `terraform validate` passed, and k6 ran (see `phase2/docs/perf.md`); the unit-test counts above were still not re-counted.
 
 Drill check, added to the list of script checks: `scripts/drill_check.py` is also used by `scripts/drill_lag_alert.py`.

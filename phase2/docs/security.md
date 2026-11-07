@@ -21,13 +21,13 @@ Only rows that have evidence are listed.
 | A03 Injection | Only bind parameters, no SQL built from input: JPA derived queries in order-service, `JdbcClient` with `?` / named parameters in inventory-service | `InventoryService.reserve` (`ON CONFLICT`, `WHERE sku IN (:skus)`), `OrderRepository.findByCustomerId` |
 | A05 Security misconfiguration | Stateless sessions; CSRF off only because the API uses bearer tokens and no cookies; CORS allows the frontend origin only; actuator exposes `health,info,circuitbreakers`; the replay endpoint is off unless `orderflow.admin.enabled=true` | `SecurityTest.preflightFromAnotherOriginIsRejected`, `SecurityConfig`, `application.yml` (`management.endpoints`) |
 | A07 Identification and authentication failures | OAuth2 resource server validating the JWT signature and issuer against Keycloak; no token or a bad token is 401; the browser keeps the token in memory (PKCE login) | `SecurityTest.listWithoutTokenIs401`, `SecurityConfig`, `frontend/src/auth.ts` |
-| A06 Vulnerable components | `npm audit` is clean (0 vulnerabilities, see "Scan findings fixed"); CodeQL ran on PR #1 with 0 results in both languages (default query suites only, not proof of safety); Dependabot alerts are enabled and 9 are open on `main` (vite, esbuild), expected to close when PR #1 is merged | `npm audit` output, `.github/dependabot.yml`, `.github/workflows/codeql.yml` |
+| A06 Vulnerable components | `npm audit` is clean (0 vulnerabilities, see "Scan findings fixed"); CodeQL ran on PR #1 with 0 results in both languages (default query suites only, not proof of safety); Dependabot alerts are enabled; after PR #1 was merged the 8 vite/esbuild alerts closed and 14 are open (13 in `e2e/pom.xml`: jackson-databind and assertj; 1 medium on vite 6.4.3 in the frontend lockfile) | `npm audit` output, `.github/dependabot.yml`, `.github/workflows/codeql.yml` |
 
 Not claimed: transport encryption. Everything runs over plain HTTP in development, and the ALB in step 24 serves HTTP only
 until a domain and certificate exist.
 
 ## Scan findings fixed
-Counted honestly. CodeQL found nothing (0 results in `java-kotlin` and `javascript-typescript` on PR #1). Dependabot reports 9 open alerts on `main` (vite 8, esbuild 1) that the branch's upgrade already addresses; they are not counted as fixed until they close after the merge. The findings below come from `npm audit` run locally.
+Counted honestly. CodeQL found nothing (0 results in `java-kotlin` and `javascript-typescript` on PR #1). Dependabot's 8 vite/esbuild alerts closed after PR #1 was merged (counted as fixed by the upgrade to vite 7 and esbuild 0.28); 14 alerts are open and **not fixed or triaged**: 13 on Maven dependencies of `e2e/pom.xml` (jackson-databind 2.18.x, several rated high, and assertj-core) and 1 medium on vite 6.4.3 in `frontend/package-lock.json`, which I did not trace. The findings below come from `npm audit` run locally.
 
 | Date | Finding | Where | Fix |
 |---|---|---|---|
@@ -38,4 +38,4 @@ Counted honestly. CodeQL found nothing (0 results in `java-kotlin` and `javascri
 Result: `npm audit` reports 0 vulnerabilities; `npm test` (7 tests), `npm run build` and the 4 Playwright tests pass on the new versions.
 Total fixed: 3 advisory groups (4 advisories plus the dependencies they pulled in). All three were in development tooling.
 
-Not scanned: the Maven dependencies (no scanner is installed here); Dependabot will report them once its config is on `main` (after PR #1 is merged).
+Maven dependencies: no scanner is installed locally. Now that the repository is on GitHub, Dependabot has scanned them and reports open alerts on `e2e/pom.xml` (see above); the two services' `pom.xml` files have no open alert at the time of writing, which is a statement about Dependabot's database, not a full audit.
