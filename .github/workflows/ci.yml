@@ -76,7 +76,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # Computes the image name and tags: ghcr.io/<owner>/orderflow-<name>:<sha>
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/orderflow-${{ matrix.name }}
           tags: |
