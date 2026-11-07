@@ -480,7 +480,7 @@ Read `phase2/README.md` first: it says what each folder is and when to bring it 
     Do: use the longer OrderFlow entry only now. Make `docs/resume-evidence.md` a table with one row per claim and its proof: React/TypeScript with live status (20a, 20b); REST APIs, OAuth2/JWT, Swagger (steps 5, 6, 18); PostgreSQL (all); tests with RTL, Playwright, Testcontainers (20b, 20c, 12 to 16); Kafka, outbox, idempotent consumers (12 to 16); each `[N]` replaced by a number from `perf.md`, `resilience.md` or the k6 deploy output; index tuning (19); CI and CodeQL (22); Terraform on ECS (24); Prometheus, Grafana, OpenTelemetry (21). Then check the wording against what you built: the sentence "Resilience4j and Redis kept it correct through failure drills" credits the wrong parts, because correctness in the drills comes from the outbox and the idempotent consumer while Resilience4j and Redis protect the stock lookup; rewrite it so an interviewer who reads the repository finds the claim true. Keep the wording identical across all resume versions and the README, and make the repository public with the README pinned.
     Done when: every claim maps to a README results row, `security.md`, or a test, and every `[N]` placeholder is gone.
 
-## Status log: verification runs after the first implementation pass (2026-11-05)
+## Status log: verification runs after the first implementation pass (2026-11-05 to 2026-11-06)
 Each entry is one commit. "Verified" means it ran on this machine (Windows 10, Docker Desktop) and the evidence is in the linked file.
 
 - **Step 0, environment.** C: has 105 GB free (disk is no longer the blocker). Installed: `kind` 0.33, `kubectl`, `terraform` 1.16, `k6` 2.3, JDK 21, Maven, Node 22.
