@@ -8,3 +8,18 @@ run3 rate 300 start 1793996742
 run3 rate 300 end 1793996776
 run3 drain_seconds 21
 run4 rate 600 start 1793996817
+run4 rate 600 end 1794006327
+run4 drain_seconds 302
+run5 rate 300 start 1794006649
+run5 rate 300 end 1794006652
+run5 drain_seconds 302
+run6 rate 600 start 1794006974
+run6 rate 600 end 1794006977
+run6 drain_seconds 302
+run7 rate 300 start 1794007299
+run7 rate 300 end 1794007299
+run7 drain_seconds 302
+run8 rate 600 start 1794007621
+run8 rate 600 end 1794007624
+run8 drain_seconds 302
+done
