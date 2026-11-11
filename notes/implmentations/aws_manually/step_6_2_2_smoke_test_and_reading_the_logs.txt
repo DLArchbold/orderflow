@@ -1,0 +1,780 @@
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_5_deployi
+  ng_terraform_apply_everything_else_kafka_keycloak_services_ALB.txt in the
+  IDE. This may or may not be related to the current task.</ide_opened_file>
+
+> How to view inserted records in the database?
+
+● I'll check how the database is set up in your project so the answer fits it.
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● Your setup is PostgreSQL with two databases, orders and inventory. Locally
+  they run in docker-compose, and on AWS they run in RDS.
+
+  Local (docker-compose)
+
+  First find the container name and the DB user. Check docker-compose.yml if
+  either differs from my guesses below.
+
+  docker ps --format "{{.Names}}"
+  docker exec -it <postgres-container> psql -U <user> -d orders
+
+  Then, inside psql:
+
+  \dt                                   -- list tables
+  SELECT * FROM orders ORDER BY created_at DESC LIMIT 10;   -- column name may
+  differ
+  SELECT * FROM order_lines;
+  SELECT * FROM outbox;                 -- events waiting to be published
+  SELECT * FROM idempotency_keys;
+  \c inventory                          -- switch database
+  SELECT * FROM stock;
+  SELECT * FROM reservations;
+  SELECT * FROM processed_messages;
+  \x                                    -- toggle expanded output for wide rows
+  \q
+
+  You can also run a one-off query without opening a session:
+
+  docker exec -it <container> psql -U <user> -d orders -c "SELECT * FROM
+  orders;"
+
+  A GUI also works: DBeaver or pgAdmin connected to localhost:5432, if the
+  compose file publishes that port.
+
+  On AWS (RDS)
+
+  RDS sits in private subnets and isn't reachable from the internet. It only
+  accepts connections from the services' security group and the one-off
+  DB-creation task, as set in network.tf. You have three options:
+
+  1. One-off ECS task running psql. This follows the pattern in ecs_base.tf:74,
+     which already runs postgres:16 with psql -h <rds_endpoint> -U orderflow.
+     Copy that task definition, change the command to something like SELECT *
+     FROM orders;, run it, and read the output in CloudWatch Logs. The password
+     is in Secrets Manager.
+  2. ECS Exec into a running service task. This needs enableExecuteCommand set
+     on the service and the SSM permissions on the task role. Then run aws ecs
+     execute-command ... --command "/bin/sh". The service images probably don't
+     include psql, though.
+  3. Port-forward through a bastion or SSM host. This is the most convenient for
+     a GUI client, but it means adding an EC2 instance and an ingress rule on
+     the RDS security group.
+
+  The simplest is option 1 for occasional checks. Find the endpoint with
+  terraform output rds_endpoint.
+
+  I can write a reusable "query" task definition in Terraform, or look up the
+  exact container and user names from your compose file, if you want either.
+
+> How can I use PGAdmin to connect to the database?
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Local Postgres (docker-compose)
+
+  Port 5432 is published to your machine, so pgAdmin can connect directly. First
+  make sure the container is running: docker ps.
+
+  In pgAdmin:
+
+  1. Right-click Servers → Register → Server…
+  2. General tab: Name = orderflow-local (any name).
+  3. Connection tab:
+     - Host name/address: localhost
+     - Port: 5432
+     - Maintenance database: orders
+     - Username: orderflow
+     - Password: orderflow (tick Save password)
+  4. Click Save.
+
+  Both databases will appear under the server. Browse a table at Databases →
+  orders → Schemas → public → Tables → orders, then right-click it and choose
+  View/Edit Data → All Rows. You can also open Tools → Query Tool and run SQL.
+  The inventory database is listed next to orders. If it's missing, right-click
+  Databases and choose Refresh.
+
+  If the connection fails:
+  - Another Postgres installed on Windows may already be using 5432, and pgAdmin
+    would then be talking to that one instead. Check with netstat -ano |
+    findstr :5432, or change the compose mapping to "5433:5432" and use
+    port 5433.
+  - If you run pgAdmin itself in Docker, use host.docker.internal as the host
+    instead of localhost.
+
+  AWS RDS
+
+  pgAdmin can't reach RDS directly because it's in private subnets. You'd need a
+  tunnel, such as an SSM port-forward through a small EC2 host in the VPC. In
+  that case:
+
+  - Host: localhost, and Port: the local port you forwarded
+  - Username: orderflow
+  - Password: from Secrets Manager
+  - Under the SSL tab, set SSL mode to require
+
+  The other option is to keep using a one-off ECS psql task, as I described
+  before. I can add the bastion/SSM host to the Terraform if you'd like the
+  pgAdmin route on AWS.
+
+> Right now, I've completed 6: Smoke test. Open terraform output app_url, log
+  in as alice, and create an order. It should reach CONFIRMED. How do I record
+  a screenshot or demo to demonstrate that the deployment is working?
+
+● Windows has built-in tools that cover this, so you don't need to install
+  anything.
+
+  Screenshots
+
+  - Snipping Tool: press Win + Shift + S, drag over the area, and the image goes
+    to your clipboard. Click the notification to save it.
+  - Browser DevTools: press F12, then Ctrl + Shift + P and type "screenshot".
+    "Capture full size screenshot" grabs the whole page.
+
+  Screen recording
+
+  - Snipping Tool (Windows 11 only): open it, switch to the video camera icon,
+    and select a region. Windows 10 (your version) doesn't have this.
+  - Xbox Game Bar (Windows 10): open the browser, press Win + G, then press Win
+    + Alt + R to start and stop. It saves an MP4 to Videos\Captures. It records
+    one window at a time, which is fine for a browser.
+  - OBS Studio (free): use this if you want to record your voice, a full-screen
+    view, or several windows.
+  - ScreenToGif: records a region straight to a GIF, which is handy for
+    embedding in a README.
+
+  For the README, a short GIF (under about 30 seconds) displays inline on
+  GitHub. For a longer walkthrough, upload an MP4 to the repo's issue or PR
+  editor, or link to a video.
+
+  What to show
+
+  The key point is proving the app runs on AWS rather than on localhost, so keep
+  these in frame:
+
+  1. The browser URL bar showing the ALB address (the app_url value) instead of
+     localhost.
+  2. The login as alice through Keycloak.
+  3. Creating an order, then the status moving from PENDING to CONFIRMED.
+  4. Backing evidence, in a separate shot or a quick tab switch:
+     - the ECS console showing the services as RUNNING, with 1/1 tasks
+     - CloudWatch logs for order-service and inventory-service showing the order
+       event and the stock reservation
+     - (optional) a SELECT * FROM orders; result in the DB, from the one-off
+       psql task
+
+  Before you publish
+
+  - Blur or crop anything sensitive: AWS account IDs, secrets, tokens, and the
+    Secrets Manager password. The ALB URL is fine, but it stays public until you
+    destroy.
+  - The realm's throwaway passwords are in the repo, and the README warns that
+    anyone can log in as alice on the public ALB. Record the demo, then run
+    terraform destroy promptly to avoid ongoing cost.
+  - Save the media under something like docs/demo/ or
+    notes/implmentations/aws_manually/ and reference it from your step notes.
+
+  I can add a short "Deployment proof" section to your step 6 notes with a
+  checklist of the shots to capture, if you want one.
+
+> When creating an order, the order first starts off as PENDING and then
+  transitions to CONFIRMED and subsequent calls to GET /orders endpoint returns
+  all created orders. However, these are the order-service logs being returned
+  in ECS:
+  November 10, 2026, 19:19
+  2026-11-11T00:19:33.338Z WARN
+  [order-service,dfa6540a0aed9bd8b421b2ec70545d48,a4ad51eaa96e0425]
+  [f40878d0-b268-435a-8bb6-3d44465d9676] 1 --- [order-service]
+  [nio-8080-exec-4] [dfa6540a0aed9bd8b421b2ec70545d48-a4ad51eaa96e0425]
+  com.orderflow.order.config.CacheConfig : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:33.328Z WARN
+  [order-service,dfa6540a0aed9bd8b421b2ec70545d48,a4ad51eaa96e0425]
+  [f40878d0-b268-435a-8bb6-3d44465d9676] 1 --- [order-service]
+  [nio-8080-exec-4] [dfa6540a0aed9bd8b421b2ec70545d48-a4ad51eaa96e0425]
+  com.orderflow.order.config.CacheConfig : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:33.036Z WARN
+  [order-service,8935498af111436a8b70b62856063a70,88e25c1729371729]
+  [2bb30bbd-c26e-49aa-93be-2f6b184980ea] 1 --- [order-service]
+  [nio-8080-exec-1] [8935498af111436a8b70b62856063a70-88e25c1729371729]
+  com.orderflow.order.config.CacheConfig : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:33.025Z WARN
+  [order-service,8935498af111436a8b70b62856063a70,88e25c1729371729]
+  [2bb30bbd-c26e-49aa-93be-2f6b184980ea] 1 --- [order-service]
+  [nio-8080-exec-1] [8935498af111436a8b70b62856063a70-88e25c1729371729]
+  com.orderflow.order.config.CacheConfig : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:27.562Z WARN
+  [order-service,a5c1dd453cb42dce62dad1f56bd18a54,e42495f2a2e952a4]
+  [8480832c-d38b-46d3-9bba-20b5f7fe6ec8] 1 --- [order-service]
+  [nio-8080-exec-9] [a5c1dd453cb42dce62dad1f56bd18a54-e42495f2a2e952a4]
+  com.orderflow.order.config.CacheConfig : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:27.553Z WARN
+  [order-service,a5c1dd453cb42dce62dad1f56bd18a54,e42495f2a2e952a4]
+  [8480832c-d38b-46d3-9bba-20b5f7fe6ec8] 1 --- [order-service]
+  [nio-8080-exec-9] [a5c1dd453cb42dce62dad1f56bd18a54-e42495f2a2e952a4]
+  com.orderflow.order.config.CacheConfig : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:27.482Z WARN
+  [order-service,2f63c0ecf6f7b5ba42b8f30ad07b6404,8ee4d36c3f35ae5a]
+  [07ec4927-f2a1-4fc4-a659-1697f5b90aeb] 1 --- [order-service]
+  [nio-8080-exec-5] [2f63c0ecf6f7b5ba42b8f30ad07b6404-8ee4d36c3f35ae5a]
+  com.orderflow.order.config.CacheConfig : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+  November 10, 2026, 19:19
+  2026-11-11T00:19:27.464Z WARN
+  [order-service,2f63c0ecf6f7b5ba42b8f30ad07b6404,8ee4d36c3f35ae5a]
+  [07ec4927-f2a1-4fc4-a659-1697f5b90aeb] 1 --- [order-service]
+  [nio-8080-exec-5] [2f63c0ecf6f7b5ba42b8f30ad07b6404-8ee4d36c3f35ae5a]
+  com.orderflow.order.config.CacheConfig : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  0bdabfdd38ba43189adb48e74371aa72
+  order-service
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● This is expected, and it isn't hurting your smoke test.
+
+  What the logs mean
+
+  - The Terraform for AWS has no Redis. Neither ElastiCache nor a Redis
+    container is defined in phase2/infra/terraform.
+  - order-service still tries to reach Redis, using the default localhost:6379,
+    for the GET /api/stock/SKU-1 lookup that the UI makes. The connection fails
+    after the 500 ms timeout set in application.yml:17
+    (services/order-service/src/main/resources/application.yml#L17).
+  - CacheConfig catches the error and logs a WARN for each cache get and put.
+    The request then falls through to inventory-service and still returns a
+    result. This is the "cache is an optimisation, never a requirement"
+    behaviour from step 17c.
+  - Readiness checks ignore Redis, set by redis.enabled: false at
+    application.yml:89-90
+    (services/order-service/src/main/resources/application.yml#L89-L90). So the
+    service isn't marked unhealthy.
+  - Order creation, CONFIRMED and GET /orders don't touch Redis. That's why your
+    smoke test passes.
+
+  Two WARN lines per stock lookup (get and put) is the pattern in your pasted
+  logs.
+
+  Your options
+
+  1. Leave it. It's a legitimate demo of graceful degradation, and your plan's
+     step 24 already treats skipping Redis on the deployment as a recorded
+     decision. Note it in ADR 0006 ("Redis not deployed: cache degrades
+     gracefully, ~$12+/month for ElastiCache"). This is the cheapest choice.
+  2. Add a Redis container as an ECS service, running redis:7 with service
+     discovery, and set SPRING_DATA_REDIS_HOST on order-service. This costs a
+     few cents per hour and shows the cache working.
+  3. Add ElastiCache. This is the "proper" approach, but it adds cost and about
+     10 minutes of provisioning.
+  4. Quiet the log noise. Set SPRING_DATA_REDIS_HOST to something that fails
+     quickly, or lower the CacheConfig log level. That hides the symptom, but I
+     don't recommend it.
+
+  If you pick option 2, I'll add the task definition, service and env var to
+  ecs_services.tf (it already has uncommitted changes, so I'd review those
+  first).
+
+  For your screenshots or demo, include the CloudWatch lines as a deliberate
+  point if you go with option 1. Say that the stock cache degrades gracefully
+  without Redis, and that orders aren't affected because they don't depend on
+  it.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\PLAN_with_two_phases.md in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+
+> Even Cloudwatch logs for order-service are displaying these logs only:
+  2026-11-11T00:59:39.248Z
+  2026-11-11T00:59:39.248Z  WARN
+  [order-service,db4fcd2dfec9be51d28a5f93e1a784a4,67fd7c899e411dd5] [] 1 ---
+  [order-service] [nio-8080-exec-1]
+  [db4fcd2dfec9be51d28a5f93e1a784a4-67fd7c899e411dd5]
+  .w.s.m.s.DefaultHandlerExceptionResolver : Resolved [org.springframework.web.
+  context.request.async.AsyncRequestNotUsableException: ServletOutputStream
+  failed to flush: java.io.IOException: Broken pipe]
+
+  2026-11-11T00:59:39.248Z WARN
+  [order-service,db4fcd2dfec9be51d28a5f93e1a784a4,67fd7c899e411dd5] [] 1 ---
+  [order-service] [nio-8080-exec-1]
+  [db4fcd2dfec9be51d28a5f93e1a784a4-67fd7c899e411dd5]
+  .w.s.m.s.DefaultHandlerExceptionResolver : Resolved [org.springframework.web.
+  context.request.async.AsyncRequestNotUsableException: ServletOutputStream
+  failed to flush: java.io.IOException: Broken pipe]
+  2026-11-11T01:00:16.314Z
+  2026-11-11T01:00:16.314Z  WARN
+  [order-service,05e97af2acf8e789f2284baec98e4b15,97c2f67876e4718d]
+  [ebfa6581-7cf3-43de-a251-8057a0f1ec3b] 1 --- [order-service]
+  [nio-8080-exec-9] [05e97af2acf8e789f2284baec98e4b15-97c2f67876e4718d]
+  com.orderflow.order.config.CacheConfig   : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+
+  2026-11-11T01:00:16.314Z WARN
+  [order-service,05e97af2acf8e789f2284baec98e4b15,97c2f67876e4718d]
+  [ebfa6581-7cf3-43de-a251-8057a0f1ec3b] 1 --- [order-service]
+  [nio-8080-exec-9] [05e97af2acf8e789f2284baec98e4b15-97c2f67876e4718d]
+  com.orderflow.order.config.CacheConfig : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  2026-11-11T01:00:16.325Z
+  2026-11-11T01:00:16.325Z  WARN
+  [order-service,05e97af2acf8e789f2284baec98e4b15,97c2f67876e4718d]
+  [ebfa6581-7cf3-43de-a251-8057a0f1ec3b] 1 --- [order-service]
+  [nio-8080-exec-9] [05e97af2acf8e789f2284baec98e4b15-97c2f67876e4718d]
+  com.orderflow.order.config.CacheConfig   : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+
+  2026-11-11T01:00:16.325Z WARN
+  [order-service,05e97af2acf8e789f2284baec98e4b15,97c2f67876e4718d]
+  [ebfa6581-7cf3-43de-a251-8057a0f1ec3b] 1 --- [order-service]
+  [nio-8080-exec-9] [05e97af2acf8e789f2284baec98e4b15-97c2f67876e4718d]
+  com.orderflow.order.config.CacheConfig : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  2026-11-11T01:00:16.875Z
+  2026-11-11T01:00:16.874Z  WARN
+  [order-service,5d86bb19f632c063936ef49f138072e3,23ef2cf00379bb2c]
+  [f3e0e3ba-a805-4e86-881f-3874154c6eed] 1 --- [order-service]
+  [nio-8080-exec-8] [5d86bb19f632c063936ef49f138072e3-23ef2cf00379bb2c]
+  com.orderflow.order.config.CacheConfig   : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+
+  2026-11-11T01:00:16.874Z WARN
+  [order-service,5d86bb19f632c063936ef49f138072e3,23ef2cf00379bb2c]
+  [f3e0e3ba-a805-4e86-881f-3874154c6eed] 1 --- [order-service]
+  [nio-8080-exec-8] [5d86bb19f632c063936ef49f138072e3-23ef2cf00379bb2c]
+  com.orderflow.order.config.CacheConfig : Cache get failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+  2026-11-11T01:00:16.885Z
+  2026-11-11T01:00:16.885Z  WARN
+  [order-service,5d86bb19f632c063936ef49f138072e3,23ef2cf00379bb2c]
+  [f3e0e3ba-a805-4e86-881f-3874154c6eed] 1 --- [order-service]
+  [nio-8080-exec-8] [5d86bb19f632c063936ef49f138072e3-23ef2cf00379bb2c]
+  com.orderflow.order.config.CacheConfig   : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+
+  2026-11-11T01:00:16.885Z WARN
+  [order-service,5d86bb19f632c063936ef49f138072e3,23ef2cf00379bb2c]
+  [f3e0e3ba-a805-4e86-881f-3874154c6eed] 1 --- [order-service]
+  [nio-8080-exec-8] [5d86bb19f632c063936ef49f138072e3-23ef2cf00379bb2c]
+  com.orderflow.order.config.CacheConfig : Cache put failed (stock SKU-1):
+  org.springframework.data.redis.RedisConnectionFailureException: Unable to
+  connect to Redis
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● The logs aren't broken. The successful order path doesn't write any logs, so
+  the only lines that show up are warnings.
+
+  Why only warnings appear
+
+  - There is almost no INFO logging in order-service. The only log.info in
+    src/main is in InventoryResultHandler.java:42 (services/order-service/src/ma
+    in/java/com/orderflow/order/service/InventoryResultHandler.java#L42), and it
+    fires only when a result is ignored. Creating an order, publishing to the
+    outbox and getting CONFIRMED log nothing. Spring Boot's default level is
+    INFO, so nothing is being filtered out. There's simply nothing to emit.
+  - The Redis warnings come from every stock lookup. The UI calls
+    /api/stock/SKU-1 and makes the get and put attempts each time, as explained
+    earlier.
+  - The Broken pipe warning is harmless. AsyncRequestNotUsableException ...
+    Broken pipe means the browser closed the SSE stream (/orders event stream),
+    for example on a tab close, refresh, or ALB idle timeout. The server then
+    tried to write to a closed connection.
+  - Each event appears twice in your paste. It's the same line in CloudWatch's
+    raw form and its formatted form, not duplicate logging.
+
+  How to get evidence that an order flowed through
+
+  CloudWatch Logs Insights over the order-service and inventory-service log
+  groups can filter by trace ID, because the [order-service,<traceId>,<spanId>]
+  prefix is already there. Warnings still carry the trace ID.
+
+  For a demo, though, you want positive log lines. I'd add three log.info
+  statements in order-service and one or two in inventory-service:
+
+  - order created (id, status PENDING)
+  - outbox event published to Kafka
+  - inventory result received and the order moved to CONFIRMED
+  - (inventory-service) reservation made
+
+  Then CloudWatch shows the full PENDING → CONFIRMED story across both services
+  under one trace ID.
+
+  Other places that already show proof, with no code change:
+  - The orders table and outbox table (via a one-off psql task).
+  - The ECS service events and target-group health in the ALB.
+  - Kafka topic messages (if you run a consumer).
+
+  To silence the Redis noise without deploying Redis, you can add a
+  LOGGING_LEVEL_COM_ORDERFLOW_ORDER_CONFIG_CACHECONFIG=ERROR env var to the
+  order-service task definition. I'd keep it visible while you take the
+  screenshot, though.
+
+  Should I add the INFO log lines to the order flow, and the env var if you want
+  it? Adding them means a rebuild, pushing the image to ECR and forcing a new
+  ECS deployment.
+
+> Please add the INFO log lines to the order flow. Why is adding
+  LOGGING_LEVEL_COM_ORDERFLOW_ORDER_CONFIG_CACHECONFIG=ERROR env var to the
+  order-service task definition not recommended? For changes made in this step,
+  update all .txt or .md files in the project where appropriate.
+
+  Searched for 2 patterns, read 4 files (ctrl+o to expand)
+
+● Update(c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-se
+        rvice\src\main\java\com\orderflow\order\service\OrderService.java)
+  ⎿  Added 2 lines
+       8  import com.orderflow.order.web.OrderResponse;
+       9  import java.util.List;
+      10  import java.util.UUID;
+      11 +import org.slf4j.Logger;                                       
+      12 +import org.slf4j.LoggerFactory;                                
+      13  import org.springframework.data.domain.Page;
+      14  import org.springframework.data.domain.PageRequest;
+      15  import org.springframework.data.domain.Pageable;
+
+● Update(c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-se
+        rvice\src\main\java\com\orderflow\order\service\OrderService.java)
+  ⎿  Added 2 lines
+      27  //Basically to ensure transaction session is open for during en
+          tire execution of method here 
+      28  //and not just in OrderRepository methods to ensure changes in 
+          entities here are reflectted in DB as well.
+      29  public class OrderService {
+      30 +    private static final Logger log = LoggerFactory.getLogger(O
+         +rderService.class);                                            
+      31 +                                                               
+      32      //orders only declares a reference; Spring Data JPA will ge
+          nerate a proxy class and implements 
+      33      // OrderRepository interface during startup and registers t
+          hat as a Bean (inspect for more details);
+      34      // it's assigned in constructor below. OrderRepository hand
+          les all DB connections and querying
+
+● Update(c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-se
+        rvice\src\main\java\com\orderflow\order\service\OrderService.java)
+  ⎿  Added 3 lines, removed 1 line
+      66          // the publisher runs later on another thread: keep the
+           trace and the correlation id with the row
+      67          outboxEvent.attachContext(trace.capture(), org.slf4j.MD
+          C.get("correlationId"));
+      68          outbox.save(outboxEvent);
+      69 -                                                               
+      69 +        log.info("Order {} created for customer {} with {} line
+         +(s), status {}; OrderCreated event written to outbox",         
+      70 +                response.id(), customerId, request.items().size
+         +(), response.status());                                        
+      71 +                                                               
+      72          return response;
+      73      }
+      74  
+
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\services\order-service\src\main\java\com\or
+        derflow\order\service\InventoryResultHandler.java)
+  ⎿  Added 1 line
+      48              case "REJECTED" -> order.reject();
+      49              default -> throw new IllegalArgumentException("unkn
+          own inventory result: " + result);
+      50          }
+      51 +        log.info("Inventory result {} applied: order {} is now 
+         +{}", result, orderId, order.getStatus());                      
+      52          // delivered to browsers only after this transaction co
+          mmits (OrderStatusBroadcaster)
+      53          events.publishEvent(new com.orderflow.order.stream.Orde
+          rStatusChanged(
+      54                  order.getId(), order.getCustomerId(), order.get
+          Status().name()));
+
+● Update(c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\services\order-se
+        rvice\src\main\java\com\orderflow\order\outbox\OutboxPublisher.java)
+  ⎿  Added 2 lines
+      56                  kafka.send(record).get(5, TimeUnit.SECONDS);
+      57                  // Only after the broker acked; saved on commit
+           through dirty checking.
+      58                  event.markPublished();
+      59 +                log.info("Published outbox event {} ({}) for ag
+         +gregate {} to {}",                                             
+      60 +                        event.getId(), event.getType(), event.g
+         +etAggregateId(), KafkaConfig.ORDERS_EVENTS_TOPIC);             
+      61              } catch (InterruptedException e) {
+      62                  Thread.currentThread().interrupt();
+      63                  return;
+
+  Searched for 2 patterns, read 2 files (ctrl+o to expand)
+
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\services\inventory-service\src\main\java\co
+        m\orderflow\inventory\outbox\OutboxPublisher.java)
+  ⎿  Added 2 lines
+      52                  }
+      53                  kafka.send(record).get(5, TimeUnit.SECONDS);
+      54                  event.markPublished();
+      55 +                log.info("Published outbox event {} ({}) for ag
+         +gregate {} to {}",                                             
+      56 +                        event.getId(), event.getType(), event.g
+         +etAggregateId(), KafkaConfig.INVENTORY_RESULTS_TOPIC);         
+      57              } catch (InterruptedException e) {
+      58                  Thread.currentThread().interrupt();
+      59                  return;
+
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\services\inventory-service\src\main\java\co
+        m\orderflow\inventory\service\InventoryService.java)
+  ⎿  Added 2 lines
+      10  import java.util.Map;
+      11  import java.util.TreeMap;
+      12  import java.util.UUID;
+      13 +import org.slf4j.Logger;                                       
+      14 +import org.slf4j.LoggerFactory;                                
+      15  import org.springframework.jdbc.core.simple.JdbcClient;
+      16  import org.springframework.stereotype.Service;
+      17  import org.springframework.transaction.annotation.Transactional
+          ;
+
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\services\inventory-service\src\main\java\co
+        m\orderflow\inventory\service\InventoryService.java)
+  ⎿  Added 1 line
+      22   */
+      23  @Service
+      24  public class InventoryService {
+      25 +    private static final Logger log = LoggerFactory.getLogger(I
+         +nventoryService.class);                                        
+      26  
+      27      @JsonIgnoreProperties(ignoreUnknown = true)
+      28      record OrderEvent(@JsonProperty("id") UUID orderId, List<It
+          em> items) {}
+
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\services\inventory-service\src\main\java\co
+        m\orderflow\inventory\service\InventoryService.java)
+  ⎿  Added 1 line
+      54          int inserted = jdbc.sql("INSERT INTO processed_messages
+           (message_id) VALUES (?) ON CONFLICT DO NOTHING")
+      55                  .param(messageId).update();
+      56          if (inserted == 0) {
+      57 +            log.info("Message {} already processed; duplicate i
+         +gnored", messageId);                                           
+      58              return;
+      59          }
+      60  
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\services\inventory-service\src\main\java\co
+        m\orderflow\inventory\service\InventoryService.java)
+  ⎿  Added 3 lines
+       91                          .param(order.orderId()).param(sku).par
+           am(qty).update();
+       92              });
+       93              writeResult(order, "StockReserved", "RESERVED", nu
+           ll);
+       94 +            log.info("Stock reserved for order {}: {}", order.
+          +orderId(), wanted);                                           
+       95          } else {
+       96              writeResult(order, "StockRejected", "REJECTED", RE
+           JECT_REASON);
+       97 +            log.info("Stock rejected for order {} (wanted {}, 
+          +available {}): {}",                                           
+       98 +                    order.orderId(), wanted, available, REJECT
+          +_REASON);                                                     
+       99          }
+      100      }
+      101  
+
+● Code edits are in. Next I'll compile both services and look for the notes and
+  docs to update.
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● Both services compile. Now I'll find where the smoke-test and logging notes
+  live.
+
+  Searched for 3 patterns, read 2 files, ran 1 shell command (ctrl+o to expand)
+
+● Update(c:\Users\WJ\Desktop\Work
+        2023-05-12\Project\orderflow\phase2\docs\adr\0006-aws-choices.md)
+  ⎿  Added 1 line, removed 1 line
+       9  | Network | VPC, 2 AZs; **public subnets for the ALB and the ta
+          sks, no NAT gateway** | A NAT gateway is about $32 a month plus
+           data. Tasks get public IPs and security groups are the only gu
+          ard. Acceptable for a demo; a real deployment puts tasks in pri
+          vate subnets behind a NAT or VPC endpoints. |
+      10  | Database | RDS PostgreSQL `db.t4g.micro`, single AZ, `skip_fi
+          nal_snapshot`, no deletion protection, in private subnets, pass
+          word generated and kept in Secrets Manager | RDS is the slowest
+           and costliest piece, so it is created once and early. Nothing 
+          survives `terraform destroy`, on purpose. Terraform cannot crea
+          te databases inside RDS: a one-off Fargate task (`db-init`) run
+          s `psql`. |
+      11  | Kafka | **One `apache/kafka` container on ECS** with a Cloud 
+          Map DNS name (`kafka.orderflow.local`) | MSK Serverless is a fe
+          w hundred dollars a month and the smallest MSK cluster tens of 
+          dollars. The container has no volume, so the topics are gone wh
+          en the task restarts. Accepted for a demo; the outbox republish
+          es unpublished rows, but already-published events are lost. |
+      12 -| Redis | **None** | The cache error handler (step 17c) means t
+         -he stock endpoint still answers without it, at about 1 s per ca
+         -ll. |                                                          
+      12 +| Redis | **None** | The cache error handler (step 17c) means t
+         +he stock endpoint still answers without it, at about 1 s per ca
+         +ll. Seen live in the step 6 smoke test (2026-11-10): every stoc
+         +k lookup logs two `WARN` lines from `CacheConfig` (`Cache get f
+         +ailed` and `Cache put failed`, `RedisConnectionFailureException
+         +`), and orders are unaffected. The warnings are deliberately le
+         +ft visible, not silenced with a log-level override, because the
+         +y are the only sign that the cache is not working. |           
+      13  | Identity | **Keycloak in dev mode** as one more ECS service w
+          ith the realm import, reached through the ALB at `/realms/*`, `
+          KC_HOSTNAME` = the ALB URL | Not production-grade (dev mode, H2
+           database, the realm's throwaway user passwords are in the repo
+          sitory). The token issuer must equal `issuer-uri` exactly; the 
+          services therefore validate the issuer against the public ALB U
+          RL but fetch the signing keys from the internal `keycloak.order
+          flow.local` name (`jwk-set-uri`). If this proves too fiddly, dr
+          op the `issuer-uri` and keep only `jwk-set-uri`, which skips th
+          e issuer check; say so in the README. |
+      14  | HTTPS | **HTTP only** | With no domain there is no ACM certif
+          icate. Tokens and passwords cross the internet in clear text. A
+           real deployment needs a domain and a certificate. |
+      15  | State | **Local state**, one person on one machine | Simple. 
+          `terraform.tfstate` holds the generated passwords, so it is git
+          -ignored. For sharing, use an S3 backend with `use_lockfile = t
+          rue` (check the docs for the Terraform version in use). |
+
+● Write(step_6_smoke_test_and_reading_the_logs.txt)
+  ⎿  Wrote 62 lines to step_6_smoke_test_and_reading_the_logs.txt
+       1 Step 6: smoke test, and reading the logs in CloudWatch (2026-11-
+       2
+       3 What passed
+         n order. It showed
+       5   PENDING and then CONFIRMED, and GET /orders returned every cre
+       6
+       7 Recording the demo (Windows 10)
+         hift + P, "screenshot".
+       9   Video: Xbox Game Bar (Win + G, then Win + Alt + R; saves to Vi
+      10   or ScreenToGif for a short GIF in the README.
+     … +94 lines (ctrl+o to expand)
+
+● Update(step1_2_logging_in_and_creating_budget.txt)
+  ⎿  Added 2 lines, removed 1 line
+      48    5. Full apply. Run terraform apply -var image_tag=<commit sha
+          >. This brings up
+      49       Kafka, Keycloak, the services and the ALB.
+      50    6. Smoke test. Open terraform output app_url, log in as alice
+           and create an
+      51 -     order.                                                    
+      51 +     order. (Done 2026-11-10; see step_6_smoke_test_and_reading
+         +_the_logs.txt.                                                 
+      52 +     Redis warnings in the logs are expected: there is no Redis
+         + on AWS.)                                                      
+      53    7. Deploy under load. This is the "Done when" in PLAN.md. Sta
+          rt k6 against the
+      54       ALB URL. While it runs, trigger a rolling deploy (a new im
+          age_tag and
+      55       terraform apply, or aws ecs update-service --force-new-dep
+          loyment). Save
+
+● I added INFO log lines to the order flow in both services. Both compile, but I
+  haven't run the tests, and the running ECS tasks still have the old code, so
+  nothing changes in CloudWatch until you redeploy.
+
+  New log lines
+
+  Service: order-service
+  Where: OrderService.create
+  What it logs: order created (id, customer, line count, PENDING) and the outbox
+
+  write
+  ────────────────────────────────────────
+  Service: order-service
+  Where: OutboxPublisher
+  What it logs: event published to Kafka
+  ────────────────────────────────────────
+  Service: order-service
+  Where: InventoryResultHandler.apply
+  What it logs: "RESERVED applied: order … is now CONFIRMED"
+  ────────────────────────────────────────
+  Service: inventory-service
+  Where: InventoryService.reserve
+  What it logs: stock reserved, stock rejected (with wanted and available),
+  duplicate message ignored
+  ────────────────────────────────────────
+  Service: inventory-service
+  Where: OutboxPublisher
+  What it logs: result event published to Kafka
+
+  All of them carry the existing trace ID and correlation ID prefix. A Logs
+  Insights query on one trace ID will show the whole path across both services.
+
+  To get them onto AWS, rebuild and push both images with a new tag, then run
+  terraform apply -var image_tag=<new tag>.
+
+  Why I don't recommend
+  LOGGING_LEVEL_COM_ORDERFLOW_ORDER_CONFIG_CACHECONFIG=ERROR
+
+  It works, but it's a trade-off I'd avoid here:
+
+  - It hides the only sign that the cache is down. The two WARN lines are how
+    you'd notice Redis is missing. The service would look healthy while every
+    stock read waits out the 500 ms Redis timeout and then falls back to
+    inventory-service.
+  - It doesn't fix anything. Each request still tries to reach Redis. Only the
+    logging changes.
+  - It's easy to forget. The override sits in the task definition. If you add
+    Redis later and it fails, the failure stays silent.
+
+  If the noise bothers you, deploy Redis or disable the cache for this
+  deployment, and record the choice. Silencing the logger is acceptable for a
+  short demo recording, as long as you know what you're hiding.
+
+  Docs updated
+
+  - New step_6_smoke_test_and_reading_the_logs.txt (notes/implmentations/aws_man
+    ually/step_6_smoke_test_and_reading_the_logs.txt): how to record the demo,
+    what each log line means, the reasoning above, the new log lines and the
+    redeploy steps.
+  - step1_2_logging_in_and_creating_budget.txt (notes/implmentations/aws_manuall
+    y/step1_2_logging_in_and_creating_budget.txt): step 6 marked done, with a
+    pointer to the new notes.
+  - 0006-aws-choices.md (phase2/docs/adr/0006-aws-choices.md): the Redis row now
+    records what you saw live and why the warnings are left visible.

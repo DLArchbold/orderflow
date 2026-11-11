@@ -1,0 +1,38 @@
+Step 2 is next, the budget alarm. It creates one AWS Budgets resource, which is free. I need two things from you:
+
+The email address for the alerts.
+A yes to run terraform init and then apply -target=aws_budgets_budget.monthly.
+
+***Inspect main.tf and variables.tf file in this folder for steps that will be implemented:
+phase2\infra\terraform
+
+
+## `terraform init`
+
+It changes nothing in AWS. It only prepares your local folder:
+
+- Downloads the `hashicorp/aws` (~> 5.0) and `hashicorp/random` (~> 3.6) providers into `.terraform/`.
+- Creates `.terraform.lock.hcl`, which pins the exact provider versions.
+- Sets up the local state backend. State goes in `terraform.tfstate`, which is git-ignored because it will hold generated passwords later.
+
+## `terraform apply -var budget_email=... -target=aws_budgets_budget.monthly`
+
+1. **Read.** Terraform reads the config in `phase2/infra/terraform` and the data source for availability zones in `us-east-1`.
+2. **Plan.** `-target` limits the plan to one resource, so nothing else is planned or created. It will show `1 to add`.
+3. **Prompt.** It shows the plan and waits for you to type `yes`.
+4. **Create.** It makes one AWS Budgets resource, `orderflow-monthly` ([data.tf:3](phase2/infra/terraform/data.tf#L3)).
+   - **Limit:** $10 a month. This is the default `budget_usd`, which you can change.
+   - **Alert 1:** an email when actual spend goes above 80% ($8).
+   - **Alert 2:** an email when forecast spend goes above 100% ($10).
+   - **Tag:** `Project=orderflow` is added by the provider's `default_tags`.
+5. **Save.** The result is written to `terraform.tfstate`.
+
+## What to expect
+- **Cost:** none. Budgets are free for the first two budgets on an account.
+- **Alert only:** a budget sends emails but does not stop anything. It won't shut down resources if you overspend, so `terraform destroy` at the end of each session is still what protects you.
+- **Delay:** AWS budget data can lag by up to about a day, so the alerts are not instant.
+- **Possible errors:** a failure on this first apply most likely means a permissions problem or a typo in the email. The SystemAdministrator role has full access, so permissions are unlikely.
+
+The `-target` flag is deliberate. Without it, a plain `apply` would try to create everything, including RDS and the ALB, which costs money. Don't drop `-target` until the budget exists.
+
+If that's what you expected, give me the email address and say "yes, run init and plan". I'll show you the plan before anything is applied.

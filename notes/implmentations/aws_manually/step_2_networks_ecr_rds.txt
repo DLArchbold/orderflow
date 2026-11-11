@@ -1,0 +1,595 @@
+
+> How do I implement Step 2: Foundations. Apply the network, ECR and RDS. RDS
+  takes about 10 minutes.
+
+● I'll start by finding Step 2 in your plan and notes.
+
+  Searched for 3 patterns, read 8 files (ctrl+o to expand)
+
+● Step 2 here is the "Foundations" step from your aws_instructions chat notes:
+  apply the network, ECR and RDS groups, running terraform plan after each
+  group. I haven't run anything. Below are the commands, in order. The budget
+  from the earlier step should already exist.
+
+  All commands run in PowerShell from phase2/infra/terraform. The quotes around
+  each -target matter in PowerShell 5.1, as you found earlier.
+
+  0. Check the login and set variables
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+  aws sts get-caller-identity          # ARN should contain AdministratorAccess
+
+  Put the email in a git-ignored terraform.tfvars so you don't repeat -var each
+  time (budget_email is required on every plan):
+
+  Set-Content terraform.tfvars 'budget_email = "you@example.com"'
+
+  1. Network group (network.tf (phase2/infra/terraform/network.tf))
+
+  This creates the VPC, internet gateway, 2 public and 2 private subnets, the
+  route table and all the security groups. None of it costs money, because there
+  is no NAT gateway.
+
+  terraform plan "-target=aws_vpc.main" `
+    "-target=aws_internet_gateway.main" `
+    "-target=aws_subnet.public" "-target=aws_subnet.private" `
+    "-target=aws_route_table.public"
+  "-target=aws_route_table_association.public" `
+    "-target=aws_security_group.alb" "-target=aws_security_group.order" `
+    "-target=aws_security_group.inventory" "-target=aws_security_group.frontend"
+  `
+    "-target=aws_security_group.keycloak" "-target=aws_security_group.kafka" `
+    "-target=aws_security_group.dbinit" "-target=aws_security_group.rds"
+
+  Read the plan, then run terraform apply with the same targets and type yes.
+
+  2. ECR group (free until you push images)
+
+  terraform plan "-target=aws_ecr_repository.app"
+  terraform apply "-target=aws_ecr_repository.app"
+
+  The plan should show 3 repositories: orderflow-order-service,
+  orderflow-inventory-service and orderflow-frontend.
+
+  3. RDS group (costs money, about 10 minutes)
+
+  Targeting aws_db_instance.db pulls in the password, the subnet group and the
+  network resources it depends on. The Secrets Manager version isn't a
+  dependency of the instance, so list it as well:
+
+  terraform plan "-target=aws_db_instance.db"
+  "-target=aws_secretsmanager_secret_version.db"
+  terraform apply "-target=aws_db_instance.db"
+  "-target=aws_secretsmanager_secret_version.db"
+
+  The apply sits on aws_db_instance.db: Still creating... for about 10 minutes.
+  That is normal. A db.t4g.micro costs roughly $0.016 an hour, so leaving it up
+  for a session is cheap, but destroy it when you finish.
+
+  4. Verify
+
+  terraform state list
+  aws ecr describe-repositories --query "repositories[].repositoryName"
+  aws rds describe-db-instances --db-instance-identifier orderflow --query
+  "DBInstances[0].[DBInstanceStatus,Endpoint.Address]"
+
+  Expected results:
+  - State: it lists the VPC, subnets, security groups, ECR repositories,
+    random_password.db, the secret and aws_db_instance.db.
+  - RDS status: available.
+  - Public access: the endpoint exists, but RDS has no public access, so you
+    can't connect from your laptop. Step 4 (the one-off database-creation task)
+    is what proves it is reachable from inside the VPC.
+
+  Things to know
+
+  - -target is only for this staged rollout. Once the foundations exist, the
+    later full terraform apply -var image_tag=<sha> brings up the rest.
+  - Expect some plan errors. The config has only been checked with terraform
+    validate, never planned. If a plan fails, paste the error and I'll help fix
+    it.
+  - Don't skip the plans. Each plan shows what will be created before anything
+    costs money.
+  - Next steps: after this come pushing the images (terraform output
+    push_images_commands, which must be linux/amd64) and creating the databases.
+
+  I can run these for you if you'd like. I'd stop for your yes before each
+  apply, and I'd need the email for terraform.tfvars.
+
+> <ide_selection>The user selected the lines 176 to 176 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\network.tf:
+  db
+
+  This may or may not be related to the current task.</ide_selection>
+
+> After executing terraform apply at 1. Network group (network.tf), is it
+  supposed to create an ECS cluster named orderflow?
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● No. The network group shouldn't create an ECS cluster.
+
+  The cluster is defined in ecs_base.tf:4
+  (phase2/infra/terraform/ecs_base.tf#L4) as aws_ecs_cluster.main. My network
+  -target list names only resources from network.tf, and none of them depend on
+  the cluster. The cluster should stay uncreated until the later steps.
+
+  Terraform's -target pulls in a resource's dependencies, but not anything that
+  depends on it. The cluster is only referenced by the ECS services and by
+  outputs.tf, so those can't pull it into a network-only apply.
+
+  To check what the apply created, run terraform state list. You should see the
+  VPC, internet gateway, subnets, route table, route table associations and
+  security groups, and no aws_ecs_cluster.
+
+  If you do see a cluster named orderflow, tell me which command you ran. The
+  likely cause is an apply without the -target flags, which would also have
+  tried to create the ALB, services and the rest. In that case, paste the
+  terraform state list output and the apply summary line, and I'll help work out
+  what exists.
+
+> data.aws_availability_zones.available
+  data.aws_iam_policy_document.ecs_tasks_assume
+  aws_budgets_budget.monthly
+
+  aws_cloudwatch_log_group.app["db-init"]
+  aws_cloudwatch_log_group.app["frontend"]
+
+  aws_cloudwatch_log_group.app["inventory-service"]
+
+  aws_cloudwatch_log_group.app["kafka"]
+  aws_cloudwatch_log_group.app["keycloak"]
+  aws_cloudwatch_log_group.app["order-service"]
+  aws_db_instance.db
+  aws_db_subnet_group.db
+  aws_ecr_repository.app["frontend"]
+  aws_ecr_repository.app["inventory-service"]
+  aws_ecr_repository.app["order-service"]
+  aws_ecs_cluster.main
+  aws_ecs_service.frontend
+  aws_ecs_service.inventory
+  aws_ecs_service.kafka
+  aws_ecs_service.keycloak
+  aws_ecs_service.order
+  aws_ecs_task_definition.db_init
+  aws_ecs_task_definition.frontend
+  aws_ecs_task_definition.inventory
+  aws_ecs_task_definition.kafka
+  aws_ecs_task_definition.keycloak
+  aws_ecs_task_definition.order
+  aws_iam_role.execution
+  aws_iam_role.task
+  aws_iam_role_policy.execution_secrets
+  aws_iam_role_policy_attachment.execution_managed
+  aws_internet_gateway.main
+  aws_lb.main
+  aws_lb_listener.http
+  aws_lb_listener_rule.api
+  aws_lb_listener_rule.keycloak
+  aws_lb_target_group.frontend
+  aws_lb_target_group.keycloak
+  aws_lb_target_group.order
+  aws_route_table.public
+  aws_route_table_association.public[0]
+  aws_route_table_association.public[1]
+  aws_secretsmanager_secret.db
+  aws_secretsmanager_secret.keycloak
+  aws_secretsmanager_secret_version.db
+  aws_secretsmanager_secret_version.keycloak
+  aws_security_group.alb
+  aws_security_group.dbinit
+  aws_security_group.frontend
+  aws_security_group.inventory
+  aws_security_group.kafka
+  aws_security_group.keycloak
+  aws_security_group.order
+  aws_security_group.rds
+  aws_service_discovery_private_dns_namespace.internal
+  aws_service_discovery_service.internal["inventory-service"]
+  aws_service_discovery_service.internal["kafka"]
+  aws_service_discovery_service.internal["keycloak"]
+  aws_subnet.private[0]
+  aws_subnet.private[1]
+  aws_subnet.public[0]
+  aws_subnet.public[1]
+  aws_vpc.main
+  random_password.db
+  random_password.keycloak_admin
+
+● Yes, a full terraform apply ran without -target. Your state lists the ECS
+  cluster, the five ECS services, the ALB, the listeners and rules, the Cloud
+  Map namespace, the IAM roles, the log groups and the task definitions. Those
+  all come from ecs_base.tf, ecs_services.tf and alb.tf, not from the network,
+  ECR and RDS groups.
+
+  Nothing is broken, but it changes your position in two ways:
+
+  - It costs more than planned. The ALB bills hourly (about $0.54 a day). Each
+    task with a public IP also pays for the IPv4 address. Fargate tasks bill
+    only while they run, and they can't start yet.
+  - The services can't start yet. The ECR repositories are empty, so the tasks
+    can't pull images and ECS keeps retrying them. The databases orders and
+    inventory don't exist either. Order-service and inventory-service would
+    crash on startup even with images pushed.
+
+  You have two ways to continue.
+
+  Option A: Keep everything and move on quickly. This is the end state you were
+  heading for anyway.
+  1. Push the images (step 3: terraform output push_images_commands, built for
+     linux/amd64).
+  2. Run the db-init task (step 4: terraform output -raw db_init_command).
+  3. Once the images and databases exist, the ECS services should start on their
+     own retries. If they've given up, aws ecs update-service
+     --force-new-deployment restarts them.
+
+  Do this soon and destroy at the end of the session, because the ALB and tasks
+  are already billing.
+
+  Option B: Remove the compute layer for now and re-add it later. Use this if
+  you won't get to steps 3 and 4 today. Run terraform destroy with "-target=..."
+  for each of these:
+  - the five aws_ecs_service.* resources
+  - aws_lb.main, which also removes its listener, rules and target groups
+  - the ECS cluster
+
+  I'd review the plan carefully, because targeted destroys also take dependents
+  with them. Leaving the foundations (VPC, ECR, RDS, secrets) in place is fine.
+
+  Run terraform plan once now with no targets. It should say "No changes". That
+  confirms the real AWS resources match your state.
+
+  I recommend Option A if you have time now, since the remaining steps are
+  short. Tell me which you prefer, or paste the output of aws ecs
+  describe-services --cluster orderflow --services order-service --query
+  "services[0].events[:3]" if you want to see what the services are doing.
+
+> I did not run terraform apply with "-target", how do I reverse the latest
+  step?
+
+● Terraform has no undo, so you reverse the apply with terraform destroy. A
+  plain terraform destroy removes everything in your state, including the budget
+  alarm, the VPC, the ECR repositories and RDS. If you only want to undo the
+  compute layer that you didn't intend to create, destroy it with -target, as
+  below.
+
+  Remove only the compute layer (recommended)
+
+  This keeps the budget, network, ECR, RDS and secrets, which is where you meant
+  to stop. Run it from phase2/infra/terraform. Preview first with plan
+  -destroy, then run destroy with the same flags.
+
+  $t = @(
+    "-target=aws_ecs_service.frontend", "-target=aws_ecs_service.inventory",
+    "-target=aws_ecs_service.kafka", "-target=aws_ecs_service.keycloak",
+    "-target=aws_ecs_service.order",
+    "-target=aws_ecs_cluster.main",
+    "-target=aws_lb.main", "-target=aws_lb_listener.http",
+    "-target=aws_lb_listener_rule.api", "-target=aws_lb_listener_rule.keycloak",
+    "-target=aws_lb_target_group.frontend",
+  "-target=aws_lb_target_group.keycloak",
+    "-target=aws_lb_target_group.order",
+    "-target=aws_service_discovery_service.internal",
+    "-target=aws_service_discovery_private_dns_namespace.internal"
+  )
+
+  terraform plan -destroy @t
+  terraform destroy @t
+
+  Read the plan -destroy output before you destroy. It should list only ECS,
+  load balancer and Cloud Map resources. If it lists aws_db_instance, aws_vpc,
+  the ECR repositories or the budget, stop and don't destroy.
+
+  I left out the task definitions, log groups and IAM roles on purpose. They are
+  free, and terraform apply will find them already in place when you rebuild
+  the compute layer later. Add "-target=aws_ecs_task_definition.xxx" flags if
+  you want them gone too.
+
+  Remove everything and start clean
+
+  terraform destroy
+
+  This deletes the budget too. After it finishes, re-create the budget first
+  with terraform apply "-target=aws_budgets_budget.monthly", then redo the
+  foundations. RDS takes about 10 minutes to create again.
+
+  After either option
+
+  Check what remains:
+
+  terraform state list
+  aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName"
+  aws ecs list-clusters
+
+  With the compute layer removed, the load balancer and cluster lists should be
+  empty.
+
+  Also, as you said you didn't pass -target, one possible reason is that your
+  shell history or an alias reused an older apply command. Check the history
+  with Get-History | Select-String terraform. That would help you avoid
+  repeating it.
+
+> Update the terraform destroy scrip to undo everything in the last step not
+  just the compute layer.
+
+● This script destroys everything the full apply created and keeps
+  aws_budgets_budget.monthly. Terraform can't exclude a resource from destroy,
+  so the script builds the target list from your state and leaves the budget
+  out.
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+
+  $t = terraform state list |
+    Where-Object { $_ -notmatch '^data\.' -and $_ -ne
+  'aws_budgets_budget.monthly' } |
+    ForEach-Object { $_ -replace '\[.*$', '' } |
+    Sort-Object -Unique |
+    ForEach-Object { "-target=$_" }
+
+  $t.Count            # sanity check: should be about 40 entries
+  terraform plan -destroy @t
+
+  Review the plan. It should end with Plan: N to destroy and must not mention
+  aws_budgets_budget.monthly. Then run:
+
+  terraform destroy @t
+
+  Notes on how it works:
+
+  - Indexes are stripped. -replace '\[.*$', '' turns
+    aws_ecr_repository.app["frontend"] into aws_ecr_repository.app. That targets
+    all instances of the resource and avoids the quote-mangling PowerShell 5.1
+    does to arguments containing ".
+  - Data sources are skipped. They aren't real resources and can't be destroyed.
+  - Time. RDS deletion takes several minutes, so the destroy may run 5 to 10
+    minutes. The secrets use recovery_window_in_days = 0, so they are deleted
+    immediately and the names can be reused.
+  - Verify afterwards.
+
+  terraform state list    # should show only aws_budgets_budget.monthly
+  aws rds describe-db-instances --query "DBInstances[].DBInstanceIdentifier"
+  aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName"
+  aws ecr describe-repositories --query "repositories[].repositoryName"
+
+  All three AWS lists should come back empty.
+
+  If destroy fails partway, for example on a security group still in use by a
+  network interface, wait a minute and run the same terraform destroy @t again.
+  It continues from where it stopped.
+
+  To rebuild later, redo the foundations with staged -target applies as in my
+  first answer, rather than a bare terraform apply.
+
+> <ide_selection>The user selected the lines 82 to 82 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\data.tf:
+  recovery_window_in_days = 0
+
+  This may or may not be related to the current task.</ide_selection>
+
+> I pasted the Terraform script exactly as follows into Powershell, why did
+  ECS, RDS, and other resources get automatically created as well? Script:
+  terraform plan "-target=aws_vpc.main"   "-target=aws_internet_gateway.main"
+    "-target=aws_subnet.public" "-target=aws_subnet.private"
+  "-target=aws_route_table.public" "-target=aws_route_table_association.public"
+    "-target=aws_security_group.alb" "-target=aws_security_group.order"
+  "-target=aws_security_group.inventory" "-target=aws_security_group.frontend"
+    "-target=aws_security_group.keycloak" "-target=aws_security_group.kafka" `
+    "-target=aws_security_group.dbinit" "-target=aws_security_group.rds"
+
+● That script can't have created anything. It contains only terraform plan,
+  which reads your config and AWS, prints a proposed change list, and never
+  creates, changes or saves anything. So the ECS and RDS resources came from a
+  different command, run at some point.
+
+  My first answer told you to run terraform apply "with the same targets" after
+  the plan. It only showed the plan form, so it's easy to have run a bare
+  terraform apply for that step. A bare terraform apply has no -target limit, so
+  it plans and creates everything in all the .tf files. That matches your
+  state: the ECS, load balancer and Cloud Map resources are what an untargeted
+  apply adds on top of the foundations. This is my guess, not something I've
+  confirmed.
+
+  To find out what happened, check these:
+
+  1. PowerShell history. Both lines show every terraform command you ran in this
+     terminal:
+
+  Get-History | Where-Object CommandLine -match 'terraform' | Format-Table Id,
+  CommandLine -AutoSize
+  Get-Content (Get-PSReadLineOption).HistorySavePath | Select-String 'terraform
+  (apply|destroy)'
+
+     Look for an apply line with no -target, or one using -auto-approve.
+
+  2. When the resources were created. State file timestamps and AWS creation
+     times show whether it all happened in one apply:
+
+  (Get-Item terraform.tfstate).LastWriteTime
+  aws ecs describe-clusters --clusters orderflow --query
+  "clusters[0].clusterArn"
+  aws rds describe-db-instances --db-instance-identifier orderflow --query
+  "DBInstances[0].InstanceCreateTime"
+  aws elbv2 describe-load-balancers --query
+  "LoadBalancers[].[LoadBalancerName,CreatedTime]"
+
+     If the load balancer, cluster and RDS were created minutes apart from the
+  VPC, they came from different applies.
+
+  3. Another session. In the notes you pasted, an earlier Claude session offered
+     to run commands for you, including apply, with a prompt before each. Check
+     whether you approved a full apply there. A different terminal or tab could
+     also have run it.
+  4. A wrapper. Look in your PowerShell profile (notepad $PROFILE) for a
+     function or alias named terraform that adds or drops arguments.
+
+  Once you find the culprit command, paste it and I can tell you exactly why it
+  created everything.
+
+  To stop it happening again:
+
+  - Plan to a file, apply that file. terraform plan -out=foundations.tfplan
+    "-target=..." followed by terraform apply foundations.tfplan applies exactly
+    what you reviewed, and -target can't be forgotten.
+  - Read the summary line. Before typing yes, check Plan: N to add. For the
+    network group it should be about 20 resources, not 70.
+  - Skip -auto-approve.
+
+> How to apply terraform apply with -target
+
+● Add the same "-target=..." flags to terraform apply that you gave to plan. In
+  PowerShell, quote each -target flag.
+
+  Basic form
+
+  terraform apply "-target=aws_vpc.main"
+
+  Terraform shows the plan, and you type yes to confirm. You can repeat -target
+  for as many resources as you like.
+
+  Network group
+
+  This is the same list as the plan. Run it from phase2/infra/terraform:
+
+  terraform apply "-target=aws_vpc.main" `
+    "-target=aws_internet_gateway.main" `
+    "-target=aws_subnet.public" "-target=aws_subnet.private" `
+    "-target=aws_route_table.public"
+  "-target=aws_route_table_association.public" `
+    "-target=aws_security_group.alb" "-target=aws_security_group.order" `
+    "-target=aws_security_group.inventory" "-target=aws_security_group.frontend"
+  `
+    "-target=aws_security_group.keycloak" "-target=aws_security_group.kafka" `
+    "-target=aws_security_group.dbinit" "-target=aws_security_group.rds"
+
+  Safer: save the plan and apply that file
+
+  terraform plan -out=network.tfplan "-target=aws_vpc.main"
+  "-target=aws_subnet.public" ...
+  terraform apply network.tfplan
+
+  You list the -target flags only on plan. The apply then runs exactly what you
+  reviewed, so you can't leave a target off by mistake. Don't commit *.tfplan
+  files. They can contain secrets.
+
+  ECR and RDS
+
+  terraform apply "-target=aws_ecr_repository.app"
+
+  terraform apply "-target=aws_db_instance.db"
+  "-target=aws_secretsmanager_secret_version.db"
+
+  Check before typing yes
+
+  - Summary line: Plan: N to add, 0 to change, 0 to destroy. For the network
+    group, N should be about 20. If it shows 70 or more, or mentions
+    aws_ecs_cluster, aws_lb or aws_db_instance, type no.
+  - Warning: Terraform prints "Warning: Resource targeting is in effect". That
+    is expected.
+  - Dependencies: -target also includes whatever the target depends on, so
+    targeting aws_db_instance.db adds the subnet group, security groups and
+    password automatically.
+
+  Common mistakes
+
+  - Missing quotes: unquoted -target=aws_vpc.main breaks in PowerShell 5.1,
+    giving the "Invalid target" error you saw earlier.
+  - Bare terraform apply: this has no limit and creates everything.
+  - Indexed resources: "-target=aws_subnet.public" covers both subnets. To
+    target one, use single quotes inside double quotes, like
+    "-target=aws_subnet.public[0]". Brackets are fine, but quoted names such as
+    ["frontend"] are better avoided.
+
+> <ide_selection>The user selected the lines 10 to 10 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\outputs.tf:
+  db_init_command
+
+  This may or may not be related to the current task.</ide_selection>
+
+> After running terraform apply "-target=aws_ecr_repository.app", why is this
+  in the output?
+
+  db_init_command = "aws ecs run-task --region us-east-1 --cluster orderflow
+  --launch-type FARGATE --task-definition orderflow-db-init
+  --network-configuration 'awsvpcConfiguration={subnets=[subnet-07a4c5f88a98a8a
+  47],securityGroups=[sg-069cb971a812a3564],assignPublicIp=ENABLED}'"
+
+● It's a leftover from the earlier full apply, not something the ECR apply
+  created.
+
+  - Outputs live in state. Terraform stores root outputs from outputs.tf in
+    terraform.tfstate, and it prints them at the end of every apply. That
+    includes a targeted apply, which doesn't recompute outputs whose resources
+    it didn't touch.
+  - The values are real IDs. The subnet-07a4c5f8... and sg-069cb971... in your
+    output are resources that already exist in AWS. They were created by the
+    earlier untargeted apply, so the state still holds them.
+  - ECR wasn't the source. The db_init_command output in outputs.tf:10
+    (phase2/infra/terraform/outputs.tf#L10) references the cluster, the db-init
+    task definition, a subnet and a security group. None of those are ECR
+    repositories.
+
+  This also tells you the compute layer is probably still there. The command
+  names --cluster orderflow and the orderflow-db-init task definition, so those
+  exist in state. If you ran the destroy script, the apply output would have
+  shown no such values.
+
+  To confirm, run these:
+
+  terraform state list | Select-String 'ecs_cluster|aws_lb\.|aws_db_instance'
+  aws ecs list-clusters
+
+  If they're listed, the compute layer from the full apply still exists. Run the
+  plan -destroy and destroy script from before when you want it gone, or leave
+  it and continue with the image push and the db-init step.
+
+  When that command is valid, it's the one step 4 uses: terraform output -raw
+  db_init_command. Run it only after the images are pushed and RDS is available.
+
+> <ide_selection>The user selected the lines 2 to 2 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\outputs.tf:
+  aws_ecr_repository
+
+  This may or may not be related to the current task.</ide_selection>
+
+> The output to the latest 2 commands are empty
+
+● Empty results from both commands mean the compute layer and RDS are gone. The
+  state shows no ECS cluster, load balancer or RDS instance, and AWS lists no
+  ECS clusters. That fits you having run the destroy script.
+
+  The output you saw is stale. Terraform stores root outputs in state, and a
+  targeted apply or destroy doesn't recompute outputs whose resources weren't in
+  its target list. So db_init_command keeps showing the old value after the
+  resources it refers to are gone. The subnet and security group IDs in it may
+  no longer exist.
+
+  Confirm the rest of the teardown and the current state:
+
+  terraform state list
+  aws rds describe-db-instances --query "DBInstances[].DBInstanceIdentifier"
+  aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName"
+  aws ec2 describe-vpcs --filters "Name=tag:Project,Values=orderflow" --query
+  "Vpcs[].VpcId"
+
+  What you should see depends on how far things are:
+
+  - After the destroy script and then the ECR apply: the state lists the budget
+    plus the 3 ECR repositories. The RDS, load balancer and VPC lists are empty.
+  - If the VPC list is not empty: the network layer is still there. That's fine,
+    since the next step needs it, and you can see which resources remain in
+    terraform state list.
+
+  To clear the stale output, run terraform apply -refresh-only. It updates state
+  and outputs to match reality without changing any resources. Outputs that
+  depend on missing resources are removed or recomputed, and a later full apply
+  regenerates them anyway. It's optional, and it doesn't affect your next steps.
+
+  The next step is to re-apply the rest of the foundations in order: the network
+  group, then RDS, using the -target commands above, and check each Plan: N to
+  add line before typing yes. The ECR repositories are already done.
