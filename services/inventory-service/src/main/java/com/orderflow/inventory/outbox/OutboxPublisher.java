@@ -52,6 +52,8 @@ public class OutboxPublisher {
                 }
                 kafka.send(record).get(5, TimeUnit.SECONDS);
                 event.markPublished();
+                log.info("Published outbox event {} ({}) for aggregate {} to {}",
+                        event.getId(), event.getType(), event.getAggregateId(), KafkaConfig.INVENTORY_RESULTS_TOPIC);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
