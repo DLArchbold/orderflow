@@ -113,7 +113,7 @@ resource "aws_ecs_task_definition" "keycloak" {
     # Fargate cannot mount a file from the repository, so the realm JSON travels in an environment variable and is
     # written to the import directory before Keycloak starts.
     entryPoint = ["/bin/sh", "-c"]
-    command    = ["echo \"$REALM_JSON\" > /opt/keycloak/data/import/orderflow-realm.json && exec /opt/keycloak/bin/kc.sh start-dev --import-realm"]
+    command    = ["mkdir -p /opt/keycloak/data/import && printf '%s' \"$REALM_JSON\" > /opt/keycloak/data/import/orderflow-realm.json && exec /opt/keycloak/bin/kc.sh start-dev --import-realm"]
     environment = [
       { name = "REALM_JSON", value = local.keycloak_realm },
       { name = "KC_BOOTSTRAP_ADMIN_USERNAME", value = "admin" },
