@@ -5,7 +5,7 @@ Status: draft. The Terraform in `phase2/infra/terraform` passes `terraform fmt` 
 ## Decisions
 | Topic | Choice | Why, and what it costs |
 |---|---|---|
-| Compute | ECS Fargate, one service per container, rolling deploy | No servers to patch; 0.5 vCPU and 1 GB per Java service. |
+| Compute | ECS Fargate, one service per container, rolling deploy | No servers to patch; inventory-service 0.5 vCPU and 1 GB; order-service 1 vCPU and 2 GB with a 300 s health-check grace period (seen 2026-11-11: on 0.5 vCPU Spring took 116 s to start, the 120 s grace period expired before the ALB marked the target healthy, and ECS stopped each new task every ~4 minutes while the old one kept serving). |
 | Network | VPC, 2 AZs; **public subnets for the ALB and the tasks, no NAT gateway** | A NAT gateway is about $32 a month plus data. Tasks get public IPs and security groups are the only guard. Acceptable for a demo; a real deployment puts tasks in private subnets behind a NAT or VPC endpoints. |
 | Database | RDS PostgreSQL `db.t4g.micro`, single AZ, `skip_final_snapshot`, no deletion protection, in private subnets, password generated and kept in Secrets Manager | RDS is the slowest and costliest piece, so it is created once and early. Nothing survives `terraform destroy`, on purpose. Terraform cannot create databases inside RDS: a one-off Fargate task (`db-init`) runs `psql`. |
 | Kafka | **One `apache/kafka` container on ECS** with a Cloud Map DNS name (`kafka.orderflow.local`) | MSK Serverless is a few hundred dollars a month and the smallest MSK cluster tens of dollars. The container has no volume, so the topics are gone when the task restarts. Accepted for a demo; the outbox republishes unpublished rows, but already-published events are lost. |
