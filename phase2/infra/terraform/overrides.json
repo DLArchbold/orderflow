@@ -1,0 +1,6 @@
+{
+  "containerOverrides": [{
+    "name": "db-init",
+    "command": ["sh","-c","psql -h \"orderflow.csstnjabotrz.us-east-1.rds.amazonaws.com\" -U orderflow -d orders -c \"SELECT o.id, o.customer_id, o.status, l.sku, l.quantity, o.created_at FROM orders o JOIN order_lines l ON l.order_id = o.id ORDER BY o.created_at DESC, l.line_no LIMIT 50;\""]
+  }]
+}
