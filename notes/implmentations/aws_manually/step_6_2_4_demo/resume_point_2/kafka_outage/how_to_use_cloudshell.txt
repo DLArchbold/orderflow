@@ -1,0 +1,37 @@
+**A drained system** is one where no work is still moving through the order pipeline. The term comes from your own drill notes. Before you stop Kafka, nothing may be in flight. That means:
+- No order is PENDING. Every order is CONFIRMED or REJECTED.
+- No outbox row is waiting to be published to Kafka, in either service.
+- Nothing is being sent: stop your load generator and don't click "create order".
+
+It matters because the Kafka task has no volume. Replacing it empties the topics. An event that was published but not yet consumed would be lost, and its order would stay PENDING forever. If nothing is in flight, you lose nothing but already-processed history.
+
+**How to check without psql:**
+1. Create one order in the UI and wait for CONFIRMED.
+2. Open the orders list. Nothing should show PENDING.
+3. Wait about 30 seconds for any trailing events.
+
+For a stricter check, run this in CloudWatch Logs Insights on both log groups. The counts of "created" and "CONFIRMED or REJECTED" lines should match. I haven't run this query:
+```
+filter @message like /created for customer|is now CONFIRMED|is now REJECTED/
+| parse @message /(?<kind>created for customer|is now CONFIRMED|is now REJECTED)/
+| stats count(*) by kind
+```
+
+**CloudShell** is a terminal that runs in your browser, already logged in as you. You don't need to install or configure the AWS CLI.
+
+1. Sign in to the AWS console and set the region to **us-east-1**, since CloudShell uses the region currently selected. The Kafka drill resources are there.
+2. Click the **CloudShell icon** in the top bar. It looks like `>_`, next to the search box. You can also search "CloudShell" in the search box.
+3. Wait about 30 seconds the first time while the environment starts.
+4. You get a Linux shell with the AWS CLI already set up. Test it with:
+   ```
+   aws sts get-caller-identity
+   ```
+   It should print your account and your user or role.
+5. Paste commands with Ctrl+Shift+V, or use the right-click menu. Ordinary Ctrl+V may not work.
+
+**Things to know:**
+- **Idle timeout:** the session ends after about 20 to 30 minutes of inactivity. Your files in your home folder (about 1 GB) survive, but running processes don't. Keep the Kafka freeze session active until you've run `kill -CONT`.
+- **Your permissions:** CloudShell uses your console login. You need the ECS Exec permissions from the earlier steps, which AdministratorAccess already includes.
+- **Session Manager plugin:** ECS Exec needs `session-manager-plugin`. I haven't confirmed whether CloudShell ships with it. Run `session-manager-plugin --version` to check.
+- **Installing the plugin if it's missing:** use the AWS-documented Linux rpm installer.
+- **Tabs:** the **Actions** menu lets you open several tabs.

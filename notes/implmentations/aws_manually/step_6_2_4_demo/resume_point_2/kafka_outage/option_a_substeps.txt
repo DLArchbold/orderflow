@@ -1,0 +1,85 @@
+One thing affects the steps, so it comes first. The Kafka container's main process may be PID 1. Linux ignores `kill -STOP` sent to PID 1 from inside its own container, so the freeze would silently do nothing. The apache/kafka entrypoint ends with `exec`, so I expect java to be PID 1, but I haven't confirmed it. The fix is to enable the init process on the task definition, which I've folded into step 1 below. Also do the IAM step before turning ECS Exec on, so the new task starts with the permission already in place.
+
+## Step 2 first: add the permissions to the task role (IAM console)
+
+1. Open the IAM console, go to **Roles** and search for `orderflow-ecs-task`. Don't pick `orderflow-ecs-execution`; that one is the wrong role.
+2. Open the role, then **Add permissions → Create inline policy**.
+3. Choose the **JSON** tab and paste:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": [
+         "ssmmessages:CreateControlChannel",
+         "ssmmessages:CreateDataChannel",
+         "ssmmessages:OpenControlChannel",
+         "ssmmessages:OpenDataChannel"
+       ],
+       "Resource": "*"
+     }]
+   }
+   ```
+4. Click **Next**, name it `ecs-exec`, then **Create policy**.
+5. Your own login also needs `ecs:ExecuteCommand` and `ssm:StartSession`. Your README says you use AdministratorAccess, so you should already have them.
+
+## Step 1: turn on ECS Exec (ECS console)
+
+**1a. Enable the init process (to avoid the PID 1 problem)**
+1. Go to **Task definitions → orderflow-kafka → Create new revision → Create new revision with JSON**.
+2. In the `kafka` container definition, add `"linuxParameters": { "initProcessEnabled": true }`.
+3. Click **Create**. Java then runs as a child of a small init process, so `kill -STOP` can reach it.
+
+**1b. Update the service**
+1. Go to **Clusters → orderflow → Services → kafka → Update**.
+2. Set **Revision** to the new one.
+3. Expand **Troubleshooting configuration** and tick **Turn on ECS Exec**.
+4. Tick **Force new deployment** if it's offered.
+5. Click **Update**.
+6. Do this on a drained system. The Kafka task is replaced and its topics are lost.
+
+**1c. Verify**
+1. Wait for the new task to show RUNNING.
+2. In CloudShell, run:
+   ```
+   aws ecs describe-tasks --cluster orderflow --tasks <TASK_ID> --query "tasks[0].containers[0].managedAgents"
+   ```
+3. The `ExecuteCommandAgent` should show `lastStatus: RUNNING`. If it doesn't, the IAM step is missing or hasn't taken effect yet. Wait a minute, or restart the task.
+4. The task, service and revision are managed by Terraform, so the next `terraform apply` will revert these changes. That's fine for a one-off.
+
+## Step 3: freeze the broker (CloudShell)
+
+**3a. Open a shell in the Kafka task**
+1. Click the CloudShell icon in the top bar. Make sure the region is `us-east-1`.
+2. Run `session-manager-plugin --version`. If it's missing, install it from the AWS-documented Linux rpm. I haven't confirmed that CloudShell ships with it.
+3. Get the task ID:
+   ```
+   aws ecs list-tasks --cluster orderflow --service-name kafka --query 'taskArns[0]' --output text
+   ```
+   Use the part after the last `/`.
+4. Start the session:
+   ```
+   aws ecs execute-command --cluster orderflow --task <TASK_ID> --container kafka --interactive --command "/bin/sh"
+   ```
+
+**3b. Find the process and freeze it**
+1. Inside the session, run `pidof java`. If that command isn't available, run `ps | grep java`.
+2. If the pid is `1`, stop. The init process isn't enabled, so go back to 1a.
+3. Check that the pid has a sensible number, then freeze it: `kill -STOP <pid>`.
+4. Confirm with `grep State /proc/<pid>/status`. It should say `T (stopped)`.
+5. Keep this session open for the whole outage.
+
+**3c. Run the test while it's frozen**
+1. In the app, create about 10 orders.
+2. Each should return a 201 and stay PENDING.
+3. Wait about 60 seconds.
+
+**3d. Resume**
+1. In the same session, run `kill -CONT <pid>`.
+2. `grep State /proc/<pid>/status` should go back to `S`.
+3. The PENDING orders should move to CONFIRMED within a minute or so.
+4. If the session drops, open a new one and run `kill -CONT` there. The process stays frozen until you do.
+
+## A problem with the script I wrote earlier
+
+The preflight in `aws_drill.sh` only checks that `pidof java` returns a number, so it would pass even when the pid is 1. The drill would then run with no outage. The Terraform for the Kafka task also doesn't set `initProcessEnabled`. Both need fixing before that script is used, and both files are still in your stash. I can restore the stash and fix them, or leave them alone if you're sticking with the console route.

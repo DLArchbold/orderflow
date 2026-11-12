@@ -1,0 +1,73 @@
+Here is a demo you can run on the deployed stack. It's based on your step 6 notes and PLAN.md. I haven't run it against your deployment.
+
+## What's available on AWS
+
+Only the ALB, frontend, Keycloak, order-service, inventory-service, Kafka and RDS are deployed. Jaeger, Prometheus, Grafana and Redis are not. The demo therefore covers the order flow, event-driven messaging, resilience and logs. It doesn't cover dashboards or traces.
+
+## Before you start (about 2 minutes)
+
+1. Make sure the images with the new INFO logs are deployed. Run `terraform apply -var image_tag=<new tag>`. Without it, CloudWatch shows only the Redis warnings.
+2. Check all five services show `running: 1`. Use the `aws ecs describe-services` command from your step 6 notes.
+3. Keep the Chrome/Edge `unsafely-treat-insecure-origin-as-secure` flag set for the ALB origin. Login won't work over plain HTTP without it.
+4. Open these tabs in advance:
+   - the app
+   - the CloudWatch Logs Insights tab on the order-service and inventory-service log groups
+   - the ECS console, showing services at 1/1
+
+## Demo script, in order
+
+**1. It's really on AWS.**
+- Show the ALB URL in the address bar.
+- Show the ECS console with all services RUNNING.
+
+**2. Authentication (Keycloak).**
+- Open the app. It redirects to `/realms/orderflow` on the ALB.
+- Log in as `alice` / `alice-dev-pw`.
+- Say that the token is validated by both services.
+
+**3. Core flow: async order saga.**
+- Create an order with in-stock items, such as `SKU-1`.
+- The status shows PENDING, then CONFIRMED without a page reload. That is the live SSE update.
+- Say what happened in between: order-service writes the order and an outbox row, the outbox publisher sends it to Kafka, inventory-service reserves stock and publishes RESERVED, and order-service confirms the order.
+
+**4. Prove it in the logs (the key evidence).**
+- Run a Logs Insights query over both log groups: `fields @timestamp, @message | filter @message like /<traceId>/ | sort @timestamp`.
+- It should show these lines in sequence under one trace ID:
+  1. order created
+  2. outbox event published
+  3. stock reserved
+  4. result published
+  5. inventory result applied, order CONFIRMED
+
+**5. Business rejection path.**
+- Order a quantity larger than the stock.
+- The order ends as REJECTED. The inventory log shows "Stock rejected (wanted X, available Y)".
+- Confirm the stock count didn't drop.
+
+**6. Idempotency (optional).**
+- Send `POST /api/orders` twice with the same `Idempotency-Key` header, using curl or Swagger with alice's token.
+- You should get the same order back and no duplicate. I haven't checked the exact header name, so confirm it in the order-service code.
+
+**7. Graceful degradation (this is deliberate).**
+- Show the Redis `WARN` lines from `CacheConfig`.
+- Say that the stock cache is optional, so the stock lookup falls back to inventory-service and orders aren't affected.
+- This is your ADR 0006 point, and the warnings are intentionally left visible.
+
+**8. Database proof (optional).**
+- Run the one-off ECS psql task for `SELECT id, status FROM orders;`.
+- It's slow to set up on AWS, so use it only if you need the extra evidence.
+
+**9. Deploy under load (optional, PLAN step 24c).**
+- Run `k6 run -e RATE=50 -e DURATION=30s phase2/load-tests/k6/create-orders.js` against the ALB.
+- Trigger `aws ecs update-service --force-new-deployment` while it runs.
+- Show `http_req_failed` at 0%.
+- This is the strongest "production-minded" demo, but I haven't checked how the script gets a token against Keycloak on the ALB. It was only run locally.
+
+## Recording it
+
+- Use Xbox Game Bar (Win + Alt + R) for the video. Use ScreenToGif for a short README clip.
+- Keep the demo to about 3 minutes. Steps 1–4 are the core.
+- Crop out your AWS account ID and any secrets.
+- Run `terraform destroy` right afterwards, because alice's login is public on the ALB.
+
+I can turn this into a one-page checklist in `notes/implmentations/aws_manually/`. I can also check the k6 script and the idempotency header so steps 6 and 9 are exact.
