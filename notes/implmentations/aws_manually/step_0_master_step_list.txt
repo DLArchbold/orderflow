@@ -1,0 +1,36 @@
+Step 13 in your table is plan step 24 (24a to 24c), and the Terraform for it already exists in [phase2/infra/terraform/](phase2/infra/terraform/). It passes `validate` but has never been planned or applied. The runbook is in [the Terraform README](phase2/infra/terraform/README.md#L10-L19). I haven't run anything. Every command below uses your credentials and costs money, so you run them.
+
+## Before you start (24a)
+1. Turn on billing alerts in your AWS account. Create an IAM Identity Center user, or an IAM user with MFA. Don't use root keys.
+2. Run `aws configure sso`, then `aws sts get-caller-identity` to confirm you're on the right account.
+3. Pick one region and use it for everything, so the cleanup check covers a single region.
+
+## Apply in stages
+Run each command from `phase2/infra/terraform`. Run `terraform plan` before each apply and read it.
+
+1. **Budget first.** Run `terraform init`, then `terraform apply -var budget_email=you@example.com -target=aws_budgets_budget.monthly`.
+2. **Foundations.** Apply the network, ECR and RDS. RDS takes about 10 minutes.
+3. **Push images.** Run `terraform output push_images_commands`. The images must be `linux/amd64`, which a Windows build produces.
+4. **Create the databases.** Run `terraform output -raw db_init_command | sh`, then check the `/orderflow/db-init` log group. This also proves RDS is reachable from inside the VPC.
+5. **Everything else.** Run `terraform apply -var image_tag=<sha>` to bring up Kafka, Keycloak, the services and the ALB.
+6. **Smoke test.** Open `terraform output app_url`, log in as `alice`, and create an order. It should reach CONFIRMED.
+
+Expect failures on the first real `plan` or `apply`. The README says `validate` doesn't prove the resources will create. Likely trouble spots are Keycloak's issuer and `KC_HOSTNAME` (the plan allows `jwk-set-uri` as a fallback), the health-check paths, and IAM permissions. Record each fix in [ADR 0006](phase2/docs/adr/0006-aws-choices.md), because your notes track errors for interviews.
+
+## Deploy under load (24c)
+1. Build and push a second image with a new SHA tag. Have the `terraform apply -var image_tag=<new sha>` command ready in a second terminal.
+2. Start k6 against the ALB URL at a steady arrival rate for about 5 minutes. Use the k6 script from your load-test step. Write its output to a file, for example `--out json=` plus the console summary.
+3. At about the 2-minute mark, run the apply with the new tag.
+4. Record the arrival rate, duration, image sizes and the `http_req_failed` count. Only claim "0 failed requests" if the output shows it. Don't call it zero-downtime unless the evidence supports that.
+
+## Destroy and verify
+1. Run `terraform destroy`.
+2. In the console, in your one region, check for leftovers: load balancers, RDS instances and snapshots, ECR images, CloudWatch log groups, Elastic IPs, and NAT gateways (there should be none).
+3. Check Cost Explorer the next day.
+
+## Afterwards
+Update the README, the status log, and the "Did you deploy to AWS?" answer in [errors-by-resume-bullet.md](notes/implmentations/errors-by-resume-bullet.md#L66). The notes say to change that answer only after a real apply, a deploy under load and a destroy have all happened.
+
+Two things to know first. The ALB is public and HTTP only, and `alice`'s password is in the repo, so keep the stack up only for the test. Kafka has no volume, so its data is lost if the task restarts.
+
+When you're ready, tell me and I can help read plan output and debug apply errors as you go. I can also run the commands if you give an explicit yes and have a working `aws sso login` session.
