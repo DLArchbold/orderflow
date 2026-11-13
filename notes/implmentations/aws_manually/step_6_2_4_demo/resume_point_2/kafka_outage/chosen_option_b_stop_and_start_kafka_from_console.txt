@@ -2,8 +2,27 @@ Option B: stop Kafka and start it again from the console. This is the practical 
 
 Your consumers use auto-offset-reset: earliest, and the broker should recreate the topics when something produces to them. The topics are also declared as NewTopic beans. I haven't verified the recreation on AWS.
 Steps:
+
+Show AWS dashboard tabs (ECS and CloudWatch tabs for ALL, order, and inventory service, and additional
+    CloudWatch tab for db-init)
+Log out and login on UI, show UI and developer tab, and highlight AWS endpoints in header and developer tab
+Show query tabs and highlight SQL
+<Repeated Steps>
 Drain first. Create an order in the UI and wait for CONFIRMED. Don't proceed while anything is PENDING.
+<Repeated Steps>
 Stop Kafka. Go to ECS → cluster orderflow → service kafka → Update service → Desired tasks 0. Wait until running is 0.
+Show ECS container status (running/stopped/running)
 Create orders during the outage. Create about 10 orders in the UI. Each should return a 201 and show PENDING, and none should reach CONFIRMED.
+<Repeated Steps>
 Wait a minute, then restart. Set Desired tasks back to 1 and wait for the task to be RUNNING (about 1–2 minutes).
 Watch the recovery. The PENDING orders should move to CONFIRMED on their own.
+<Repeated Steps>
+
+
+Repeated steps:
+Execute query-orders.ps1  and query-inventory.ps1, and inspect orderflow/db-init to match orders and
+    reservations through rows of those 2 tables
+Insepect orderflow/order-service(serach "CONFIRMED") and orderflow/inventory-service(search "reserved") 
+    before, during, and after outage and restoration
+Running Log Insights count over both logs 
+Front-end UI showing that orders wait in PENDING when services are down, and then moved to CONFIRMED once re-started

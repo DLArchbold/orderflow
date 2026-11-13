@@ -1,0 +1,40 @@
+DONE and video-recorded:
+1. Local test of orders still being accepted and be PENDING while inventory-service is down, and then
+    when restarted, moved to CONFIRMED by themselves without any refreshing of page.: see docs/images/demo.gif and https://github.com/DLArchbold/orderflow/tree/main
+2. AWS drill of orders still being accepted and returning 201 and be PENDING while Kafka is down, and then when restarted, moved to 
+    CONFIRMED by themselves without any refreshing of page. 
+        (on steps performed, see "Option B: stop Kafka and start it again from the console." in notes\implmentations\aws_manually\step_6_2_4_demo\resume_point_2\kafka_outage\chosen_option_b_stop_and_start_kafka_from_console.txt)        
+        Proof: • CloudWatch logs (run query-orders.ps1  and query-inventory.ps1, and inspect orderflow/db-init to match orders and
+                     reservations through rows of those 2 tables), 
+                • CloudWatch logs (insepect orderflow/order-service(serach "CONFIRMED") and orderflow/inventory-service(search "reserved") 
+                    before, during, and after outage and restoration)
+                • ECS container status (running/stopped/running)
+                • Running Log Insights count over both logs groups (search "Duplicate-ignored query" in CloudWatch's Log Analytics side tab or in 
+                    notes\implmentations\aws_manually\step_6_2_4_demo\key_drills_detailed_proof.txt for implementation)
+                • Front-end UI showing that orders wait in PENDING when services are down, and then moved to CONFIRMED once re-started
+
+Remaining tests to record:
+    on AWS:
+        • See (notes\implmentations\aws_manually\step_6_2_4_demo\key_drills_and_basic_proof.txt),
+            elaboration of Drills below:
+            Drill: inventory-service down
+            Drill: order-service killed
+            Drill: Redelivery (the idempotent-consumer proof)
+        • To demo in a way for recording detailed proof, see (notes\implmentations\aws_manually\step_6_2_4_demo\key_drills_detailed_proof.txt)
+            Search "Proof after each drill" in key_drills_detailed_proof.txt, that section defines the steps to obtain the necessary detailed evidence.
+            There are actually 2 ways to simplify all steps needed to record detailed evidence, however, I've decided on this method
+                search ("Override files and wrapper"); implementation of the wrapper like query-orders.ps1 and 
+                running of wrapper, load testing, disruption, and Logs Insights duplicate query has not been done yet.          
+    local:
+        To fill-in. However, almost all local tests are completed with noted metrics and images, 
+            see https://github.com/DLArchbold/orderflow/blob/main/phase2/docs/resilience.md. Possibly increase types of tests in the 
+            future if new features are added but not at this point.
+
+Long-term todo:
+    Combine all tests, local or AWS, into an excel sheet and link necessary detailed evidence and ensure appropriate tests 
+        are created to obtain them.
+    Points on resume are backed up by local tests already, pending "Terraform-provisioned AWS ECS rolling deploys with 0 failed requests under load"
+        Rest of tests that were run locally do not necessarily have to have a demo on AWS, so for AWS the only test I will demo
+        for now is the 0 orders lost or double-processed across 6 Kafka service outages (see "DONE and video-recorded" above).
+    
+
