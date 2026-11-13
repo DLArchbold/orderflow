@@ -39,7 +39,7 @@ public class InventoryResultHandler {
             if (order.getStatus() == OrderStatus.CANCELLED && "RESERVED".equals(result)) {
                 log.warn("Stock was reserved for CANCELLED order {}; it stays reserved (known limit, ADR 0003)", orderId);
             } else {
-                log.info("Inventory result {} for order {} in status {} ignored", result, orderId, order.getStatus());
+                log.info("Inventory result {} for order {} in status {} ignored (order is no longer PENDING)", result, orderId, order.getStatus());
             }
             return;
         }
