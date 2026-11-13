@@ -18,6 +18,7 @@ Run each command from `phase2/infra/terraform`. Run `terraform plan` before each
 Expect failures on the first real `plan` or `apply`. The README says `validate` doesn't prove the resources will create. Likely trouble spots are Keycloak's issuer and `KC_HOSTNAME` (the plan allows `jwk-set-uri` as a fallback), the health-check paths, and IAM permissions. Record each fix in [ADR 0006](phase2/docs/adr/0006-aws-choices.md), because your notes track errors for interviews.
 
 ## Deploy under load (24c)
+Status 2026-11-13: preparation done (baseline restored, second image `dc1acc0` pushed); the k6 run, deploy and destroy are not done yet. Details in [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md).
 1. Build and push a second image with a new SHA tag. Have the `terraform apply -var image_tag=<new sha>` command ready in a second terminal.
 2. Start k6 against the ALB URL at a steady arrival rate for about 5 minutes. Use the k6 script from your load-test step. Write its output to a file, for example `--out json=` plus the console summary.
 3. At about the 2-minute mark, run the apply with the new tag.

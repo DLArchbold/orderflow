@@ -109,3 +109,5 @@ The INFO lines were committed (`2e552fa`), the images were pushed awith tag: `9f
 4. Create an order and look for "Order … created", "Stock reserved" and "… is now CONFIRMED" in the log groups (clear any filter and use the newest log stream).
 
 **Result.** Not recorded yet: add whether the new task became healthy and whether the INFO lines appeared.
+
+**Update 2026-11-13.** The services ran with image tag `9ff11d1` and were healthy when the 24c preparation started (all five services 1/1, all target groups healthy, an order reached CONFIRMED). See [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md).
