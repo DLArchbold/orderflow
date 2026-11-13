@@ -19,3 +19,4 @@ test-results/
 *.tfvars
 .terraform.lock.hcl.bak
 crash.log
+aws.txt

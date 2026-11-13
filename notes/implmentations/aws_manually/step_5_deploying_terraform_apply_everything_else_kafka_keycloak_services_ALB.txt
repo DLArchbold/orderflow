@@ -1,0 +1,392 @@
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_4_create_
+  databases_and_ecs_cluster_and_db_init_task_def_and_iam_role_policy_execution_
+  secrets.txt in the IDE. This may or may not be related to the current
+  task.</ide_opened_file>
+
+> How to implement:
+  Step 5: Everything else. Run terraform apply -var image_tag=<sha> to bring up
+  Kafka, Keycloak, the services and the ALB.
+
+● I'll start by reading your step 4 notes and the Terraform setup.
+
+  Searched for 3 patterns, read 6 files (ctrl+o to expand)
+
+● Step 5 is a plain terraform apply once the images are pushed and the databases
+  exist. I haven't run anything, because the apply creates paid resources (ALB,
+  5 Fargate services). Run these in PowerShell from the repo root.
+
+  Before you apply
+
+  1. Check the images exist under the tag you'll use. ECS pulls
+     <repo>:<image_tag>, and image_tag defaults to latest, which you didn't
+     push.
+  $tag = git rev-parse --short HEAD
+  aws ecr describe-images --repository-name orderflow-order-service --image-ids
+  imageTag=$tag --region us-east-1
+  aws ecr describe-images --repository-name orderflow-inventory-service
+  --image-ids imageTag=$tag --region us-east-1
+  aws ecr describe-images --repository-name orderflow-frontend --image-ids
+  imageTag=$tag --region us-east-1
+     Each should return one image. If the tag isn't found, finish step 3 first.
+  2. Confirm step 4 worked. aws logs tail /orderflow/db-init --region us-east-1
+     --since 2h should show two CREATE DATABASE lines. The order and inventory
+     services crash on start without those databases.
+  3. Check budget_email. It has no default, but terraform.tfvars
+     (phase2/infra/terraform/terraform.tfvars) exists, so it should be set
+     there.
+
+  Apply
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+  terraform apply -var "image_tag=$tag"
+
+  - If you open a new window, re-run $tag = git rev-parse --short HEAD first.
+    The tag must match what you pushed. In a new window you also need to be on
+    the same commit, or the SHA changes.
+  - Don't use -target this time. Your step 4 notes show targeted applies caused
+    the null output and the missing IAM policy. This apply creates the Keycloak
+    secret policy and the rest.
+  - Read the plan before typing yes. Expect it to add the ECS services, the ALB,
+    target groups, listener rules, Cloud Map and the Kafka and Keycloak task
+    definitions. It should not replace aws_db_instance.db.
+
+  The ALB takes a few minutes to create, and the apply returns before the
+  services are healthy.
+
+  Wait for the services
+
+  terraform output app_url
+  aws ecs describe-services --cluster orderflow --region us-east-1 --services
+  kafka keycloak inventory-service order-service frontend --query
+  "services[].{name:serviceName,running:runningCount,desired:desiredCount}"
+
+  Each should reach running: 1. The expected start order is:
+  1. Kafka comes up first, because inventory and order depend on it.
+  2. Keycloak takes 2–3 minutes to import the realm.
+  3. The Spring services take about 1–2 minutes, then register with the ALB.
+
+  Then open app_url in a browser. It's HTTP only, so use http://.
+
+  If something fails
+
+  Check the service events and the container logs:
+  aws ecs describe-services --cluster orderflow --region us-east-1 --services
+  order-service --query "services[0].events[:5].message"
+  aws logs tail /orderflow/order-service --region us-east-1 --since 15m
+  I'm guessing the log group name from the /orderflow/db-init pattern. List them
+  with aws logs describe-log-groups --log-group-name-prefix /orderflow.
+
+  ┌──────────────────────────────────┬──────────────────────────────────────┐
+  │             Symptom              │             Likely cause             │
+  ├──────────────────────────────────┼──────────────────────────────────────┤
+  │ CannotPullContainerError for an  │ The image_tag doesn't match what you │
+  │ app image                        │  pushed.                             │
+  ├──────────────────────────────────┼──────────────────────────────────────┤
+  │ ResourceInitializationError for  │ The execution role's secrets policy  │
+  │ a secret                         │ is missing. A full apply should have │
+  │                                  │  created it.                         │
+  ├──────────────────────────────────┼──────────────────────────────────────┤
+  │ Spring service crash-loops with  │ The db-init didn't run. Re-run       │
+  │ a database error                 │ Invoke-Expression (terraform output  │
+  │                                  │ -raw db_init_command).               │
+  ├──────────────────────────────────┼──────────────────────────────────────┤
+  │                                  │ Open /config.js on the site.         │
+  │ Login redirects to localhost     │ OIDC_AUTHORITY should be the ALB     │
+  │                                  │ URL.                                 │
+  ├──────────────────────────────────┼──────────────────────────────────────┤
+  │                                  │ The service is still starting. Wait  │
+  │ Targets unhealthy in the ALB     │ out the grace periods (Keycloak      │
+  │                                  │ 180s, order-service 120s).           │
+  └──────────────────────────────────┴──────────────────────────────────────┘
+
+  If the circuit breaker rolls back a service, the events list says why.
+
+  Cost
+
+  This stack (ALB, five Fargate tasks, RDS) bills hourly. When you've finished
+  testing, run your destroy script or terraform destroy.
+
+  If the plan shows anything surprising, such as RDS being replaced, paste it
+  here before you confirm.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\terraform.tfvars in the
+  IDE. This may or may not be related to the current task.</ide_opened_file>
+
+> After running the code:
+  aws ecs describe-services --cluster orderflow --region us-east-1 --services
+  kafka keycloak inventory-service order-service frontend --query
+  "services[].{name:serviceName,running:runningCount,desired:desiredCount}"
+
+  This is what was returning for the keycloak ECS:
+  {
+          "name": "keycloak",
+          "running": 0,
+          "desired": 1
+      },
+  This message log was returned while checking the ECS logs for a task:
+  /bin/sh: line 1: /opt/keycloak/data/import/orderflow-realm.json: No such file
+  or directory
+
+● The import directory doesn't exist in the Keycloak image. The echo ... >
+  /opt/keycloak/data/import/... redirect fails, && stops the chain, and Keycloak
+  never starts. I'll fix the command so it creates the directory first.
+
+● Update(phase2\infra\terraform\ecs_services.tf)
+  ⎿  Added 1 line, removed 1 line
+      113      # Fargate cannot mount a file from the repository, so the 
+           realm JSON travels in an environment variable and is
+      114      # written to the import directory before Keycloak starts.
+      115      entryPoint = ["/bin/sh", "-c"]
+      116 -    command    = ["echo \"$REALM_JSON\" > /opt/keycloak/data/i
+          -mport/orderflow-realm.json && exec /opt/keycloak/bin/kc.sh sta
+          -rt-dev --import-realm"]                                       
+      116 +    command    = ["mkdir -p /opt/keycloak/data/import && print
+          +f '%s' \"$REALM_JSON\" > /opt/keycloak/data/import/orderflow-r
+          +ealm.json && exec /opt/keycloak/bin/kc.sh start-dev --import-r
+          +ealm"]                                                        
+      117      environment = [
+      118        { name = "REALM_JSON", value = local.keycloak_realm },
+      119        { name = "KC_BOOTSTRAP_ADMIN_USERNAME", value = "admin" 
+           },
+
+● I changed the Keycloak command in ecs_services.tf:116
+  (phase2/infra/terraform/ecs_services.tf#L116). It now runs mkdir -p
+  /opt/keycloak/data/import before writing the file. I also swapped echo for
+  printf '%s' so the realm JSON is written exactly as given, with no
+  escape-sequence handling. I haven't applied or tested it.
+
+  Apply it:
+
+  terraform apply -var "image_tag=$tag"
+
+  The plan should show only the Keycloak task definition being replaced and the
+  Keycloak service updating. Nothing else should change, and RDS must not be
+  touched. Because Keycloak's deployment is set to 0% minimum healthy, ECS stops
+  the failing task and starts a new one.
+
+  Then wait 2–3 minutes and check:
+
+  aws ecs describe-services --cluster orderflow --region us-east-1 --services
+  keycloak --query
+  "services[0].{running:runningCount,events:events[:3].message}"
+  aws logs tail /orderflow/keycloak --region us-east-1 --since 10m
+
+  The log group name is a guess. List the real ones with aws logs
+  describe-log-groups --log-group-name-prefix /orderflow. A healthy start logs a
+  realm import for orderflow, then Keycloak 26.0.7 ... started.
+
+  Two things to watch for after this fix:
+  - Next failure point. The realm file is passed as an environment variable. ECS
+    limits the combined container environment size, and if orderflow-realm.json
+    is large the task can fail to register or start with an error about that.
+    If the plan errors on the task definition, paste it here.
+  - Other services. order-service validates tokens against Keycloak. It may fail
+    its health checks until Keycloak is up, which should resolve on its own
+    once Keycloak starts.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\ecs_services.tf in the
+  IDE. This may or may not be related to the current task.</ide_opened_file>
+
+> I am able to access app-What happens if I run terraform destroy to limit
+  resource usage? How do I reverse
+  ⎿  Interrupted · What should Claude do instead?
+
+> What happens if I run terraform destroy to limit resource usage? How do I
+  reverse the effects of terraform destroy to re-enable all features?
+
+● Let me check how your config handles RDS, secrets and ECR on destroy, and what
+  the destroy script does.
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● terraform destroy deletes everything Terraform manages. Nothing is kept: your
+  config is built to be torn down, and you can rebuild it with the same steps
+  you've just followed.
+
+  What gets deleted
+
+  Resource: ECS cluster, 5 services, task definitions
+  Effect: Gone. Running tasks are stopped.
+  ────────────────────────────────────────
+  Resource: ALB, target groups, listener rules
+  Effect: Gone. The app_url address is dead and will be different next time.
+  ────────────────────────────────────────
+  Resource: RDS instance
+  Effect: Deleted with all data. skip_final_snapshot = true and
+  backup_retention_period = 0 mean there is no snapshot and no backup
+  (data.tf:67-69 (phase2/infra/terraform/data.tf#L67-L69)). Orders and
+  inventory rows are lost.
+  ────────────────────────────────────────
+  Resource: Secrets Manager secrets (DB, Keycloak)
+  Effect: Deleted immediately, with no recovery window (data.tf:41
+  (phase2/infra/terraform/data.tf#L41)). Passwords are regenerated next time.
+  ────────────────────────────────────────
+  Resource: ECR repositories and your pushed images
+  Effect: Deleted. force_delete = true removes them even though they contain
+  images (data.tf:29 (phase2/infra/terraform/data.tf#L29)).
+  ────────────────────────────────────────
+  Resource: VPC, subnets, security groups, IAM roles, log groups, Cloud Map
+  Effect: Gone.
+  ────────────────────────────────────────
+  Resource: Keycloak users and realm state
+  Effect: Gone. It runs in dev mode with no persistent storage.
+
+  Not affected: your AWS account, the budget alert (if it was created outside
+  Terraform; check, since budget_email is a Terraform variable, so the budget is
+  probably destroyed too), and your code and notes. The local terraform.tfstate
+  stays and then holds an empty state.
+
+  If the budget alert is managed by this config, you'd lose your cost alarm
+  until the next apply. To keep it, remove it with terraform destroy -target=...
+  instead, or accept that and re-create it on the next apply. Run terraform
+  state list | Select-String budget to see.
+
+  Preview and run it
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+  terraform plan -destroy
+  terraform destroy
+
+  Read the plan first. The destroy takes about 5–10 minutes, mostly RDS.
+  Afterwards, check the console in us-east-1 for leftover load balancers and RDS
+  instances, as your README suggests.
+
+  Bring it back (there is no undo)
+
+  You rebuild rather than reverse, and these are the same steps as before:
+
+  1. Create everything: terraform apply -var "image_tag=$tag" would fail on
+     image pulls, since ECR is empty. So create ECR first:
+  terraform apply "-target=aws_ecr_repository.app"
+     This is the one deliberate use of -target. Then follow with the full apply
+     at step 4.
+  2. Push images (step 3): ECR login with the throwaway DOCKER_CONFIG, then
+     build and push the three images. Docker's local layer cache makes the
+     rebuild quick. You can re-use the same $tag.
+  3. Create the databases: the databases are new, so the db-init task has to run
+     again. It needs the full stack's cluster and RDS, so run a full apply
+     first:
+  terraform apply -var "image_tag=$tag"
+  Invoke-Expression (terraform output -raw db_init_command)
+  aws logs tail /orderflow/db-init --region us-east-1 --since 10m
+     Expect two CREATE DATABASE lines. Order-service and inventory-service will
+     crash-loop until this has run, then recover on their own, or force it with
+     aws ecs update-service --cluster orderflow --service order-service
+     --force-new-deployment.
+  4. Get the new URL: terraform output app_url. It changes every time, and the
+     config injects it into Keycloak and the frontend automatically.
+
+  Order is the catch: a full apply before step 3's push means the app services
+  fail to pull images until you push. They keep retrying, so pushing afterwards
+  works, but you'll see errors in between.
+
+  Cheaper alternative to a full destroy
+
+  If you only want to stop the hourly cost but keep RDS data and ECR images for
+  a short break, scale the services to zero:
+
+  foreach ($s in
+  "kafka","keycloak","inventory-service","order-service","frontend") {
+    aws ecs update-service --cluster orderflow --service $s --desired-count 0
+  --region us-east-1
+  }
+
+  That stops the Fargate cost. But the ALB (~$0.02/hr) and RDS keep billing, so
+  it only suits a break of hours, not days. Also, Terraform will want to set
+  desired_count back to 1 on the next apply, which is fine. For anything longer
+  than a day, destroy.
+
+  Before destroying, if you want to keep anything, such as a record of a working
+  deploy, save it first: terraform output > outputs.txt, and screenshot or copy
+  the app. The state file holds the generated passwords, so don't commit it.
+
+> Add substeps under Step 2: Push images (step 3): ECR login with the throwaway
+  DOCKER_CONFIG, then build and push the three images. Docker's local layer
+  cache makes the rebuild quick. You can re-use the same $tag.
+
+● Here is Step 2 expanded into substeps. Run it in PowerShell, in one window,
+  after the ECR repositories exist again (step 1's targeted apply). Every
+  command comes from your step 3 notes, including the fixes you found along the
+  way.
+
+  2. Push images
+
+  2a. Start in the repo root and set variables
+  cd "C:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow"
+  $tf  = ".\phase2\infra\terraform\"
+  $tag = git rev-parse --short HEAD
+  $reg = (terraform "-chdir=$tf" output -json ecr_repositories |
+  ConvertFrom-Json)
+  $tag
+  $reg
+  - $tag should print a short SHA, and $reg should list three repo URLs. If
+    either is empty, the ECR apply didn't finish.
+  - Re-using the same tag only works if HEAD hasn't moved. If you've made
+    commits since, $tag is different, so pass that new value as image_tag in the
+    full apply. The image content must match the commit you tag it with, so
+    commit or stash changes before building.
+
+  2b. Confirm AWS credentials
+  aws sts get-caller-identity
+  If this fails, run aws sso login and retry.
+
+  2c. Create the throwaway Docker config (once per window)
+  $env:DOCKER_CONFIG = Join-Path $env:TEMP "docker-ecr"
+  New-Item -ItemType Directory -Force $env:DOCKER_CONFIG | Out-Null
+  Set-Content (Join-Path $env:DOCKER_CONFIG "config.json")
+  '{"auths":{"example.invalid":{}}}' -Encoding ascii
+  This avoids the Windows Credential Manager "stub received bad data" error. The
+  folder survives a destroy, so on a re-run you only need to repeat the
+  $env:DOCKER_CONFIG line if you opened a new window.
+
+  2d. Log in to ECR
+  $pw = aws ecr get-login-password --region us-east-1
+  docker login --username AWS --password $pw
+  702623019395.dkr.ecr.us-east-1.amazonaws.com
+  Expect Login Succeeded. The token lasts 12 hours. The registry host is your
+  account ID, which doesn't change between destroys.
+
+  2e. Build the three images
+  docker build --platform linux/amd64 -t "$($reg.'order-service'):$tag"
+  services/order-service
+  docker build --platform linux/amd64 -t "$($reg.'inventory-service'):$tag"
+  services/inventory-service
+  docker build --platform linux/amd64 -t "$($reg.'frontend'):$tag" frontend
+  Each command must be on one line, with the build path last. Docker's local
+  cache holds the layers from your earlier builds, so these should finish in
+  seconds to a couple of minutes, unless you changed dependencies or code. The
+  repo URLs are the same after a destroy, so the cached images are tagged
+  correctly.
+
+  2f. Push them
+  docker push "$($reg.'order-service'):$tag"
+  docker push "$($reg.'inventory-service'):$tag"
+  docker push "$($reg.'frontend'):$tag"
+  The ECR repos are empty after a destroy, so every layer uploads again. That is
+  the slowest part.
+
+  2g. Verify
+  aws ecr describe-images --repository-name orderflow-order-service --region
+  us-east-1 --query "imageDetails[].imageTags"
+  aws ecr describe-images --repository-name orderflow-inventory-service --region
+  us-east-1 --query "imageDetails[].imageTags"
+  aws ecr describe-images --repository-name orderflow-frontend --region
+  us-east-1 --query "imageDetails[].imageTags"
+  Each should list $tag.
+
+  2h. Clean up when you're done for the session
+  Remove-Item Env:DOCKER_CONFIG
+  Remove-Item -Recurse -Force (Join-Path $env:TEMP "docker-ecr")
+  The folder holds the ECR token in plain text. Don't clean up before step 3's
+  full apply if you still need to push again.
+
+  Then continue with step 3 (full apply, then db_init_command).
+
+  I wrote these into the chat only. If you want them added to a notes file, such
+  as a new file in notes/implmentations/aws_manually/, tell me which one.

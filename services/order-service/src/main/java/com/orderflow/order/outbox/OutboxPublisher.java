@@ -56,6 +56,8 @@ public class OutboxPublisher {
                 kafka.send(record).get(5, TimeUnit.SECONDS);
                 // Only after the broker acked; saved on commit through dirty checking.
                 event.markPublished();
+                log.info("Published outbox event {} ({}) for aggregate {} to {}",
+                        event.getId(), event.getType(), event.getAggregateId(), KafkaConfig.ORDERS_EVENTS_TOPIC);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;

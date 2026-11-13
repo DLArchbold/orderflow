@@ -1,0 +1,595 @@
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\aws.txt in the IDE. This may or may not be
+  related to the current task.</ide_opened_file>
+
+> What happens after I obtain the UserId, Account, and ARN through AWS
+  Configure SSO? How do I proceed with
+
+  | 13 | AWS apply, deploy under load, destroy | Costs money | Your credentials
+  and an explicit yes |
+
+● I'll check your aws.txt and the plan's step 13 first, so the answer matches
+  your project.
+
+  Searched for 2 patterns, read 2 files (ctrl+o to expand)
+
+● The identity output means your SSO login works. Nothing is deployed yet. The
+  steps that follow are in phase2/infra/terraform/README.md, under "Order of
+  work". Step 1 is done, so you're at step 2.
+
+  Your aws.txt shows account 702623019395, role SystemAdministrator and profile
+  project-sso. That role is very powerful, so the budget alarm matters.
+
+  Before you run anything
+
+  - Use the profile. In each new terminal, run aws sso login --profile
+    project-sso. Then run $env:AWS_PROFILE="project-sso" and
+    $env:AWS_REGION="<your region>", so Terraform uses the same credentials.
+  - Keep aws.txt out of git. It's untracked. The account ID isn't a secret, but
+    delete the file or add it to .gitignore anyway.
+  - Expect the first plan to fail. The README says terraform validate only
+    checks syntax. This config has never been planned, so expect to fix some
+    errors, and the AWS bill starts once resources exist.
+
+  The steps
+
+  All of these run in phase2/infra/terraform.
+
+  1. Budget alarm first. Run terraform init. Then run terraform apply -var
+     budget_email=<your email> -target=aws_budgets_budget.monthly. Confirm the
+     subscription email AWS sends you.
+  2. Foundations. Apply the network, ECR and RDS groups, running terraform plan
+     after each group. RDS takes about 10 minutes.
+  3. Push images. Run terraform output push_images_commands. The images must be
+     linux/amd64.
+  4. Create the databases. Run terraform output -raw db_init_command | sh, then
+     check the /orderflow/db-init log group.
+  5. Full apply. Run terraform apply -var image_tag=<commit sha>. This brings up
+     Kafka, Keycloak, the services and the ALB.
+  6. Smoke test. Open terraform output app_url, log in as alice and create an
+     order. (Done 2026-11-10; see step_6_smoke_test_and_reading_the_logs.txt.
+     Redis warnings in the logs are expected: there is no Redis on AWS.)
+  7. Deploy under load. This is the "Done when" in PLAN.md. Start k6 against the
+     ALB URL. While it runs, trigger a rolling deploy (a new image_tag and
+     terraform apply, or aws ecs update-service --force-new-deployment). Save
+     the k6 output showing 0 failed requests.
+  8. Destroy. Run terraform destroy. Then check the console in every region you
+     used for load balancers, RDS instances and snapshots, ECR images, log
+     groups and Elastic IPs. Check Cost Explorer the next day.
+
+  Working together
+
+  When you're ready, tell me "yes, go ahead with step 2" and say which region
+  you're using. I'll run the commands, but I'll stop and ask before each apply
+  and before destroy. I'll also paste any errors from the first plan, and we can
+  fix them one at a time.
+
+> <ide_selection>The user selected the lines 2 to 2 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\aws.txt:
+  project-sso
+
+  This may or may not be related to the current task.</ide_selection>
+
+> aws: [ERROR]: The config profile (project-sso) could not be found
+
+● project-sso in aws.txt is your SSO username, which is the last part of the
+  ARN. It isn't a CLI profile name. I'll look at what profile names you actually
+  have.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Your profile is named SystemAdministrator-702623019395, which is the default
+  name aws configure sso generates. The region is us-east-1. Use that name
+  wherever I wrote project-sso:
+
+  aws sso login --profile SystemAdministrator-702623019395
+  $env:AWS_PROFILE = "SystemAdministrator-702623019395"
+  $env:AWS_REGION  = "us-east-1"
+  aws sts get-caller-identity
+
+  The last command should print the same account 702623019395 as in aws.txt.
+  Terraform reads AWS_PROFILE from the environment, so it will use the same
+  login. You need to set the variables again in each new terminal.
+
+  There's also an empty [default] profile. Plain aws commands without --profile
+  use that one and will fail, which is another reason to set AWS_PROFILE.
+
+  Tell me when get-caller-identity works. I'll then start step 2, the budget
+  alarm. I'll need the email address for the budget alerts, and I'll ask before
+  the apply.
+
+> I've already set AWS_PROFILE and AWS_REGION in
+  Microsoft.PowerShell_profile.ps1
+
+● Good. I'll check that it works, including from my own shell.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● My shell didn't load your PowerShell profile, so both variables are empty
+  here. I'll retry with the profile set explicitly.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The login works. With the profile set, I get account 702623019395 and the
+  SystemAdministrator role.
+
+  - Your terminals: the profile settings in Microsoft.PowerShell_profile.ps1
+    should work there. In a new terminal, $env:AWS_PROFILE should print
+    SystemAdministrator-702623019395. If it's empty, the profile file isn't
+    loading.
+  - My shell: it starts without your profile, so I'll set AWS_PROFILE and
+    AWS_REGION in each command I run. That doesn't affect you.
+  - Session expiry: SSO sessions expire after a few hours. If you see an
+    "invalid token" or "expired" error, run aws sso login again.
+
+  Step 2 is next, the budget alarm. It creates one AWS Budgets resource, which
+  is free. I need two things from you:
+  1. The email address for the alerts.
+  2. A yes to run terraform init and then apply
+     -target=aws_budgets_budget.monthly.
+
+  I'll run terraform plan first and show you the output before any apply.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\aws_instructions.txt in the IDE. This may or may
+  not be related to the current task.</ide_opened_file>
+
+> What are the steps that will be implemented when executing terraform init and
+  apply?
+
+● I'll read the Terraform files so I can describe what they do rather than
+  guess.
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● terraform init
+
+  It changes nothing in AWS. It only prepares your local folder:
+
+  - Downloads the hashicorp/aws (~> 5.0) and hashicorp/random (~> 3.6) providers
+    into .terraform/.
+  - Creates .terraform.lock.hcl, which pins the exact provider versions.
+  - Sets up the local state backend. State goes in terraform.tfstate, which is
+    git-ignored because it will hold generated passwords later.
+
+  terraform apply -var budget_email=... -target=aws_budgets_budget.monthly
+
+  1. Read. Terraform reads the config in phase2/infra/terraform and the data
+     source for availability zones in us-east-1.
+  2. Plan. -target limits the plan to one resource, so nothing else is planned
+     or created. It will show 1 to add.
+  3. Prompt. It shows the plan and waits for you to type yes.
+  4. Create. It makes one AWS Budgets resource, orderflow-monthly (data.tf:3
+     (phase2/infra/terraform/data.tf#L3)).
+     - Limit: $10 a month. This is the default budget_usd, which you can change.
+     - Alert 1: an email when actual spend goes above 80% ($8).
+     - Alert 2: an email when forecast spend goes above 100% ($10).
+     - Tag: Project=orderflow is added by the provider's default_tags.
+  5. Save. The result is written to terraform.tfstate.
+
+  What to expect
+
+  - Cost: none. Budgets are free for the first two budgets on an account.
+  - Alert only: a budget sends emails but does not stop anything. It won't shut
+    down resources if you overspend, so terraform destroy at the end of each
+    session is still what protects you.
+  - Delay: AWS budget data can lag by up to about a day, so the alerts are not
+    instant.
+  - Possible errors: a failure on this first apply most likely means a
+    permissions problem or a typo in the email. The SystemAdministrator role has
+    full access, so permissions are unlikely.
+
+  The -target flag is deliberate. Without it, a plain apply would try to create
+  everything, including RDS and the ALB, which costs money. Don't drop -target
+  until the budget exists.
+
+  If that's what you expected, give me the email address and say "yes, run init
+  and plan". I'll show you the plan before anything is applied.
+
+> <ide_selection>The user selected the lines 12 to 12 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\main.tf:
+  var.
+
+  This may or may not be related to the current task.</ide_selection>
+
+> How to perform all these steps manually myself? What code do I need to run?
+
+● Run these in a PowerShell terminal. Replace you@example.com with your real
+  email.
+
+  1. Open a terminal and check the login
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+
+  $env:AWS_PROFILE   # should print SystemAdministrator-702623019395
+  aws sts get-caller-identity
+
+  If you get an "expired" or "invalid token" error, run aws sso login and then
+  repeat the check. If $env:AWS_PROFILE is empty, set it by hand:
+
+  $env:AWS_PROFILE = "SystemAdministrator-702623019395"
+  $env:AWS_REGION  = "us-east-1"
+
+  2. Initialize
+
+  terraform init
+
+  This is safe and creates nothing in AWS. It should end with "Terraform has
+  been successfully initialized".
+
+  3. Preview the budget
+
+  terraform plan -var "budget_email=you@example.com"
+  -target=aws_budgets_budget.monthly
+
+  Check that the summary says Plan: 1 to add, 0 to change, 0 to destroy. If it
+  plans more than one resource, stop and don't apply.
+
+  4. Create the budget
+
+  terraform apply -var "budget_email=you@example.com"
+  -target=aws_budgets_budget.monthly
+
+  Read the plan, then type yes. Terraform may warn that -target is for
+  exceptional use. That's expected here.
+
+  5. Check it
+
+  terraform state list
+  aws budgets describe-budgets --account-id 702623019395
+
+  The first command should list aws_budgets_budget.monthly. The second should
+  show orderflow-monthly with a limit of 10.0 USD.
+
+  Notes
+
+  - Quoting: PowerShell needs the quotes around -var "budget_email=...". Without
+    them it can split the argument.
+  - Later steps: for step 3 onward in the README, give the -var flags again each
+    time, or put them in a terraform.tfvars file. That file is git-ignored. For
+    example: budget_email = "you@example.com".
+  - Undo: to remove just the budget, run terraform destroy -var
+    "budget_email=you@example.com" -target=aws_budgets_budget.monthly.
+
+  Paste any error or the plan summary here if something looks wrong.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\outputs.tf in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+> Does "terraform plan -var "budget_email=you@example.com"
+  -target=aws_budgets_budget.monthly" run any file in the project?
+
+● Not in the sense of running a program. Terraform doesn't execute your files.
+  It reads them as configuration.
+
+  What it reads
+
+  - Every .tf file in the current folder: main.tf, variables.tf, network.tf,
+    data.tf, alb.tf, ecs_base.tf, ecs_services.tf and outputs.tf. Terraform
+    loads them all together, so the file names don't matter. It reads all of
+    them even with -target, because it has to build the full dependency graph
+    before narrowing to one resource.
+  - terraform.tfvars, if present: it's loaded automatically, but you don't have
+    one yet.
+  - .terraform/ and .terraform.lock.hcl: these are the downloaded providers and
+    version pins from terraform init.
+  - terraform.tfstate: it records what Terraform has already created. Right now
+    it's missing or empty.
+
+  What it does with them
+
+  1. It parses the .tf files and checks they're valid.
+  2. It calls the AWS API to read the availability zones data source. This is a
+     read-only call.
+  3. It compares the budget resource in data.tf:3
+     (phase2/infra/terraform/data.tf#L3) with the state. The state has nothing
+     yet, so it plans to create it.
+  4. It prints the plan. A plan changes nothing in AWS and writes nothing to
+     state.
+
+  What it doesn't run
+
+  - It doesn't run your Java, TypeScript or Docker code.
+  - It doesn't run scripts, unless a .tf file contains a local-exec provisioner
+    or an external data source. I haven't grepped for those. Run Select-String
+    -Path *.tf -Pattern "local-exec|external" in the terraform folder to
+    confirm. I'd expect no matches.
+  - It doesn't touch files outside the terraform folder. The only exception is a
+    .tf file that reads one with file() or templatefile(). Run Select-String
+    -Path *.tf -Pattern "file\(" to check. The Keycloak realm JSON under
+    phase2/infra/keycloak/ is the likely one.
+
+  The -var flag only sets the budget_email variable declared in variables.tf:17
+  (phase2/infra/terraform/variables.tf#L17).
+
+> <ide_selection>The user selected the lines 17 to 17 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\variables.tf:
+  budget
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Must ""terraform plan -var "budget_email=you@example.com"
+  -target=aws_budgets_budget.monthly" be run in /phase2/infra/terraform?
+
+● Yes, by default. Terraform only reads the .tf files in the folder you run it
+  from, and it doesn't search parent or child folders. Run from anywhere else,
+  it reports "No configuration files" or a similar error. It also needs the
+  .terraform/ folder and terraform.tfstate that init creates in that folder.
+
+  There are two ways to run it from elsewhere:
+
+  # From the repo root, using -chdir
+  terraform -chdir=phase2/infra/terraform init
+  terraform -chdir=phase2/infra/terraform plan -var
+  "budget_email=you@example.com" -target=aws_budgets_budget.monthly
+
+  Use -chdir before the subcommand, and use it on every command. If you run init
+  in one folder and plan in another, the second one fails because the providers
+  aren't installed there.
+
+  Staying in the folder is simpler and less error-prone:
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+
+  Your later commands, such as terraform output and terraform destroy, also need
+  to run in that folder or use the same -chdir.
+
+> Must "terraform init" be run in /phase2/infra/terraform?
+
+● Yes, by the same rule. terraform init reads the .tf files in the folder it
+  runs in to see which providers are needed. It then creates .terraform/ and
+  .terraform.lock.hcl there.
+
+  In another folder it fails with an error like "Terraform initialized in an
+  empty directory". It would also create a stray .terraform/ folder in that
+  place.
+
+  You can run it from the repo root with terraform -chdir=phase2/infra/terraform
+  init.
+
+  Run init once per folder, then run plan, apply and the rest from that same
+  folder. You only need to run init again if you change the provider versions or
+  the backend, or if you delete .terraform/.
+
+> What if I ran "terraform init" in repo root without "terraform
+  -chdir=phase2/infra/terraform init"? the .terraform file and .lock.hcl file
+  seems to be created without issues.
+
+● I said it fails, and that was too strong. I'll check what actually got
+  created.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Nothing is in the repo root, so I'll look at where those files actually are.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I can't find them in the repo root. The only .terraform/ and
+  .terraform.lock.hcl anywhere in the repo are in phase2/infra/terraform/. The
+  terraform.tfstate file doesn't exist anywhere yet.
+
+  Those files probably date from the earlier terraform validate run on
+  2026-11-06, which the README mentions. That run used init -backend=false. So
+  you may be looking at the old files in the right folder and not new ones from
+  the root.
+
+  The other possibility is that you ran init in the root and it was cleaned up
+  or went to a different folder. To check, run this in the root and see what it
+  lists:
+
+  Get-ChildItem -Force | Where-Object Name -like ".terraform*"
+
+  If you did run init in the root, here is what I'd expect:
+  - Empty folder: init doesn't fail. I was wrong to say it errors. It prints a
+    warning like "Terraform initialized in an empty working directory", exits
+    successfully, and may create a .terraform/ folder.
+  - No lock file: no .terraform.lock.hcl is created, because there are no
+    providers to pin.
+  - Not usable: the folder has no .tf files, so a plan there fails.
+
+  If you do find root-level files, delete them with Remove-Item -Recurse -Force
+  .terraform and Remove-Item .terraform.lock.hcl. Then run init in
+  phase2/infra/terraform.
+
+  I also see an untracked folder notes/implmentations/aws_manually/. It's empty.
+  Is that one of yours?
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\ecs_base.tf in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+> When entering this command with my email in the placeholder "terraform plan
+  -var "budget_email=you@example.com" -target=aws_budgets_budget.monthly
+  ", the following errors are returned:
+  │ Error: Too many command line arguments
+  │
+  │ To specify a working directory for the plan, use the global -chdir flag.
+  ╵
+  ╷
+  │ Error: Invalid target "aws_budgets_budget"
+  │
+  │ Resource specification must include a resource type and name.
+
+● This is a PowerShell quoting problem, not a problem with your Terraform files
+  or AWS. PowerShell 5.1 splits an unquoted -target=aws_budgets_budget.monthly
+  at the dot. Terraform receives -target=aws_budgets_budget and a stray
+  .monthly. That explains both errors:
+
+  - "Invalid target aws_budgets_budget" came from the half with no .monthly.
+  - "Too many command line arguments" came from the leftover .monthly.
+
+  Put the whole flag in quotes:
+
+  terraform plan -var "budget_email=you@example.com"
+  "-target=aws_budgets_budget.monthly"
+
+  Use the same quoting for apply:
+
+  terraform apply -var "budget_email=you@example.com"
+  "-target=aws_budgets_budget.monthly"
+
+  An alternative is the stop-parsing token --%, which passes the rest of the
+  line through unchanged:
+
+  terraform --% plan -var budget_email=you@example.com
+  -target=aws_budgets_budget.monthly
+
+  I gave you the unquoted form earlier, and it was wrong for PowerShell. Use the
+  quoted form for every later -target. The README commands are written for bash
+  and have the same problem in PowerShell.
+
+  If the plan then shows Plan: 1 to add, 0 to change, 0 to destroy, it's safe to
+  apply.
+
+> <ide_selection>The user selected the lines 3 to 3 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\data.tf:
+  resource "aws_budgets_budget" "monthly" {
+
+  This may or may not be related to the current task.</ide_selection>
+
+> │ Error: creating Budget (orderflow-monthly): operation error Budgets:
+  CreateBudget, https response error StatusCode: 400, RequestID:
+  bc602fd8-11ec-4c3e-aa26-19251c671c9d, AccessDeniedException: User:
+  arn:aws:sts::702623019395:assumed-role/AWSReservedSSO_SystemAdministrator_a2f
+  97b9bad086d06/project-sso is not authorized to perform: budgets:ModifyBudget
+  on resource: arn:aws:budgets::702623019395:budget/orderflow-monthly because
+  no identity-based policy allows the budgets:ModifyBudget action
+
+● This is an AWS permissions problem, not a Terraform one. I said earlier that
+  permissions were unlikely to fail, and I was wrong.
+
+  The SystemAdministrator permission set is not full admin. It's AWS's "System
+  Administrator" job-function policy, and it doesn't include budgets:*. It will
+  probably also fail later, when Terraform creates IAM roles for ECS. The budget
+  wasn't created, so nothing needs cleaning up and the state is untouched.
+
+  Fix: give your SSO user a broader permission set
+
+  1. Sign in to the IAM Identity Center console as the account owner. Use the
+     root user or the account's original admin. Your project-sso role can't do
+     this.
+  2. Go to AWS accounts, select account 702623019395, then Assign users or
+     groups. Pick your user project-sso.
+  3. Choose the AdministratorAccess permission set and finish the assignment. If
+     it isn't listed, create it first under Permission sets, as a predefined
+     AdministratorAccess set.
+  4. Update the CLI. Either run aws configure sso again, which creates a new
+     profile named like AdministratorAccess-702623019395, or change
+     sso_role_name in the profile in ~/.aws/config to AdministratorAccess.
+  5. Set AWS_PROFILE to the new profile name. Then run aws sso login and aws sts
+     get-caller-identity. The ARN should now contain
+     AWSReservedSSO_AdministratorAccess_....
+  6. Run the same terraform apply again.
+
+  If it still fails
+
+  Budgets and billing pages can need one more switch. As root, open Account
+  settings and turn on IAM user and role access to Billing information. Only do
+  this if the new error mentions billing or Cost Explorer.
+
+  Why full admin and not a smaller policy
+
+  Adding only budgets:* fixes this step, but step 2 onward creates VPCs, RDS,
+  ECS, IAM roles and the ALB, so you'd hit a new denial each time. For a
+  personal demo account that you destroy after each session, AdministratorAccess
+  is the practical choice. The budget alarm and the destroy step are what limit
+  the risk.
+
+  Paste the new get-caller-identity output once the profile switch works and
+  we'll rerun the apply.
+
+> <ide_selection>The user selected the lines 12 to 12 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\main.tf:
+  var.
+
+  This may or may not be related to the current task.</ide_selection>
+
+> │ Error: failed to get shared config profile,
+  AdministratorAccess-702623019395
+  │
+  │   with provider["registry.terraform.io/hashicorp/aws"],
+  │   on main.tf line 11, in provider "aws":
+  │   11: provider "aws" {
+
+● Terraform can't find a profile with that name in your AWS config. I'll check
+  what's there now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The profile AdministratorAccess-702623019395 doesn't exist. Your config has
+  one profile, SystemAdministrator-702623019395. At some point you changed its
+  sso_role_name to AdministratorAccess, but the name still says
+  SystemAdministrator. Your AWS_PROFILE is set to the name that doesn't exist.
+
+  The simplest fix is to point AWS_PROFILE at the existing profile. The name is
+  cosmetic, and the role it uses is what matters.
+
+  $env:AWS_PROFILE = "SystemAdministrator-702623019395"
+  aws sso login
+  aws sts get-caller-identity
+
+  The ARN should now contain AWSReservedSSO_AdministratorAccess_.... If it still
+  says SystemAdministrator, you're on the old cached session. Run aws sso
+  logout, then aws sso login again.
+
+  Also update AWS_PROFILE in your Microsoft.PowerShell_profile.ps1. Otherwise
+  every new terminal will point at the missing profile again.
+
+  If you'd rather have a profile name that matches the role, you can rename it
+  in ~/.aws/config. Change the [profile ...] header, then update AWS_PROFILE to
+  match. Don't change sso_account_id or sso_session.
+
+  Once get-caller-identity shows AdministratorAccess, rerun the apply with the
+  quoted target:
+
+  terraform apply -var "budget_email=you@example.com"
+  "-target=aws_budgets_budget.monthly"
+
+> <ide_selection>The user selected the lines 4 to 4 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\aws.txt:
+  AdministratorAccess
+
+  This may or may not be related to the current task.</ide_selection>
+
+> Why don't I need to change AWS_PROFILE and AWS_REGION in
+  Microsoft.PowerShell_profile.ps1 after changing permission set for the user?
+
+● You're right that a permission set change alone doesn't require editing either
+  variable. My earlier advice to update AWS_PROFILE was only because of a name
+  mismatch.
+
+  Why they normally don't change
+
+  - AWS_PROFILE is only a name, a pointer to a [profile ...] block in
+    ~/.aws/config. The permission set is a setting inside that block
+    (sso_role_name = AdministratorAccess). If you edit the block and keep the
+    name, the variable still points to the right place.
+  - AWS_REGION is the region the CLI and Terraform call (us-east-1). A
+    permission set changes what you're allowed to do. It doesn't change where.
+
+  Why yours needed a fix
+
+  Your variable held AdministratorAccess-702623019395, but the only profile in
+  the config is SystemAdministrator-702623019395. That was a mismatch between
+  the variable and the config, and it had nothing to do with the permission set.
+  You can fix it either way:
+
+  - Change the variable in Microsoft.PowerShell_profile.ps1 to
+    SystemAdministrator-702623019395. This keeps the config as it is.
+  - Rename the profile block in ~/.aws/config to
+    AdministratorAccess-702623019395, and leave the variable alone.
+
+  Either way, a new terminal needs to be able to resolve the variable to an
+  existing profile. A quick test in a fresh terminal is aws configure
+  list-profiles, then $env:AWS_PROFILE. The value you see should appear in the
+  list.
+
+  You also still need aws sso login after the permission change, because your
+  cached session is for the old role.

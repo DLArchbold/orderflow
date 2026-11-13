@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class InventoryService {
+    private static final Logger log = LoggerFactory.getLogger(InventoryService.class);
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record OrderEvent(@JsonProperty("id") UUID orderId, List<Item> items) {}
@@ -51,6 +54,7 @@ public class InventoryService {
         int inserted = jdbc.sql("INSERT INTO processed_messages (message_id) VALUES (?) ON CONFLICT DO NOTHING")
                 .param(messageId).update();
         if (inserted == 0) {
+            log.info("Message {} already processed; duplicate ignored", messageId);
             return;
         }
 
@@ -87,8 +91,11 @@ public class InventoryService {
                         .param(order.orderId()).param(sku).param(qty).update();
             });
             writeResult(order, "StockReserved", "RESERVED", null);
+            log.info("Stock reserved for order {}: {}", order.orderId(), wanted);
         } else {
             writeResult(order, "StockRejected", "REJECTED", REJECT_REASON);
+            log.info("Stock rejected for order {} (wanted {}, available {}): {}",
+                    order.orderId(), wanted, available, REJECT_REASON);
         }
     }
 

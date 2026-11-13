@@ -1,0 +1,420 @@
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_3_network
+  s_ecr_rds.txt in the IDE. This may or may not be related to the current
+  task.</ide_opened_file>
+
+> How do I implement this step?
+
+  Push images. Run terraform output push_images_commands. The images must be
+  linux/amd64, which a Windows build produces.
+
+● I'll check your notes and Terraform config first so the steps match your
+  setup.
+
+  Searched for 3 patterns, read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● terraform output push_images_commands only prints the ECR login command. It
+  doesn't build or push anything. You do the build, tag and push yourself, and
+  the tag must match the image_tag you use in step 5. I haven't run any of this.
+
+  Your Windows machine is amd64, so Docker Desktop builds linux/amd64 images by
+  default. The --platform flag below makes that explicit. It matters if you're
+  ever on an ARM machine.
+
+  Prerequisites
+  - Docker Desktop is running.
+  - The ECR repositories exist: terraform state list | Select-String
+    ecr_repository should show 3.
+  - The AWS login is still valid: aws sts get-caller-identity.
+
+  Commands
+
+  Run these in PowerShell. Start from the repo root so the build paths below
+  resolve.
+
+  cd "C:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow"
+
+  # 1. Choose the tag (step 5 will use the same value) and get the registry
+  $tag = git rev-parse --short HEAD
+  $tf  = "phase2\infra\terraform"
+  $reg = (terraform "-chdir=$tf" output -json ecr_repository_urls |
+  ConvertFrom-Json)
+
+  The ecr_repository_urls name is a guess, because outputs.tf line 2 doesn't
+  show the output's name. Check it with terraform -chdir=$tf output. It's a map
+  of service name to repo URL. If the name differs, use the right one.
+
+  # 2. Log in to ECR (this is the push_images_commands output)
+  Invoke-Expression (terraform "-chdir=$tf" output -raw push_images_commands)
+
+  Invoke-Expression runs the piped command string in PowerShell. If it errors,
+  paste the string into the terminal instead.
+
+  # 3. Build, tag and push each image
+  docker build --platform linux/amd64 -t "$($reg.'order-service'):$tag"
+  services/order-service
+  docker build --platform linux/amd64 -t "$($reg.'inventory-service'):$tag"
+  services/inventory-service
+  docker build --platform linux/amd64 -t "$($reg.'frontend'):$tag"
+  frontend
+
+  docker push "$($reg.'order-service'):$tag"
+  docker push "$($reg.'inventory-service'):$tag"
+  docker push "$($reg.'frontend'):$tag"
+
+  The Dockerfiles use a Maven or Node build stage, so the first build takes
+  several minutes.
+
+  Verify
+  aws ecr describe-images --repository-name orderflow-order-service --query
+  "imageDetails[].imageTags"
+  aws ecr describe-images --repository-name orderflow-inventory-service --query
+  "imageDetails[].imageTags"
+  aws ecr describe-images --repository-name orderflow-frontend --query
+  "imageDetails[].imageTags"
+  Each should list your $tag.
+
+  Things to watch
+  - Tag consistency. image_tag in variables.tf defaults to latest. Step 5 must
+    pass terraform apply -var image_tag=$tag, or ECS will look for :latest,
+    which you didn't push. Alternatively, push each image as latest too.
+  - Uncommitted changes. The SHA tag names the commit, not your working tree. If
+    you have uncommitted changes, the image won't match that commit.
+  - Frontend build args. Check whether frontend/Dockerfile needs a build
+    argument, such as an API URL or Keycloak URL, that has to point at the ALB.
+    You don't have the ALB URL until step 6, so check the rest of that
+    Dockerfile.
+  - Cost. ECR storage is a few cents for these images. The login token expires
+    after 12 hours.
+
+  I can run these commands if you want. If you do, I'll confirm the output name
+  and $tag with you first.
+
+> <ide_selection>The user selected the lines 6 to 6 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\outputs.tf:
+  aws_db_instance.db
+
+  This may or may not be related to the current task.</ide_selection>
+
+> This is the right command:
+  $tf =".\phase2\infra\terraform\"
+  terraform -chdir="$tf" output
+
+  instead of this:
+  $tf  = "phase2\infra\terraform"
+  terraform -chdir=$tf output
+
+● Thanks for the correction. In PowerShell 5.1, -chdir=$tf unquoted gets
+  mangled. The same quoting problem is behind the -target errors in your notes.
+  Quoting the whole argument, -chdir="$tf", avoids it.
+
+  Here is the full sequence with that fix applied:
+
+  cd "C:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow"
+
+  $tf  = ".\phase2\infra\terraform\"
+  $tag = git rev-parse --short HEAD
+
+  # Confirm the output name for the ECR repo URLs
+  terraform -chdir="$tf" output
+
+  $reg = terraform -chdir="$tf" output -json ecr_repository_urls |
+  ConvertFrom-Json
+
+  Replace ecr_repository_urls with the real output name from the first output
+  listing. I guessed it, since outputs.tf line 2 doesn't show the name.
+
+  # ECR login
+  Invoke-Expression (terraform -chdir="$tf" output -raw push_images_commands)
+
+  # Build and push
+  docker build --platform linux/amd64 -t "$($reg.'order-service'):$tag"
+  services/order-service
+  docker build --platform linux/amd64 -t "$($reg.'inventory-service'):$tag"
+  services/inventory-service
+  docker build --platform linux/amd64 -t "$($reg.'frontend'):$tag"
+  frontend
+
+  docker push "$($reg.'order-service'):$tag"
+  docker push "$($reg.'inventory-service'):$tag"
+  docker push "$($reg.'frontend'):$tag"
+
+  The -chdir="$tf" form quotes the whole path, so it also works if the path ever
+  contains spaces. Everything else in my earlier answer still applies,
+  including using the same $tag as image_tag in step 5.
+
+> This is the right command:
+
+  $reg = (terraform "-chdir=$tf" output -json ecr_repositories |
+  ConvertFrom-Json)
+
+  instead of this:
+
+  $reg = (terraform "-chdir=$tf" output -json ecr_repository_urls |
+  ConvertFrom-Json)
+
+  Also, this error was returned:
+  Error response from daemon: login attempt to
+  https://702623019395.dkr.ecr.us-east-1.amazonaws.com/v2/ failed with status:
+  400 Bad Request
+
+  When this command was executed:
+  Invoke-Expression (terraform "-chdir=$tf" output -raw push_images_commands)
+
+● That error is most likely PowerShell 5.1 mangling the pipe. It re-encodes the
+  token that aws ecr get-login-password prints, so ECR gets a malformed password
+  and returns 400. The command from Terraform works in bash or cmd but often
+  fails this way in Windows PowerShell. I haven't run it, so this is the likely
+  cause rather than a confirmed one.
+
+  Fix 1: skip the pipe and pass the token as a variable
+  $pw   = aws ecr get-login-password --region us-east-1
+  $host_ = "702623019395.dkr.ecr.us-east-1.amazonaws.com"
+  docker login --username AWS --password $pw $host_
+  Docker prints a warning that --password is insecure. That's fine for a
+  short-lived token, and you should see Login Succeeded.
+
+  Fix 2: run the original command through cmd, which pipes raw bytes
+  cmd /c "aws ecr get-login-password --region us-east-1 | docker login
+  --username AWS --password-stdin 702623019395.dkr.ecr.us-east-1.amazonaws.com"
+
+  If both still return 400, check these:
+  - Credentials. Run aws sts get-caller-identity. If the SSO session expired,
+    run aws sso login, then retry.
+  - Token. Run aws ecr get-login-password --region us-east-1. It should print a
+    long string. If it errors, the problem is on the AWS side, not Docker's.
+  - Region. The repos must be in us-east-1, which matches the registry host in
+    your error.
+  - Credential store. If Docker Desktop's credential helper is the issue, paste
+    the output of docker login and I'll look at it.
+
+  After Login Succeeded, continue with the build and push commands. Use your
+  corrected $reg = (terraform "-chdir=$tf" output -json ecr_repositories |
+  ConvertFrom-Json) line.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\outputs.tf in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+> This error is returned when executing this command:
+
+  docker login --username AWS --password $pw $host_
+
+  after the 2 immediate ones before:
+
+  WARNING! Using --password via the CLI is insecure. Use --password-stdin.
+  error saving credentials: error storing credentials - err: exit status 1,
+  out: The stub received bad data.
+
+● The login itself worked this time. ECR accepted the token, and the failure
+  came when Docker tried to save it. ECR tokens are longer than Windows
+  Credential Manager allows, which is about 2.5 KB. Docker Desktop's credsStore:
+  desktop setting sends the token there, hence The stub received bad data. This
+  is a known Windows issue, and I haven't verified it on your machine.
+
+  Fix: use a throwaway Docker config without the credential store
+
+  This leaves your real Docker config alone. Run it in the same PowerShell
+  window, because the variable only lasts for that session.
+
+  $env:DOCKER_CONFIG = Join-Path $env:TEMP "docker-ecr"
+  New-Item -ItemType Directory -Force $env:DOCKER_CONFIG | Out-Null
+  Set-Content (Join-Path $env:DOCKER_CONFIG "config.json") '{"auths":{}}'
+  -Encoding ascii
+
+  $pw   = aws ecr get-login-password --region us-east-1
+  docker login --username AWS --password $pw
+  702623019395.dkr.ecr.us-east-1.amazonaws.com
+
+  You should see Login Succeeded. Then run the build and push commands from the
+  same window.
+
+  - Docker Hub pulls. With this config, the FROM maven:... and FROM node:...
+    pulls are anonymous. That's fine unless you hit Docker Hub rate limits. If
+    you do, run docker login for Docker Hub too, which also stores its
+    credentials in this config.
+  - Cleanup. When you're done, run Remove-Item Env:DOCKER_CONFIG to go back to
+    your normal config. You can also delete the docker-ecr folder under %TEMP%,
+    since it holds the 12-hour token in plain text.
+
+  Permanent alternative
+
+  Remove the "credsStore": "desktop" line from
+  %USERPROFILE%\.docker\config.json. Docker will then keep all credentials in
+  that file as base64 text. The throwaway config avoids that.
+
+> This error is being returned:
+
+  error saving credentials: error storing credentials - err: exit status 1,
+  out: The stub received bad data.
+
+● My throwaway config was probably the cause. With an empty {"auths":{}}, Docker
+  detects a default credential store and picks Windows Credential Manager
+  again. That store can't hold the ECR token, so you got the same error. This is
+  from how I remember the Docker CLI behaving, and I haven't tested it here.
+
+  Fix: give the config a dummy auth entry
+
+  A non-empty auths makes Docker skip store detection and write the token into
+  config.json.
+
+  $env:DOCKER_CONFIG = Join-Path $env:TEMP "docker-ecr"
+  New-Item -ItemType Directory -Force $env:DOCKER_CONFIG | Out-Null
+  Set-Content (Join-Path $env:DOCKER_CONFIG "config.json")
+  '{"auths":{"example.invalid":{}}}' -Encoding ascii
+
+  $pw = aws ecr get-login-password --region us-east-1
+  docker login --username AWS --password $pw
+  702623019395.dkr.ecr.us-east-1.amazonaws.com
+
+  This should print Login Succeeded. Check with Get-Content
+  $env:DOCKER_CONFIG\config.json. It should now list the ECR registry under
+  auths.
+
+  If it still fails, run docker info and check the output for Docker Root Dir.
+  Also run echo $env:DOCKER_CONFIG to confirm the variable is set in this
+  window.
+
+  If it still fails after that, the fallback is to edit your real
+  %USERPROFILE%\.docker\config.json. Delete the "credsStore": "desktop" line and
+  add "auths": {"example.invalid": {}}. Then run the same docker login.
+
+> This error is being returned:
+  ERROR: docker: 'docker buildx build' requires 1 argument
+
+  Usage:  docker buildx build [OPTIONS] PATH | URL | -
+
+  Run 'docker buildx build --help' for more information
+  When this command is executed:
+
+  docker build --platform linux/amd64 -t "$($reg.'order-service'):$tag"
+
+● The command is missing its build context path. You ran it without
+  services/order-service at the end. In my earlier command that path was the
+  last argument, and it looks like it got dropped when you copied it.
+
+  Run these from the repo root (C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow):
+
+  docker build --platform linux/amd64 -t "$($reg.'order-service'):$tag"
+  services/order-service
+  docker build --platform linux/amd64 -t "$($reg.'inventory-service'):$tag"
+  services/inventory-service
+  docker build --platform linux/amd64 -t "$($reg.'frontend'):$tag"
+  frontend
+
+  Check these before you build:
+  - Variables. $reg and $tag must be set in this window. Run $tag and $reg to
+    see their values. If either is empty, the image name will be malformed.
+    Re-run $tag = git rev-parse --short HEAD and the $reg = (...) line.
+  - Docker config. Keep $env:DOCKER_CONFIG set in this window. The pushes need
+    the ECR login you just made.
+  - Current directory. If you're not in the repo root, cd there first or the
+    relative paths won't resolve.
+
+  Then run the three docker push commands, and the aws ecr describe-images
+  checks to verify.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\variables.tf in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+> How do I do this?
+
+  Frontend build args. Check whether frontend/Dockerfile needs a build
+  argument, such as an API URL or Keycloak URL, that has to point at the ALB.
+  You don't have the ALB URL until step 6, so check the rest of that
+  Dockerfile.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● You don't need any build argument. I checked the Dockerfile and the config it
+  uses.
+
+  - No ARG in the Dockerfile. frontend/Dockerfile has no ARG, so there's nothing
+    to pass with --build-arg.
+  - Runtime config. The Keycloak login URL isn't baked into the build. Vite's
+    VITE_OIDC_AUTHORITY is only a local-dev fallback in auth.ts:14
+    (frontend/src/auth.ts#L14). The page first reads
+    window.ORDERFLOW_CONFIG.oidcAuthority, which nginx serves from /config.js.
+  - Filled in at container start. nginx.conf.template
+    (frontend/nginx.conf.template) substitutes ${OIDC_AUTHORITY} when the
+    container starts. In ECS, ecs_services.tf:298
+    (phase2/infra/terraform/ecs_services.tf#L298) sets OIDC_AUTHORITY from
+    local.issuer_url. It also sets ORDER_SERVICE_URL to local.alb_url.
+  - Same image everywhere. The ALB URL only exists after step 6, and it reaches
+    the container as an environment variable. So you can build and push the
+    frontend now with the plain command:
+
+  docker build --platform linux/amd64 -t "$($reg.'frontend'):$tag" frontend
+
+  The ALB URL gets applied when Terraform creates the task definition, which is
+  the step 5 full apply. It never goes into the image.
+
+  If the login redirects to localhost:8180 after deploy, the ECS task isn't
+  getting the OIDC_AUTHORITY environment variable. Open /config.js on the
+  deployed site to see what the page received.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform\ecs_services.tf in the
+  IDE. This may or may not be related to the current task.</ide_opened_file>
+
+> Can you explain further? What's an ALB? What is a Dockerfile and why would
+  frontend/Dockerfile need additional build arguments to point at the ALB?
+
+● ALB (Application Load Balancer)
+
+  An ALB is an AWS service that gives your app one public address and forwards
+  incoming web requests to the right container behind it. In your setup it's the
+  single front door.
+
+  - A request to /api/... goes to order-service.
+  - A request to the Keycloak login path goes to Keycloak.
+  - Everything else goes to the frontend.
+
+  Terraform creates it as aws_lb.main. Its address looks like
+  http://orderflow-123456.us-east-1.elb.amazonaws.com, and terraform output
+  app_url prints it. That address doesn't exist until AWS creates the load
+  balancer, which is why I said you won't know it until later.
+
+  Dockerfile
+
+  A Dockerfile is a recipe for building a container image, which is a packaged
+  copy of your app plus everything it needs to run.
+
+  Yours has two stages:
+
+  1. Build stage: it installs the Node packages and runs npm run build. That
+     compiles your React or Vite code into plain static files.
+  2. Final stage: it copies those files into an nginx web server image. That
+     image is what you push to ECR and what ECS runs.
+
+  Why I raised build arguments
+
+  A build argument (ARG in a Dockerfile, --build-arg on the command line) feeds
+  a value into the image while it is being built. That matters for frontend apps
+  because tools like Vite often paste settings such as an API URL or login URL
+  into the JavaScript at build time.
+
+  If your frontend did that, it would hit a problem:
+
+  - The ALB URL isn't known until after Terraform has created the load balancer.
+  - The image has to be built before that, because ECS needs it.
+  - So the image would have a wrong URL baked in, and you'd have to rebuild and
+    re-push after learning the real one.
+
+  I raised it as a risk to rule out, since I hadn't looked at your Dockerfile
+  yet. When I checked, your project avoids the problem.
+
+  How yours avoids it
+
+  Your image has no URL baked in. When the container starts, nginx writes a
+  small file, /config.js, containing the login URL. That value comes from an
+  environment variable that ECS gives the container. The page loads /config.js
+  and reads the URL from it. Changing the URL means changing the ECS setting and
+  restarting the container, not rebuilding the image.
+
+  That's why the plain docker build command is enough, and you can push the
+  frontend image before the ALB exists.

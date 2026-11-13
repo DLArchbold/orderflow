@@ -1,0 +1,62 @@
+Step 6: smoke test, and reading the logs in CloudWatch (2026-11-10)
+
+What passed
+  Opened terraform output app_url, logged in as alice, created an order. It showed
+  PENDING and then CONFIRMED, and GET /orders returned every created order.
+
+Recording the demo (Windows 10)
+  Screenshots: Win + Shift + S (Snipping Tool), or F12, Ctrl + Shift + P, "screenshot".
+  Video: Xbox Game Bar (Win + G, then Win + Alt + R; saves to Videos\Captures), OBS Studio,
+  or ScreenToGif for a short GIF in the README.
+  Keep the ALB address visible in the URL bar (it proves the app is not on localhost).
+  Show: login as alice, order PENDING then CONFIRMED, ECS services RUNNING, and the
+  CloudWatch lines below. Blur the AWS account id and any secret before publishing.
+  Destroy soon after: the realm's throwaway passwords are public on a public ALB.
+
+What the order-service logs showed, and what each line means
+  1. "Cache get failed" / "Cache put failed (stock SKU-1) ... RedisConnectionFailureException"
+     There is no Redis in the AWS deployment (ADR 0006). The stock lookup the UI makes tries
+     Redis, waits up to 500 ms (spring.data.redis.timeout), logs two warnings from CacheConfig
+     and falls back to inventory-service. Orders never use Redis, so they are unaffected.
+     Expected. Not silenced on purpose (see below).
+  2. "AsyncRequestNotUsableException: ServletOutputStream failed to flush: Broken pipe"
+     The browser closed the SSE stream (tab closed, refresh, or idle timeout). The server
+     then wrote to a closed connection. Harmless.
+  3. Every event appears twice in a copied CloudWatch selection (raw and formatted form).
+     Not duplicate logging.
+  4. Nothing about the order itself, because the code logged nothing on the success path.
+     Only the "ignored result" branch of InventoryResultHandler used log.info.
+
+Why LOGGING_LEVEL_COM_ORDERFLOW_ORDER_CONFIG_CACHECONFIG=ERROR is not recommended
+  - The two WARN lines are the only sign that the cache is down. Raising the level to ERROR
+    hides that, and the service would look healthy while every stock read goes to
+    inventory-service and pays the 500 ms Redis timeout first.
+  - It does not remove the cause. Each request still waits for the failed connection.
+  - It is easy to forget. The setting lives in the task definition, so it would still be
+    there if Redis were added later, and a real cache outage would stay silent.
+  - Better fixes: deploy Redis (ECS container or ElastiCache), or set the Redis host to
+    empty / disable the cache for this deployment. Either way the decision is recorded.
+  It is not wrong to use, only a trade-off: fewer log lines now, less visibility later.
+
+INFO log lines added so the order flow is visible in CloudWatch
+  order-service
+    OrderService.create          "Order <id> created for customer <c> with N line(s), status PENDING; OrderCreated event written to outbox"
+    OutboxPublisher              "Published outbox event <id> (OrderCreated) for aggregate <orderId> to orders.events"
+    InventoryResultHandler.apply "Inventory result RESERVED applied: order <id> is now CONFIRMED"
+  inventory-service
+    InventoryService.reserve     "Stock reserved for order <id>: {SKU-1=1}"
+                                 "Stock rejected for order <id> (wanted ..., available ...): insufficient or unknown sku"
+                                 "Message <id> already processed; duplicate ignored"
+    OutboxPublisher              "Published outbox event <id> (StockReserved) for aggregate <orderId> to inventory.results"
+  All lines carry the [service,traceId,spanId] [correlationId] prefix, so one Logs Insights
+  query on the trace id or correlation id shows the whole path across both services:
+    fields @timestamp, @log, @message | filter @message like /<traceId>/ | sort @timestamp asc
+
+Getting the new log lines onto AWS (the running tasks still have the old code)
+  1. Rebuild the order-service and inventory-service images (linux/amd64) with a new tag.
+  2. terraform output push_images_commands, then push both images.
+  3. terraform apply -var image_tag=<new tag>   (or aws ecs update-service --force-new-deployment
+     if the tag is unchanged).
+  4. Create an order again and read /orderflow log groups.
+  Remember that a rolling deploy briefly runs two order-service tasks that may publish the
+  same outbox rows twice; inventory-service's processed_messages absorbs it (ADR 0006).

@@ -24,5 +24,18 @@ order-service to inventory-service, which is also what gives Resilience4j and Re
 5. **A cache is an optimisation, never a requirement.** A `CacheErrorHandler` logs and carries on, Redis timeouts are
    500 ms, and the Redis health indicator is switched off so a Redis outage does not make the service unready.
 
+## Alternatives considered
+**Move the stock check into order creation: rejected.** A check before the order is a time-of-check / time-of-use race
+(two orders can both see 1 unit), so it could only ever be advisory; the guarantee comes from the reservation in
+inventory-service. It would also make order creation depend on inventory-service at run time, turning an inventory outage
+into an order-service outage (or, with an "accept anyway" fallback, a check that decides nothing), and it would cut against
+the decoupled, outbox-based design the drills prove. A non-blocking "low stock" hint on `POST /orders` from the cached value
+would be harmless but is not worth the change.
+
 ## Consequences
 - With Redis down every read pays about 1 s (a failed get plus a failed put at 500 ms each) but still answers.
+  With nothing listening on the host the connection is refused immediately; the full 500 ms timeouts appear when the host drops packets.
+- Only entries inside the 30 s TTL are served from the cache. There is no stale-while-error: once an entry expires during an
+  inventory outage the answer is "unknown" (`available = null`), which is not cached.
+- Because the lookup is outside the order path, load tests of order creation say nothing about the cache. Measuring its benefit
+  needs a k6 scenario on `GET /api/stock/{sku}` with a skewed SKU mix, run with the cache switched off and on (not run yet).

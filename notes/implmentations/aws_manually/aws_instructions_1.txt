@@ -1,0 +1,8 @@
+aws configure sso
+<Enable IAM Identity Center in AWS Dashboard, and copy link that contains awsapps.com...>
+<Create a new AWS IAM User (and log the password used), then link it to an AWS Account and set of Permissions (AdministratorAccess) if not done yet>
+When prompted for SSO registration scopes, use default by pressing Enter.
+When login window is prompted, login using the new AWS IAM user and its password, focus will be returned to terminal.
+notepad $PROFILE and register these two variables so that they don't have to be set everytime a new terminal is used:
+$env:AWS_PROFILE = "SystemAdministrator-...."
+$env:AWS_REGION  = "us-east-1"

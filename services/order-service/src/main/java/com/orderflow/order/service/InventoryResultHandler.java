@@ -48,6 +48,7 @@ public class InventoryResultHandler {
             case "REJECTED" -> order.reject();
             default -> throw new IllegalArgumentException("unknown inventory result: " + result);
         }
+        log.info("Inventory result {} applied: order {} is now {}", result, orderId, order.getStatus());
         // delivered to browsers only after this transaction commits (OrderStatusBroadcaster)
         events.publishEvent(new com.orderflow.order.stream.OrderStatusChanged(
                 order.getId(), order.getCustomerId(), order.getStatus().name()));

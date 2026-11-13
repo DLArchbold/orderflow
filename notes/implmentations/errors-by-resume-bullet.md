@@ -16,7 +16,8 @@ Stories only describe things that happened. A row marked "(draft only)" involves
 ## The four resume bullets
 - **B1** Built an event-driven order/inventory platform (Java 21, Spring Boot, Kafka, PostgreSQL) with dead-letter retries, OAuth2/JWT-secured, Swagger-documented APIs, and Testcontainers tests.
 - **B2** Designed the event-driven order flow with Kafka, the transactional outbox, and idempotent consumers: 0 orders lost or double-processed across forced Kafka/service outages, with idempotent consumers absorbing at-least-once redelivery.
-- **B3** Sustained N orders/s at p95 N ms; added Resilience4j (timeout, circuit breaker, bulkhead) and a Redis cache on the synchronous stock lookup, so a slow or unavailable inventory-service degrades gracefully.
+- **B3** Sustained N orders/s at p95 N ms; added Resilience4j (timeout, circuit breaker, bulkhead) and a Redis cache to the stock lookup, so a slow or down inventory-service can't exhaust threads.
+  - Wording note (2026-11-10): do not write "instead of failing orders" (orders never call the stock lookup, ADR 0005) and leave "order creation doesn't depend on it" for the interview. The order-rate figure does not exercise the cache. See `notes/why_redis_cache_is_optional_and_how_to_talk_about_it.txt`.
 - **B4** Cut the customer order-list query from N ms to N ms on N rows via a composite index (EXPLAIN ANALYZE); GitHub Actions/CodeQL CI/CD and Terraform-provisioned AWS ECS deploys; Prometheus/Grafana and OpenTelemetry.
 
 ## Table

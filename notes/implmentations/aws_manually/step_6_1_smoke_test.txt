@@ -1,0 +1,168 @@
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_5_deployi
+  ng_terraform_apply_everything_else_kafka_keycloak_services_ALB.txt in the
+  IDE. This may or may not be related to the current task.</ide_opened_file>
+
+> How to implement step 6: Smoke test. Open terraform output app_url, log in as
+  alice, and create an order. It should reach CONFIRMED.
+
+● I'll check your step 5 notes and the Terraform setup first so the steps match
+  your project.
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● Step 6 is a manual browser test with a few CLI checks behind it. I haven't run
+  anything.
+
+  1. Pre-checks (PowerShell)
+
+  cd "C:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\phase2\infra\terraform"
+  terraform output app_url
+  aws ecs describe-services --cluster orderflow --region us-east-1 --services
+  kafka keycloak inventory-service order-service frontend --query
+  "services[].{name:serviceName,running:runningCount,desired:desiredCount}"
+
+  All five services should show running: 1. If not, go back to the step 5
+  troubleshooting table.
+
+  2. Log in
+
+  1. Open app_url in a browser. It's HTTP only, so use http://.
+  2. The frontend should redirect you to Keycloak at <ALB>/realms/orderflow/....
+     If it redirects to localhost, open <app_url>/config.js. OIDC_AUTHORITY
+     should be the ALB URL.
+  3. Log in as alice with password alice-dev-pw. It comes from
+     orderflow-realm.json:53 (phase2/infra/keycloak/orderflow-realm.json#L53),
+     and the password isn't temporary, so you won't be asked to change it.
+
+  3. Create an order
+
+  Create an order through the UI. Pick items that exist in inventory. The
+  inventory service rejects stock it can't reserve, and that ends in REJECTED,
+  not CONFIRMED.
+
+  4. Check the status
+
+  The order starts as PENDING. It should become CONFIRMED within a few seconds,
+  if the UI refreshes or you reload:
+
+  1. order-service saves the order and writes an outbox event.
+  2. The event goes to Kafka.
+  3. inventory-service reserves the stock and publishes RESERVED.
+  4. order-service receives that result and confirms the order.
+
+  The status transitions are in OrderStatus.java (services/order-service/src/mai
+  n/java/com/orderflow/order/domain/OrderStatus.java).
+
+  If it doesn't reach CONFIRMED
+
+  ┌────────────┬────────────────────────────────────────────────────────────┐
+  │   Status   │                        Likely cause                        │
+  ├────────────┼────────────────────────────────────────────────────────────┤
+  │ Stays      │ The Kafka leg is broken. Check the order-service and       │
+  │ PENDING    │ inventory-service logs.                                    │
+  ├────────────┼────────────────────────────────────────────────────────────┤
+  │ REJECTED   │ There isn't enough stock for what you ordered. Try a       │
+  │            │ smaller quantity or a different item.                      │
+  ├────────────┼────────────────────────────────────────────────────────────┤
+  │ Create     │ The token issuer doesn't match what order-service expects. │
+  │ returns    │  Check issuer_url in ecs_services.tf:5                     │
+  │ 401 or 403 │ (phase2/infra/terraform/ecs_services.tf#L5) and the JWK    │
+  │            │ URI setting.                                               │
+  ├────────────┼────────────────────────────────────────────────────────────┤
+  │ Create     │ The target is unhealthy in the ALB. Wait out the grace     │
+  │ returns    │ period or check the service events.                        │
+  │ 502 or 503 │                                                            │
+  └────────────┴────────────────────────────────────────────────────────────┘
+
+  Tail the logs while you test:
+
+  aws logs tail /orderflow/order-service --region us-east-1 --since 10m --follow
+  aws logs tail /orderflow/inventory-service --region us-east-1 --since 10m
+  --follow
+
+  I'm guessing the log group names from the /orderflow/db-init pattern. List the
+  real ones with aws logs describe-log-groups --log-group-name-prefix
+  /orderflow.
+
+  I haven't checked which items inventory seeds, so look at the inventory
+  service's seed data or migration for valid item IDs.
+
+  5. Afterwards
+
+  The ALB, the five Fargate tasks and RDS bill hourly, and anyone can log in as
+  alice. When you've confirmed CONFIRMED, run terraform destroy. The README says
+  the same (README.md:23 (phase2/infra/terraform/README.md#L23)). Before you
+  destroy, take a screenshot of the CONFIRMED order. Everything is deleted and
+  you can't undo it.
+
+  I can add this to a notes file in notes/implmentations/aws_manually/ if you
+  want. Tell me the filename.
+
+> app_url (http://orderflow-1966634175.us-east-1.elb.amazonaws.com/)  redirects
+  me to the login screen, but the "Log in" button just throws this error in
+  the console:
+  index-D7RCXEUh.js:8 Uncaught (in promise) Error: Crypto.subtle is available
+  only in secure contexts (HTTPS).
+      at vt.generateCodeChallenge (index-D7RCXEUh.js:8:61376)
+      at el.create (index-D7RCXEUh.js:8:89657)
+      at kc.create (index-D7RCXEUh.js:8:91221)
+      at op.createSigninRequest (index-D7RCXEUh.js:8:95944)
+      at async _p._signinStart (index-D7RCXEUh.js:8:121926)
+      at async _p.signinRedirect (index-D7RCXEUh.js:8:116818)
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● This is a browser restriction, not a bug in your deploy. The frontend uses the
+  OIDC PKCE flow. It hashes a code challenge with crypto.subtle, and browsers
+  only provide that on HTTPS or localhost. Your ALB is plain HTTP on a
+  non-localhost hostname, so the call throws before the redirect to Keycloak.
+
+  Keycloak isn't the problem. The realm already has "sslRequired": "none"
+  (orderflow-realm.json:4 (phase2/infra/keycloak/orderflow-realm.json#L4)), so
+  it accepts HTTP.
+
+  Option A: tell Chrome or Edge to treat the ALB as secure (recommended for a
+  smoke test)
+
+  This needs no infrastructure changes and costs nothing.
+
+  1. Open chrome://flags/#unsafely-treat-insecure-origin-as-secure. In Edge, use
+     edge://flags/#unsafely-treat-insecure-origin-as-secure.
+  2. Enable the flag and enter the origin with no trailing slash:
+     http://orderflow-1966634175.us-east-1.elb.amazonaws.com
+  3. Click Relaunch.
+  4. Reload the app and click Log in.
+
+  The flag applies to that one origin, so remove it afterwards. The ALB hostname
+  changes after a destroy and re-apply, so you'd have to update the flag then
+  too.
+
+  If it still fails, open DevTools and run window.isSecureContext. It must print
+  true.
+
+  Login also needs the Keycloak origin to be secure. Keycloak is on the same ALB
+  hostname (/realms/*), so the one flag covers both.
+
+  Option B: real HTTPS on the ALB
+
+  This is the proper fix, but it needs more than the smoke test warrants:
+
+  - You need a domain you own, an ACM certificate and an HTTPS listener on 443.
+    ALB hostnames like *.elb.amazonaws.com can't get an ACM certificate.
+  - alb_url, the Keycloak issuer, the realm redirect URIs and config.js all have
+    to switch to https://. They are built from local.alb_url, so that should be
+    one change, but I haven't looked at it in detail.
+
+  Do this only if you want a lasting deployment. Your README already calls this
+  stack a throwaway that is public and HTTP-only, so Option A fits.
+
+  After login works
+
+  Continue with step 6 from "Create an order". The order should go from PENDING
+  to CONFIRMED. When you're done testing, run terraform destroy.
+
+  I can write the Option A workaround into your step 5 or step 6 notes file if
+  you want. Tell me which file.

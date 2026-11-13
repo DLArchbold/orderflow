@@ -1,0 +1,83 @@
+Redis in OrderFlow: is it needed, what does it protect, and how to talk about it (resume and interviews)
+Written 2026-11-10 from a review of the code. Related: phase2/docs/adr/0005-sync-stock-call-and-cache.md,
+phase2/docs/adr/0006-aws-choices.md (Redis row), notes/implmentations/errors-by-resume-bullet.md (B3, row 25).
+
+1. IS REDIS ON AWS IMPORTANT FOR THE RESUME / INTERVIEWS?
+No. The resume bullet claims a Redis cache on the stock lookup; it does not claim Redis runs on AWS. The AWS claim is
+Terraform-provisioned ECS rolling deploys. Interviewers will probe the cache DESIGN (cache-aside, TTL, invalidation,
+what happens when Redis is down, interaction with the circuit breaker), and all of that can be shown locally with compose.
+ElastiCache costs a few dollars a month at minimum and adds VPC / subnet group / security group work in Terraform, which
+does not make you more credible on those topics.
+What matters:
+ - Be exact about where each number was measured (local / compose / ECS). Do not imply ECS if it was local.
+ - The app must run with Redis absent. That is the AWS profile (ADR 0006: Redis "None"). Say it as a trade-off:
+   "Redis is omitted from AWS for cost; the cache is optional and fails open."
+ - If you ever want it in AWS cheaply: a cache.t4g.micro ElastiCache node, or a Redis container as an ECS service, then destroy.
+
+2. WHY USE REDIS AT ALL IF NOTHING FAILS WITHOUT IT?
+It is a performance and load optimisation, not a correctness requirement.
+ - Lower latency: a hit is about 1 ms; a miss is an HTTP call plus a DB read in inventory-service.
+ - Less load on inventory-service: most lookups hit the same hot SKUs.
+ - Cache-aside and fail-open: on a miss or a Redis error the code goes to inventory-service, the source of truth.
+It is NOT a stale-while-error safety net: only entries inside the 30 s TTL are served; after that, during an outage,
+the answer is "unknown" (available == null).
+
+3. WHAT THE CODE DOES (verified 2026-11-10)
+ - Redis errors are swallowed: CacheConfig's CacheErrorHandler logs a WARN for get / put / evict / clear and never rethrows.
+ - application.yml: Redis timeout and connect-timeout 500 ms; Redis health indicator disabled; cache TTL 30 s.
+ - Cold cache: StockService.get (@Cacheable "stock", key = sku) -> StockClient.get (circuit breaker + bulkhead, 10 concurrent,
+   no wait) -> HTTP to inventory-service. If the call fails, the breaker is open or the bulkhead is full, the fallback
+   returns StockInfo.unknown(sku) (available == null, NOT 0, which would mean sold out).
+ - unless = "#result.available == null" keeps the fallback out of the cache. StockServiceCacheTest covers "two reads cause
+   one inventory call" and "a failure is not cached".
+ - The fallback takes Throwable, so a 404 (ignored by the breaker as a failure) also ends up as "unknown".
+ - Redis down: the failed get and the failed put can each cost up to 500 ms (about 1 s per lookup, as ADR 0005 says).
+   With nothing listening on localhost the connection is refused at once; a host that drops packets gives the full timeouts.
+
+4. CORRECTION: THE STOCK LOOKUP IS NOT IN THE ORDER PATH
+GET /api/stock/{sku} is a UI convenience (StockController, ADR 0005 decision 1). Order creation does not call it, so:
+ - the 200 orders/s p95 figure does not exercise the cache unless the load script also calls /api/stock/{sku};
+ - "so a slow inventory-service degrades gracefully INSTEAD OF FAILING ORDERS" overclaims: orders do not fail either way.
+   Orders stay correct through the asynchronous path (outbox, idempotent consumers). Resilience4j and Redis protect only
+   the optional stock lookup.
+
+5. SHOULD THE STOCK CHECK MOVE INTO THE ORDER PATH?
+No. Fix the bullet instead.
+ - Racy: check-then-order is a time-of-check / time-of-use race; two orders can both see 1 unit. The guarantee comes from the
+   inventory-service reservation (Kafka flow), so a sync check could only be advisory.
+ - It makes order creation depend on inventory-service at run time. Today an inventory outage does not stop orders
+   (ADR 0005); a hard sync check would turn it into an order-service outage, and a "accept anyway" fallback makes the check pointless.
+ - It undercuts the strongest claim (0 orders lost or double-processed across forced outages; decoupled, event-driven).
+ - It means changing the order flow and tests and re-running the 50,000-order and outage experiments.
+Optional, low value: a non-blocking advisory "low stock" warning on POST /orders from the cached value, never rejecting.
+The sync call is the right tool for a READ path (stock shown next to the order form), which is what it already is.
+
+6. HOW TO WORD THE RESUME BULLET
+Weak (overclaims): "a Redis cache on the synchronous stock lookup, so a slow or unavailable inventory-service degrades
+gracefully instead of failing orders."
+Better: "Added Resilience4j (timeout, circuit breaker, bulkhead) and a Redis cache to the stock lookup, so a slow or down
+inventory-service can't exhaust threads."
+ - Keep the OUTCOME (bounded threads, fast "unknown" instead of a hang): it is what the patterns are for.
+ - Drop "Order creation doesn't depend on it" from the resume: it is defensive and uses space. Say it in the interview,
+   where it reads as design judgement.
+ - The resilience / cache line is supporting detail. The strongest material is the outbox, the idempotent consumers, the
+   0-loss result across forced outages and the 400 ms -> 30 ms query. Give it one clause; if space is tight, fold it into
+   the previous bullet or keep only Resilience4j (the cache is the weakest claim).
+
+7. IF ASKED "IF THE CACHE ISN'T ESSENTIAL, WHY ADD IT?"
+Best answer is a measurement. perf.md (checked 2026-11-10) has no with/without-cache comparison, so the claim is currently
+design-only. A quick A/B would fix that:
+ - Same k6 script twice; only the cache switch differs (use a config flag such as stock.cache.enabled=false, NOT an
+   unreachable Redis, which adds timeout latency and muddies the result). Same load, data, hardware.
+ - The k6 script must call GET /api/stock/{sku} (see section 4), with a SKEWED mix (e.g. 80% of requests on 20% of SKUs).
+   Random SKUs give about 0% hits; one SKU is unrealistically good. State the mix when presenting.
+ - Record: stock-lookup p50 / p95 / p99 and errors (k6); requests reaching inventory-service (Prometheus, e.g.
+   http_server_requests_seconds_count on its stock endpoint, the strongest number); cache hit ratio; optionally
+   inventory-service CPU / DB load.
+ - Third run for the resilience claim: slow or stop inventory-service during the load (Toxiproxy delay or docker stop) and
+   compare cache off vs on: how many lookups return "unknown", how the breaker behaves, how many are served from cache
+   within the 30 s TTL.
+ - Report only what was measured, say it was local / compose, and do not put figures on the resume unless reproducible live.
+Sample answer shape: "The cache isn't required for correctness; it fails open. With a skewed SKU mix it cut stock-lookup
+p95 from X to Y and calls to inventory-service by Z%. When I stopped inventory-service, N% of lookups in the TTL window were
+still served from cache while the breaker was open." (Fill X, Y, Z, N only from real runs.)
