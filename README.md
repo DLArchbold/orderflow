@@ -5,6 +5,105 @@ An order-management system built to show event-driven design done carefully: a *
 **PostgreSQL** with Flyway, **OAuth2/JWT** login through Keycloak, **Redis** cache with **Resilience4j**, and metrics, tracing and alerts
 (Prometheus, Grafana, Jaeger).
 
+## Recorded Demo on AWS 
+ 
+### The manual demo on AWS is shown on the Orderflow-demo video below: <br/>
+> [!NOTE]
+> During step 0 and after steps 1->3, a set of repeated checks are performed. Please see the "Repeated checks after each step" section below.
+
+https://github.com/user-attachments/assets/081cf8f2-8ee8-4c42-a805-86b483f54bf5
+
+- Step (0): Pre-demo check Overview of UI, database and CloudWatch logs, and Logs Insights (0:00 -> 2:32) <br/> 
+- Step (1): Create an order with all services running ensure that the order moves from PENDING -> CONFIRMED to ensure order flow is working without issues. (2:32 -> 4:10) <br/> 
+- Step (2): Stop Kafka service, create another order during the Kafka outage (still accepted with a 201 response and which stays PENDING). (4:10 -> 6:15) <br/>
+- Step (3): Restart the Kafka service, and the order is CONFIRMED automatically with nothing lost and with no refresh needed. (6:15 -> END) <br/>
+
+
+### Repeated checks after each step
+
+Run these at every checkpoint: **during** the pre-demo check (step 0), **before** the outage (step 1), **during** the outage (step 2), and **after** recovery (step 3).
+
+#### 1. Query the databases
+
+Use `query-orders.ps1` and `query-inventory.ps1`.
+
+Run both from `phase2/infra/terraform`. The RDS instance is private, so you can't connect from your laptop. Each script instead runs a one-off ECS Fargate task from the `db-init` task definition, which has `psql` and VPC access. Each script does the following:
+
+1. Reads `db_init_command` and `rds_endpoint` from Terraform output.
+2. Starts the task with a `psql` command override.
+3. Waits for the task to stop.
+4. Prints the result from the `/orderflow/db-init` log group.
+
+| Script | Access | What it does |
+|--------|--------|--------------|
+| `query-orders.ps1` | read-only | Joins `orders` and `order_lines` and lists the newest orders (50 by default, or set `-Limit`). Columns: `id`, `customer_id`, `status`, `sku`, `quantity`, `created_at`. This is the ground truth for whether each order is `PENDING` or `CONFIRMED`. |
+| `query-inventory.ps1` | read-only | Reads the `stock` table, one row per SKU, with `available`, `reserved`, their `total`, and the count of rows in `reservations`. This shows whether inventory-service processed each order. |
+
+**What to match:**
+
+- Each `CONFIRMED` order has a matching reservation. `reserved` and the reservation count rise by the order quantity.
+- `available + reserved` stays constant for each SKU.
+- A `PENDING` order has no reservation yet.
+
+The output is also in the CloudWatch log group `orderflow/db-init`, one stream per task (`ecs/db-init/<taskId>`). That is why the db-init CloudWatch tab is open.
+
+#### 2. Check the service logs in CloudWatch
+
+Open `orderflow/order-service` and `orderflow/inventory-service`.
+
+- In **order-service**, search `CONFIRMED`. It shows the confirmation events consumed from Kafka.
+- In **inventory-service**, search `reserved`. It shows reservations made for incoming orders.
+
+| Checkpoint | Expected |
+|------------|----------|
+| **Before** | One confirmation and one reservation, for the drain order. |
+| **During** | No new `CONFIRMED` or `reserved` lines, because Kafka is down and the order events can't flow. Producer or connection warnings may appear instead. |
+| **After** | The backlog appears as a burst of `reserved` and `CONFIRMED` lines. The consumers use `auto-offset-reset: earliest`, so they pick up what was produced. |
+
+#### 3. Run Logs Insights counts over both log groups
+
+A count over both groups gives one number per phase, which is easier to compare than scrolling a search. Select both log groups, set the time range to cover the demo, then run one of the queries below.
+
+**Order-service events:**
+
+```
+fields @timestamp, @message
+| sort @timestamp desc
+| limit 10000
+| filter @message like /created for customer|is now CONFIRMED|is now REJECTED/
+| parse @message /(?<kind>created for customer|is now CONFIRMED|is now REJECTED)/
+| stats count(*) by kind
+```
+
+**Inventory-service events:**
+
+```
+fields @timestamp, @message
+| sort @timestamp desc
+| limit 10000
+| filter @message like /created for customer|Stock reserved for order|Stock rejected for order|duplicate ignored/
+| parse @message /(?<kind>created for customer|Stock reserved for order|Stock rejected for order|duplicate ignored)/
+| stats count(*) by kind
+```
+
+**Expected:** the count is flat during the outage, then spikes at recovery. The total equals the number of orders created.
+
+#### 4. Check the UI
+
+Show the orders list with the Network/developer tab open next to it.
+
+- **During the outage:** each create call returns `201` and shows `PENDING`. order-service accepts and persists the order, but confirmation depends on Kafka.
+- **After restart:** the same orders flip to `CONFIRMED` without any action.
+- **Final check:** once all services are up, nothing remains `PENDING`. An order still `PENDING` means recovery failed, so the demo has not passed.
+> [!NOTE]
+> This is also the proof that topics are recreated on AWS after the Kafka task restarts.
+
+
+
+
+
+
+## Demo against compose stack on local machine 
 ![Demo: log in, create an order and watch it become CONFIRMED live, kill inventory-service, see the next order stay PENDING, restart it and see it CONFIRMED](docs/images/demo.gif)
 
 *The demo (about 35 s, recorded by `scripts/record_demo.mjs` and `scripts/frames_to_gif.py` against the compose stack): sign in, create an order, kill inventory-service, create another order (still accepted, stays PENDING), restart it, and the order is CONFIRMED with nothing lost.*
