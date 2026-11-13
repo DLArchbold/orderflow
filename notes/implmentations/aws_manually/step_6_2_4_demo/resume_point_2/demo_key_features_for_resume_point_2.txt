@@ -1,0 +1,74 @@
+Resume point 2:
+•	Designed the event-driven order flow with Kafka, the transactional outbox, and idempotent consumers: 0 orders lost or double-processed across 50,000 orders and 6 forced Kafka/service outages, with idempotent consumers absorbing at-least-once redelivery.
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+
+Written for: you, a candidate who needs to show this resume bullet running on AWS and to know which parts of it AWS can actually back up. I haven't run any of this.
+
+## First, check the numbers in the bullet
+
+Your repo doesn't support "50,000 orders and 6 forced outages" as written.
+
+- [resilience.md](phase2/docs/resilience.md) records drills of 3,600 orders each. There are 3 drills run locally, 3 repeated as containers, and one 4-minute Kafka drill, so roughly 25,000 orders and 7 disruptions. None of them ran on AWS.
+- Your own [errors-by-resume-bullet.md](notes/implmentations/errors-by-resume-bullet.md) deliberately leaves the bullet without numbers until you re-run.
+
+You have two options:
+- Run the drills on AWS (below) and quote whatever those runs show.
+- Reword the bullet to match what's recorded, such as "3,600-order drills, 0 lost, 0 duplicated effects".
+
+## What AWS changes
+
+1. **Kafka has no volume.** [ADR 0006](phase2/docs/adr/0006-aws-choices.md) says topics vanish when the task restarts. Stopping or scaling the Kafka task loses events that were already published but not yet consumed. Those orders would stay PENDING forever, so it would look like a failure of your design when it is really a limit of the demo setup.
+   - Simulate the Kafka outage as a **network cut** instead. Revoke the ingress rule on port 9092 in the Kafka security group ([network.tf:139-147](phase2/infra/terraform/network.tf#L139-L147)). The broker keeps its data, and the services just can't reach it. Re-add the rule to end the outage.
+   - The Kafka drill therefore tests the outbox, which is what it should test.
+2. **RDS is private.** [drill-check.sql](scripts/drill-check.sql) needs a one-off ECS psql task, like `db-init`. [drill_check.py](scripts/drill_check.py) and [drill.sh](scripts/drill.sh) only work against local compose or Maven, so they need rewriting for AWS.
+3. **No Prometheus or Grafana on AWS.** Your evidence is the SQL checks and the CloudWatch INFO lines. You won't have the lag graph or the alert.
+4. **Load needs a token.** [load_orders.py](scripts/load_orders.py) and the k6 script need a Keycloak token against the ALB. I haven't checked how they get one, and the dev tokens are short-lived.
+
+## The demo, step by step
+
+**Setup**
+1. Deploy the image with the INFO logs. Check that all services are at 1/1.
+2. Run the baseline check first. Run the SQL in drill-check.sql through the psql task, or note the current order count to use as a `--baseline`. It must pass on a clean system.
+3. Start the load against the ALB URL, for example 20 orders/s for 180 s. Record how many requests got a `201`.
+
+**Disruptions** (start each 30 s into the load and let the system drain between runs)
+
+| Drill | How to do it on AWS | What you should see |
+|---|---|---|
+| Kafka outage | Revoke the SG ingress on 9092 for 60 s, then re-add it | The API keeps returning 201. Orders stay PENDING, and the outbox rows stay unpublished. After the rule is back, they drain. |
+| Longer Kafka outage | Same, for about 4 minutes | The same, with a larger backlog. |
+| inventory-service down | `aws ecs update-service --desired-count 0`, wait 60 s, then set it back to 1 | Orders stay PENDING, and then every order reaches CONFIRMED. |
+| order-service killed | `aws ecs stop-task` on the one task | The ALB returns 5xx while the task restarts. Those requests never got a 201, so they aren't counted as lost. |
+| Redelivery (the idempotent-consumer proof) | Kill inventory-service mid-load (`stop-task`), so Kafka redelivers unacknowledged messages when it restarts | The logs show the `Message … already processed; duplicate ignored` INFO line. |
+
+**Proof after each drill**
+- The SQL checks pass:
+  - orders with a 201 equal rows in `orders`
+  - 0 orders still PENDING
+  - 0 unpublished outbox rows in either service
+  - reserved quantity per SKU equals the CONFIRMED quantity
+  - no order has more than one `OrderCreated` row
+- Show the CloudWatch Logs Insights query for the duplicate-ignored lines. This is the visible evidence of at-least-once redelivery being absorbed.
+- Add a final check on the `processed_messages` count against the order count, as in your local runs.
+
+## Things to say honestly
+
+- "0 lost" covers orders that got a `201`. The order-service drill produces errors for requests that were never acknowledged. Your resilience.md already says this, so repeat it.
+- Order creation has no `Idempotency-Key`, so a client that retries could create a second order. The "idempotent" in the bullet refers to the consumers.
+- Kafka's lack of a volume is a demo limit. A real deployment needs a durable Kafka, such as MSK.
+
+## What I'd suggest building
+
+An `aws-drill.sh` and an AWS-ready check task would turn this into repeatable evidence, and they'd give you real numbers for the bullet. I'd write:
+- a script that applies each disruption with the AWS CLI
+- a psql task definition that runs drill-check.sql
+- notes in `notes/implmentations/aws_manually/`
+
+That's a moderate amount of work and it changes AWS resources, so tell me if you want it. The deployment is billed hourly, so I'd run all drills in one session and then destroy it.

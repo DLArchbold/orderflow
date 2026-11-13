@@ -1,0 +1,274 @@
+
+> How do I implement these?
+  Proof after each drill
+
+  The SQL checks pass:
+  orders with a 201 equal rows in orders
+  0 orders still PENDING
+  0 unpublished outbox rows in either service
+  reserved quantity per SKU equals the CONFIRMED quantity
+  no order has more than one OrderCreated row
+  Show the CloudWatch Logs Insights query for the duplicate-ignored lines. This
+  is the visible evidence of at-least-once redelivery being absorbed.
+  Add a final check on the processed_messages count against the order count, as
+  in your local runs.
+
+● I'll start with the AWS demo notes and the local run scripts, so the checks
+  match your schema.
+
+  Searched for 2 patterns, read 3 files, ran 1 shell command (ctrl+o to expand)
+
+● I haven't run any of this. The checks are mostly SQL against the private RDS,
+  so you run them through the one-off db-init task from your step 6.2.3 notes.
+  The scripted version I wrote earlier is still in your stash (stash@{0} and
+  stash@{1}), not in the working tree.
+
+  1. SQL checks
+
+  scripts/drill-check.sql already has every query. Run each database's block
+  through the db-init override, once with -d orders and once with -d inventory.
+  psql accepts several -c flags, so one task per database is enough.
+
+  overrides_orders.json:
+  {"containerOverrides":[{"name":"db-init","command":["sh","-c","psql -h
+  <rds_endpoint> -U orderflow -d orders -At -F '|' -c \"SELECT
+  'orders_total',count(*) FROM orders\" -c \"SELECT 'by_status',status,count(*)
+  FROM orders GROUP BY status\" -c \"SELECT 'still_pending',count(*) FROM orders
+  WHERE status='PENDING'\" -c \"SELECT 'outbox_unpublished',count(*) FROM
+  outbox WHERE published_at IS NULL\" -c \"SELECT 'multi_created',count(*) FROM
+  (SELECT aggregate_id FROM outbox WHERE type='OrderCreated' GROUP BY
+  aggregate_id HAVING count(*)>1) d\" -c \"SELECT
+  'confirmed_qty',l.sku,sum(l.quantity) FROM order_lines l JOIN orders o ON
+  o.id=l.order_id WHERE o.status='CONFIRMED' GROUP BY l.sku ORDER BY
+  l.sku\""]}]}
+
+  overrides_inventory.json uses -d inventory with these queries:
+  SELECT 'processed_messages',count(*) FROM processed_messages
+  SELECT 'outbox_unpublished',count(*) FROM outbox WHERE published_at IS NULL
+  SELECT 'reserved_qty',sku,reserved FROM stock ORDER BY sku
+  SELECT 'stock_negative',count(*) FROM stock WHERE available<0 OR reserved<0
+
+  Run each with the command from terraform output -raw db_init_command plus
+  --overrides file://overrides_orders.json (then the inventory file). Read the
+  results in the /orderflow/db-init log group with aws logs tail
+  /orderflow/db-init --since 5m. Each output line starts with its query name.
+
+  Compare the results like this:
+
+  ┌─────────────────────┬───────────────────────────────────────────────────┐
+  │     Requirement     │                      Compare                      │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Orders with a 201   │ orders_total equals baseline plus the created_201 │
+  │ equal rows in       │  count printed by load_orders.py. This count      │
+  │ orders              │ comes from your load generator, not the database. │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ 0 orders still      │ still_pending is 0                                │
+  │ PENDING             │                                                   │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ 0 unpublished       │                                                   │
+  │ outbox rows in      │ outbox_unpublished is 0 in both outputs           │
+  │ either service      │                                                   │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Reserved quantity   │                                                   │
+  │ equals CONFIRMED    │ reserved_qty equals confirmed_qty for each SKU    │
+  │ quantity            │                                                   │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ No order has more   │                                                   │
+  │ than one            │ multi_created is 0                                │
+  │ OrderCreated row    │                                                   │
+  └─────────────────────┴───────────────────────────────────────────────────┘
+
+  Run the baseline once before the load so you have a number to add to the 201
+  count.
+
+  2. Duplicate-ignored query
+
+  The log line is Message {} already processed; duplicate ignored
+  (InventoryService.java:57 (services/inventory-service/src/main/java/com/orderf
+  low/inventory/service/InventoryService.java#L57)). It comes only from
+  inventory-service. In CloudWatch → Logs Insights, select
+  /orderflow/inventory-service, set the time range to cover the drill, and run:
+
+  filter @message like /already processed; duplicate ignored/
+  | stats count(*) as duplicates_ignored
+
+  For the visible evidence, list the lines instead:
+  fields @timestamp, @message
+  | filter @message like /already processed; duplicate ignored/
+  | sort @timestamp asc
+  | limit 50
+
+  If the count is 0, no redelivery happened, so don't claim it. Stopping
+  inventory-service gracefully won't produce duplicates (see the earlier answer
+  on this). Use the offset-replay method from your notes.
+
+  3. processed_messages vs order count
+
+  Compare processed_messages (inventory output) with orders_total (orders
+  output). They should be equal, since REJECTED orders are also processed once.
+
+  - Local runs: scripts/drill_check.py only prints processed_messages (line 64)
+    and never asserts it. To make it a real check, add this after line 57:
+  ("duplicated: processed_messages equals rows in orders", one("orders_total"),
+  one("processed_messages"), lambda a, b: a == b),
+  - Replay drill: the two numbers must be equal before and after the replay,
+    even though duplicates_ignored is above 0.
+  - Seeded data: the check fails if seed-orders.sql rows are in orders, because
+    those never went through inventory.
+
+  If you'd rather not run six psql tasks by hand per drill, I can restore the
+  stash and add the processed_messages line to it. That gives you
+  aws_drill_check.py, which does all of the above and prints PASS/FAIL. Or I can
+  write the two override files and a PowerShell wrapper like your
+  query-orders.ps1, with no Terraform changes. Which do you want?
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_6_2_4_dem
+  o\resume_point_2\kafka_outage\option_a_substeps.txt in the IDE. This may or
+  may not be related to the current task.</ide_opened_file>
+
+> What's the difference between these 2 approaches?
+  " restore the stash and add the processed_messages line to it. That gives you
+  aws_drill_check.py, which does all of the above and prints PASS/FAIL. "
+
+  and
+
+  "write the two override files and a PowerShell wrapper like your
+  query-orders.ps1, with no Terraform changes"
+
+● The difference is where the checking logic lives and what has to change in AWS
+  before you can use it. I haven't re-read the stash contents since I
+  summarised them, so the first column describes what my earlier summary said.
+
+  AWS changes
+  Restore the stash: Needs a terraform apply. It adds a drill-check task
+  definition, a log group, and an IAM policy. enable_drills also adds ECS Exec
+  to Kafka, which is optional.
+  Override files + PowerShell wrapper: None. It reuses the existing
+  orderflow-db-init task, so nothing is applied or replaced.
+  ────────────────────────────────────────
+  Who judges PASS/FAIL
+  Restore the stash: The script. aws_drill_check.py starts the task, reads the
+  output back from CloudWatch, and applies the same rules as local
+  drill_check.py. It prints PASS/FAIL and returns an exit code.
+  Override files + PowerShell wrapper: You do, or the wrapper does if I code it
+  to. The raw numbers appear and you compare them by eye, as in my table.
+  ────────────────────────────────────────
+  Queries
+  Restore the stash: It runs drill-check.sql itself, split by database. No SQL
+  is
+  copied into JSON.
+  Override files + PowerShell wrapper: I would copy the queries into the
+  override
+  JSON, so there are two copies to keep in sync.
+  ────────────────────────────────────────
+  Extra files
+  Restore the stash: It also brings aws_drill.sh, which applies the disruptions
+  and runs the load.
+  Override files + PowerShell wrapper: A small wrapper and two JSON files, and
+  nothing else.
+  ────────────────────────────────────────
+  Risk
+  Restore the stash: Untested. It was never applied or run, and its first run
+  has
+  the open questions I listed: pidof, the Session Manager plugin, and the
+  1,000,000-per-SKU stock assumption. Terraform changes are also a risk if the
+  Kafka task gets replaced after orders exist.
+  Override files + PowerShell wrapper: Low. It is the same mechanism you already
+
+  ran in step 6.2.3.
+  ────────────────────────────────────────
+  Repeatability
+  Restore the stash: High. One command per drill, with the same pass/fail rules
+  every time.
+  Override files + PowerShell wrapper: Medium. It's repeatable, but the
+  judgement
+  is manual unless the wrapper parses the output.
+
+  Which to pick:
+  - Override files and wrapper: this is the better fit if you are running the
+    drills by hand from the console. It needs no apply and risks nothing that is
+    deployed. I can have the wrapper print PASS/FAIL by parsing the log lines,
+    so it covers most of what the stash gives you.
+  - Stash: this makes sense only if you want the full scripted path, with load,
+    disruption and check in one command. That path also requires applying
+    Terraform, and I'd fix the PID 1 and initProcessEnabled problem first.
+
+  Based on your notes, you're going the console route for Kafka, so I'd go with
+  the wrapper.
+
+> <ide_selection>The user selected the lines 1 to 1 from Untitled-3:
+  multi_created
+
+  This may or may not be related to the current task.</ide_selection>
+
+> For this approach, how is load testing and disruption implemented?
+
+  "Override files and wrapper: this is the better fit if you are running the
+  drills by hand from the console. It needs no apply and risks nothing that is
+  deployed. I can have the wrapper print PASS/FAIL by parsing the log lines, so
+  it covers most of what the stash gives you."
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● In that approach the wrapper only does the checks. Load and disruption stay as
+  separate steps that you start yourself, and the wrapper would run before and
+  after them. The flags below come from scripts/load_orders.py:24-30
+  (scripts/load_orders.py#L24-L30). I haven't run the script against the ALB, or
+  checked how it gets its Keycloak token there.
+
+  Load
+
+  Run scripts/load_orders.py from your laptop, pointed at the ALB:
+
+  python scripts/load_orders.py --rate 20 --duration 180 --base-url http://<ALB>
+  --keycloak-url http://<ALB>
+
+  It prints a JSON summary at the end with created_201. That is the number you
+  add to the baseline in the first SQL check.
+
+  Disruption
+
+  These are manual commands, started about 30 seconds into the load. You can
+  type each into a second terminal or CloudShell.
+
+  ┌────────────────┬────────────────────────────────────────────────────────┐
+  │     Drill      │                        Command                         │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │                │ aws ecs update-service --cluster orderflow --service   │
+  │ inventory down │ inventory-service --desired-count 0, wait about 60 s,  │
+  │                │ then set --desired-count 1                             │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ order-service  │ aws ecs stop-task --cluster orderflow --task           │
+  │ killed         │ <task-arn>                                             │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │                │ Console route: stop or freeze Kafka as in your         │
+  │ Kafka outage   │ option_a_substeps.txt notes. Stopping the task loses   │
+  │                │ the topics, so use the freeze (Option A).              │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Redelivery     │ Scale inventory-service to 0, rewind the consumer      │
+  │                │ group (needs ECS Exec on Kafka), then scale back to 1. │
+  └────────────────┴────────────────────────────────────────────────────────┘
+
+  Sequence
+
+  1. Run the wrapper for a baseline. It must pass on the clean system.
+  2. Start the load in terminal 1.
+  3. Apply the disruption in terminal 2, 30 s in. Restore the service
+     afterwards.
+  4. When the load finishes, wait for the drain (the wrapper can poll until
+     still_pending is 0).
+  5. Run the wrapper again with --created <created_201> --baseline <n>. It
+     prints PASS/FAIL.
+  6. Run the Logs Insights duplicate query.
+
+  What the wrapper can add
+
+  I could add a -WaitDrained loop to it. I could also make it start the load,
+  run the disruption and clean up if it fails, but that is what aws_drill.sh in
+  the stash already does. That is the real tradeoff: without the stash, the
+  disruption timing and the restore step are your responsibility. If you forget
+  to set inventory-service back to 1, the drain never finishes.
+
+  Do you want me to write the wrapper with the baseline and -WaitDrained options
+  only, or with the disruption commands built in?

@@ -213,8 +213,8 @@ resource "aws_ecs_task_definition" "order" {
   family                   = "${var.project}-order-service"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 512
-  memory                   = 1024
+  cpu                      = 1024 # 512 took 116 s to start Spring, longer than the grace period below
+  memory                   = 2048
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
   runtime_platform {
@@ -259,7 +259,8 @@ resource "aws_ecs_service" "order" {
     enable   = true
     rollback = true
   }
-  health_check_grace_period_seconds = 120
+  # Startup took 116 s on 0.5 vCPU and the ALB needs several passing checks after that; 120 s made ECS kill every new task
+  health_check_grace_period_seconds = 300
   network_configuration {
     subnets          = aws_subnet.public[*].id
     security_groups  = [aws_security_group.order.id]

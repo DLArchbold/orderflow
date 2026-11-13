@@ -48,8 +48,10 @@
   5. Full apply. Run terraform apply -var image_tag=<commit sha>. This brings up
      Kafka, Keycloak, the services and the ALB.
   6. Smoke test. Open terraform output app_url, log in as alice and create an
-     order. (Done 2026-11-10; see step_6_smoke_test_and_reading_the_logs.txt.
-     Redis warnings in the logs are expected: there is no Redis on AWS.)
+     order. (Done 2026-11-10; see step_6_2_1_smoke_test_and_reading_the_logs.txt.
+     Redis warnings in the logs are expected: there is no Redis on AWS. New
+     order-service tasks were later found being stopped by failed health
+     checks; see step_6_2_4_re_building_and_redeploying_with_new_info_logs.md.)
   7. Deploy under load. This is the "Done when" in PLAN.md. Start k6 against the
      ALB URL. While it runs, trigger a rolling deploy (a new image_tag and
      terraform apply, or aws ecs update-service --force-new-deployment). Save

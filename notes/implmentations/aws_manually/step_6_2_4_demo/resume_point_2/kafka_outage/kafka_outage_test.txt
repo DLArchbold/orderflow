@@ -1,0 +1,44 @@
+Yes, but it needs a different method from the script, and there are two things to know first.
+
+**Your drill work isn't in the working tree.** `git status` is clean, and the `enable_drills` changes, `ecs_drill.tf`, `aws_drill.sh` and the step 7.2 notes are gone. I see two stashes named "AWS-ready check task for repeatable evidence" (`stash@{0}` and `stash@{1}`), so I assume you stashed them. I haven't touched them. Tell me if you want them restored.
+
+## Console options for the Kafka outage
+
+**Option A: freeze the broker like the script does.**
+- The console has no button for it. In the ECS console you would:
+  - turn on ECS Exec through Update service
+  - add the `ssmmessages:*` permissions to the task role in the IAM console
+  - open CloudShell and run `kill -STOP` on the Kafka java process
+- The flag turns on only when a new Kafka task starts. I haven't tested the exec step on this image. It works, but it's mostly CLI work with extra steps.
+
+**Option B: stop Kafka and start it again from the console.** This is the practical choice, with one condition. Stopping the Kafka task loses its topics, so it's safe only if nothing is in flight.
+- Your consumers use `auto-offset-reset: earliest`, and the broker should recreate the topics when something produces to them. The topics are also declared as `NewTopic` beans. I haven't verified the recreation on AWS.
+- Steps:
+  1. **Drain first.** Create an order in the UI and wait for CONFIRMED. Don't proceed while anything is PENDING.
+  2. **Stop Kafka.** Go to ECS → cluster `orderflow` → service `kafka` → Update service → Desired tasks `0`. Wait until running is 0.
+  3. **Create orders during the outage.** Create about 10 orders in the UI. Each should return a 201 and show PENDING, and none should reach CONFIRMED.
+  4. **Wait a minute, then restart.** Set Desired tasks back to `1` and wait for the task to be RUNNING (about 1–2 minutes).
+  5. **Watch the recovery.** The PENDING orders should move to CONFIRMED on their own.
+
+## Verifying without psql
+
+RDS has no query editor in the console. Use CloudWatch Logs Insights, selecting both `/orderflow/order-service` and `/orderflow/inventory-service`. This assumes the image with the INFO log lines is deployed:
+
+```
+filter @message like /created for customer|is now CONFIRMED|is now REJECTED/
+| parse @message /(?<kind>created for customer|is now CONFIRMED|is now REJECTED)/
+| stats count(*) by kind
+```
+
+"created" should equal CONFIRMED plus REJECTED. I haven't run the query.
+
+If you need the SQL checks, you can copy the `orderflow-db-init` task definition in the console, change the command to your `SELECT`s, and run it. That is more clicking, but it needs no Terraform.
+
+## What this does and doesn't prove
+
+- **It shows** that orders are accepted (201) while Kafka is down, that they are delivered afterwards, and that none are lost.
+- **It doesn't show** redelivery or duplicates. With a drained system and an empty restarted broker there is nothing to re-send, so the "idempotent consumers absorbing redelivery" part isn't demonstrated.
+- **It doesn't support the "50,000 orders" scale.** A manual run of about 10 orders is a demo, not a load test.
+- **For the bullet:** quote a manual run as a demo, not as the drill numbers.
+
+I can write these steps up as a notes file, or restore the stash.

@@ -60,3 +60,28 @@ Getting the new log lines onto AWS (the running tasks still have the old code)
   4. Create an order again and read /orderflow log groups.
   Remember that a rolling deploy briefly runs two order-service tasks that may publish the
   same outbox rows twice; inventory-service's processed_messages absorbs it (ADR 0006).
+
+Follow-up 2026-11-11: the new INFO lines did not show up in CloudWatch
+  After the INFO lines were committed (2e552fa) and the images pushed with tag 9ff11d1, the
+  order-service log group still showed only the Redis warnings.
+  What was found:
+    - The live task definition was still an old revision (orderflow-order-service:2, inactive,
+      image tag 3167fa7, from before the log commit). The apply with 9ff11d1 had not produced a
+      running task.
+    - The ECS Events tab showed "service order-service has stopped 1 running tasks" at 14:04,
+      14:08 and 14:12 (UTC-5): a new task was being stopped about every 4 minutes.
+    - The log stream of a stopped task showed "Started OrderServiceApplication in 116.396
+      seconds", one request reaching Tomcat (the ALB health probe), and then a normal SIGTERM
+      shutdown (ionShutdownHook: Kafka consumer leaves the group, Hikari closes). No error, so ECS
+      stopped it.
+  Likely cause (not yet confirmed with the task's "Stopped reason"): order-service had 0.5 vCPU
+  and a 120 s health_check_grace_period_seconds. Spring needs about 2 minutes to start on 0.5
+  vCPU and the ALB then needs several passing checks, so the grace period ran out while the target
+  was still unhealthy and ECS killed each new task. Because minimum_healthy_percent is 100, the old
+  task kept serving, and the old task has no INFO lines. That is why the log view looked unchanged.
+  Fix edited in phase2/infra/terraform/ecs_services.tf (validated, not yet planned or applied):
+    - order-service cpu 512 -> 1024 and memory 1024 -> 2048
+    - order-service health_check_grace_period_seconds 120 -> 300
+  To confirm: stopped task -> "Stopped reason" (expect "Task failed ELB health checks"), service
+  Deployments tab, and target health in the order-service target group.
+  Details and the apply command: step_6_2_4_re_building_and_redeploying_with_new_info_logs.md.

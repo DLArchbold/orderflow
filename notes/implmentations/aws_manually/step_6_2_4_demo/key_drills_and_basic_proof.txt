@@ -1,0 +1,1488 @@
+
+> How do I demo the key features of the application after deploying it on AWS?
+
+● I'll check the repo's docs and deployment notes first so the demo steps match
+  what you built.
+
+  Searched for 4 patterns, read 3 files (ctrl+o to expand)
+
+● Here is a demo you can run on the deployed stack. It's based on your step 6
+  notes and PLAN.md. I haven't run it against your deployment.
+
+  What's available on AWS
+
+  Only the ALB, frontend, Keycloak, order-service, inventory-service, Kafka and
+  RDS are deployed. Jaeger, Prometheus, Grafana and Redis are not. The demo
+  therefore covers the order flow, event-driven messaging, resilience and logs.
+  It doesn't cover dashboards or traces.
+
+  Before you start (about 2 minutes)
+
+  1. Make sure the images with the new INFO logs are deployed. Run terraform
+     apply -var image_tag=<new tag>. Without it, CloudWatch shows only the Redis
+     warnings.
+  2. Check all five services show running: 1. Use the aws ecs describe-services
+     command from your step 6 notes.
+  3. Keep the Chrome/Edge unsafely-treat-insecure-origin-as-secure flag set for
+     the ALB origin. Login won't work over plain HTTP without it.
+  4. Open these tabs in advance:
+     - the app
+     - the CloudWatch Logs Insights tab on the order-service and
+       inventory-service log groups
+     - the ECS console, showing services at 1/1
+
+  Demo script, in order
+
+  1. It's really on AWS.
+  - Show the ALB URL in the address bar.
+  - Show the ECS console with all services RUNNING.
+
+  2. Authentication (Keycloak).
+  - Open the app. It redirects to /realms/orderflow on the ALB.
+  - Log in as alice / alice-dev-pw.
+  - Say that the token is validated by both services.
+
+  3. Core flow: async order saga.
+  - Create an order with in-stock items, such as SKU-1.
+  - The status shows PENDING, then CONFIRMED without a page reload. That is the
+    live SSE update.
+  - Say what happened in between: order-service writes the order and an outbox
+    row, the outbox publisher sends it to Kafka, inventory-service reserves
+    stock and publishes RESERVED, and order-service confirms the order.
+
+  4. Prove it in the logs (the key evidence).
+  - Run a Logs Insights query over both log groups: fields @timestamp, @message
+    | filter @message like /<traceId>/ | sort @timestamp.
+  - It should show these lines in sequence under one trace ID:
+    a. order created
+    b. outbox event published
+    c. stock reserved
+    d. result published
+    e. inventory result applied, order CONFIRMED
+
+  5. Business rejection path.
+  - Order a quantity larger than the stock.
+  - The order ends as REJECTED. The inventory log shows "Stock rejected (wanted
+    X, available Y)".
+  - Confirm the stock count didn't drop.
+
+  6. Idempotency (optional).
+  - Send POST /api/orders twice with the same Idempotency-Key header, using curl
+    or Swagger with alice's token.
+  - You should get the same order back and no duplicate. I haven't checked the
+    exact header name, so confirm it in the order-service code.
+
+  7. Graceful degradation (this is deliberate).
+  - Show the Redis WARN lines from CacheConfig.
+  - Say that the stock cache is optional, so the stock lookup falls back to
+    inventory-service and orders aren't affected.
+  - This is your ADR 0006 point, and the warnings are intentionally left
+    visible.
+
+  8. Database proof (optional).
+  - Run the one-off ECS psql task for SELECT id, status FROM orders;.
+  - It's slow to set up on AWS, so use it only if you need the extra evidence.
+
+  9. Deploy under load (optional, PLAN step 24c).
+  - Run k6 run -e RATE=50 -e DURATION=30s phase2/load-tests/k6/create-orders.js
+    against the ALB.
+  - Trigger aws ecs update-service --force-new-deployment while it runs.
+  - Show http_req_failed at 0%.
+  - This is the strongest "production-minded" demo, but I haven't checked how
+    the script gets a token against Keycloak on the ALB. It was only run
+    locally.
+
+  Recording it
+
+  - Use Xbox Game Bar (Win + Alt + R) for the video. Use ScreenToGif for a short
+    README clip.
+  - Keep the demo to about 3 minutes. Steps 1–4 are the core.
+  - Crop out your AWS account ID and any secrets.
+  - Run terraform destroy right afterwards, because alice's login is public on
+    the ALB.
+
+  I can turn this into a one-page checklist in
+  notes/implmentations/aws_manually/. I can also check the k6 script and the
+  idempotency header so steps 6 and 9 are exact.
+
+> How do I demonstrate these features when deployed on AWS?
+
+  "•      Designed the event-driven order flow with Kafka, the transactional
+  outbox, and idempotent consumers: 0 orders lost or double-processed across
+  50,000 orders and 6 forced Kafka/service outages, with idempotent consumers
+  absorbing at-least-once redelivery."
+
+● I'll check what the repo already has for the resilience drills and the
+  correctness checks.
+
+  Searched for 5 patterns, read 2 files (ctrl+o to expand)
+
+● Written for: you, a candidate who needs to show this resume bullet running on
+  AWS and to know which parts of it AWS can actually back up. I haven't run any
+  of this.
+
+  First, check the numbers in the bullet
+
+  Your repo doesn't support "50,000 orders and 6 forced outages" as written.
+
+  - resilience.md (phase2/docs/resilience.md) records drills of 3,600 orders
+    each. There are 3 drills run locally, 3 repeated as containers, and one
+    4-minute Kafka drill, so roughly 25,000 orders and 7 disruptions. None of
+    them ran on AWS.
+  - Your own errors-by-resume-bullet.md
+    (notes/implmentations/errors-by-resume-bullet.md) deliberately leaves the
+    bullet without numbers until you re-run.
+
+  You have two options:
+  - Run the drills on AWS (below) and quote whatever those runs show.
+  - Reword the bullet to match what's recorded, such as "3,600-order drills, 0
+    lost, 0 duplicated effects".
+
+  What AWS changes
+
+  1. Kafka has no volume. ADR 0006 (phase2/docs/adr/0006-aws-choices.md) says
+     topics vanish when the task restarts. Stopping or scaling the Kafka task
+     loses events that were already published but not yet consumed. Those orders
+     would stay PENDING forever, so it would look like a failure of your design
+     when it is really a limit of the demo setup.
+     - Simulate the Kafka outage as a network cut instead. Revoke the ingress
+       rule on port 9092 in the Kafka security group (network.tf:139-147
+       (phase2/infra/terraform/network.tf#L139-L147)). The broker keeps its
+       data, and the services just can't reach it. Re-add the rule to end the
+       outage.
+     - The Kafka drill therefore tests the outbox, which is what it should test.
+  2. RDS is private. drill-check.sql (scripts/drill-check.sql) needs a one-off
+     ECS psql task, like db-init. drill_check.py (scripts/drill_check.py) and
+     drill.sh (scripts/drill.sh) only work against local compose or Maven, so
+     they need rewriting for AWS.
+  3. No Prometheus or Grafana on AWS. Your evidence is the SQL checks and the
+     CloudWatch INFO lines. You won't have the lag graph or the alert.
+  4. Load needs a token. load_orders.py (scripts/load_orders.py) and the k6
+     script need a Keycloak token against the ALB. I haven't checked how they
+     get one, and the dev tokens are short-lived.
+
+  The demo, step by step
+
+  Setup
+  1. Deploy the image with the INFO logs. Check that all services are at 1/1.
+  2. Run the baseline check first. Run the SQL in drill-check.sql through the
+     psql task, or note the current order count to use as a --baseline. It must
+     pass on a clean system.
+  3. Start the load against the ALB URL, for example 20 orders/s for 180 s.
+     Record how many requests got a 201.
+
+  Disruptions (start each 30 s into the load and let the system drain between
+  runs)
+
+  Drill: Kafka outage
+  How to do it on AWS: Revoke the SG ingress on 9092 for 60 s, then re-add it
+  What you should see: The API keeps returning 201. Orders stay PENDING, and the
+
+  outbox rows stay unpublished. After the rule is back, they drain.
+  ────────────────────────────────────────
+  Drill: Longer Kafka outage
+  How to do it on AWS: Same, for about 4 minutes
+  What you should see: The same, with a larger backlog.
+  ────────────────────────────────────────
+  Drill: inventory-service down
+  How to do it on AWS: aws ecs update-service --desired-count 0, wait 60 s, then
+
+  set it back to 1
+  What you should see: Orders stay PENDING, and then every order reaches
+  CONFIRMED.
+  ────────────────────────────────────────
+  Drill: order-service killed
+  How to do it on AWS: aws ecs stop-task on the one task
+  What you should see: The ALB returns 5xx while the task restarts. Those
+  requests never got a 201, so they aren't counted as lost.
+  ────────────────────────────────────────
+  Drill: Redelivery (the idempotent-consumer proof)
+  How to do it on AWS: Kill inventory-service mid-load (stop-task), so Kafka
+  redelivers unacknowledged messages when it restarts
+  What you should see: The logs show the Message … already processed; duplicate
+  ignored INFO line.
+
+  Proof after each drill
+  - The SQL checks pass:
+    - orders with a 201 equal rows in orders
+    - 0 orders still PENDING
+    - 0 unpublished outbox rows in either service
+    - reserved quantity per SKU equals the CONFIRMED quantity
+    - no order has more than one OrderCreated row
+  - Show the CloudWatch Logs Insights query for the duplicate-ignored lines.
+    This is the visible evidence of at-least-once redelivery being absorbed.
+  - Add a final check on the processed_messages count against the order count,
+    as in your local runs.
+
+  Things to say honestly
+
+  - "0 lost" covers orders that got a 201. The order-service drill produces
+    errors for requests that were never acknowledged. Your resilience.md already
+    says this, so repeat it.
+  - Order creation has no Idempotency-Key, so a client that retries could create
+    a second order. The "idempotent" in the bullet refers to the consumers.
+  - Kafka's lack of a volume is a demo limit. A real deployment needs a durable
+    Kafka, such as MSK.
+
+  What I'd suggest building
+
+  An aws-drill.sh and an AWS-ready check task would turn this into repeatable
+  evidence, and they'd give you real numbers for the bullet. I'd write:
+  - a script that applies each disruption with the AWS CLI
+  - a psql task definition that runs drill-check.sql
+  - notes in notes/implmentations/aws_manually/
+
+  That's a moderate amount of work and it changes AWS resources, so tell me if
+  you want it. The deployment is billed hourly, so I'd run all drills in one
+  session and then destroy it.
+
+> Do these, but do not deploy any changes yet:
+
+  a script that applies each disruption with the AWS CLI
+  a psql task definition that runs drill-check.sql
+  notes in notes/implmentations/aws_manually/
+
+● I'll read the existing drill assets and the db-init task so the new pieces
+  match them.
+
+  Searched for 2 patterns, read 10 files, ran 1 shell command (ctrl+o to expand)
+
+● Now the Terraform changes (written only, not applied). First the variable that
+  gates the drill-only pieces.
+
+● Update(phase2\infra\terraform\variables.tf)
+  ⎿  Added 6 lines
+      23    type    = number
+      24    default = 10
+      25  }
+      26 +                                                               
+      27 +variable "enable_drills" {                                     
+      28 +  description = "Resilience drills (scripts/aws_drill.sh): lets
+         + you run commands inside the Kafka task with ECS Exec, so the b
+         +roker can be frozen without losing its data. Leave false except
+         + for a drill session; changing it replaces the Kafka task and i
+         +ts topics."                                                    
+      29 +  type        = bool                                           
+      30 +  default     = false                                          
+      31 +}                                                              
+
+● Update(phase2\infra\terraform\ecs_services.tf)
+  ⎿  Added 2 lines
+      78    task_definition = aws_ecs_task_definition.kafka.arn
+      79    desired_count   = 1
+      80    launch_type     = "FARGATE"
+      81 +  # only for the resilience drills (var.enable_drills): scripts
+         +/aws_drill.sh freezes the broker process through ECS Exec      
+      82 +  enable_execute_command = var.enable_drills                   
+      83    # stop, then start: two brokers with separate storage would s
+          plit the data
+      84    deployment_minimum_healthy_percent = 0
+      85    deployment_maximum_percent         = 100
+
+● Write(phase2\infra\terraform\drill\drill-check.sh)
+  ⎿  Wrote 13 lines to phase2\infra\terraform\drill\drill-check.sh
+      1 #!/bin/sh
+        cs_drill.tf passes this file and scripts/drill-check.sql in as
+      3 # base64 environment variables. It splits the SQL by database and
+         runs each block with psql, printing "@@ <query name>" before
+        ck out of CloudWatch Logs. Read-only: SELECTs only.
+      5 set -eu
+      7 for db in orders inventory; do
+      8   # keep the lines of this database's "-- db:" block, and turn ea
+        ch "-- name: x" marker into a psql \echo
+        heck.sql | sed -E 's/^-- name: (.*)$/\\ec
+     … +9 lines (ctrl+o to expand)
+
+● Write(phase2\infra\terraform\ecs_drill.tf)
+  ⎿  Wrote 72 lines to phase2\infra\terraform\ecs_drill.tf
+      1 # Resilience drills on AWS (PLAN step 26 repeated on the deployme
+        s_on_aws.txt).
+      2 # 1. A one-off task that runs scripts/drill-check.sql against bot
+        PC).
+      3 #    scripts/aws_drill_check.py starts it and reads the result fr
+      4 # 2. With var.enable_drills, ECS Exec on the Kafka task, so scrip
+        ts/aws_drill.sh can freeze and resume the broker.
+      6 resource "aws_cloudwatch_log_group" "drill_check" {
+      7   name              = "/${var.project}/drill-check"
+      9 }
+     … +83 lines (ctrl+o to expand)
+
+● Update(phase2\infra\terraform\ecs_drill.tf)
+  ⎿  Added 3 lines, removed 2 lines
+      29      command = ["sh", "-c", "echo \"$DRILL_SCRIPT_B64\" | base64
+           -d > /tmp/run.sh && sh /tmp/run.sh"]
+      30      environment = [
+      31        { name = "RDS_HOST", value = aws_db_instance.db.address }
+          ,
+      32 -      { name = "DRILL_SCRIPT_B64", value = base64encode(file("$
+         -{path.module}/drill/drill-check.sh")) },                       
+      33 -      { name = "DRILL_SQL_B64", value = base64encode(file("${pa
+         -th.module}/../../../scripts/drill-check.sql")) },              
+      32 +      # carriage returns removed: a Windows checkout may have C
+         +RLF line endings, which break sh and leave \r in the output    
+      33 +      { name = "DRILL_SCRIPT_B64", value = base64encode(replace
+         +(file("${path.module}/drill/drill-check.sh"), "\r", "")) },    
+      34 +      { name = "DRILL_SQL_B64", value = base64encode(replace(fi
+         +le("${path.module}/../../../scripts/drill-check.sql"), "\r", ""
+         +)) },                                                          
+      35      ]
+      36      secrets = [{ name = "PGPASSWORD", valueFrom = "${aws_secret
+          smanager_secret.db.arn}:password::" }]
+      37      logConfiguration = {
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Terraform is formatted and valid. Now I'll test the SQL-splitting logic of the
+  task script locally, with psql swapped for cat.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The split is correct. Next I'll refactor drill_check.py
+  (scripts/drill_check.py) so the AWS script can reuse the same PASS/FAIL
+  definitions. The local behaviour stays the same.
+
+● Update(scripts\drill_check.py)
+  ⎿  Added 3 lines, removed 7 lines
+      35      return rows
+      36  
+      37  
+      38 -def main():                                                    
+      39 -    ap = argparse.ArgumentParser()                             
+      40 -    ap.add_argument("--created", type=int, required=True, help=
+         -"orders the load generator got a 201 for")                     
+      41 -    ap.add_argument("--baseline", type=int, default=0, help="or
+         -ders already in the database before the load started")         
+      42 -    args = ap.parse_args()                                     
+      43 -                                                               
+      44 -    r = {name: run(db, sql) for db, name, sql in parse(Path(__f
+         -ile__).with_name("drill-check.sql"))}                          
+      38 +def report(r, created, baseline):                              
+      39 +    """r maps each query name in drill-check.sql to its rows (l
+         +ists of strings). Prints PASS/FAIL per definition; returns the 
+         +exit code.                                                     
+      40 +    scripts/aws_drill_check.py calls this with rows read back f
+         +rom CloudWatch Logs, so both setups apply the same definitions.
+         +"""                                                            
+      41      one = lambda n: int(r[n][0][0])
+      42      confirmed = {sku: int(q) for sku, q in r["confirmed_quantit
+          y_by_sku"]}
+      43      reserved = {sku: int(q) for sku, q in r["reserved_quantity_
+          by_sku"]}
+
+● Update(scripts\drill_check.py)
+  ⎿  Added 1 line, removed 1 line
+      44      totals = {sku: int(q) for sku, q in r["stock_available_plus
+          _reserved"]}
+      45  
+      46      checks = [
+      47 -        (f"lost: baseline {args.baseline} + orders created (201
+         -) vs rows in orders", args.baseline + args.created, one("orders
+         -_total"), lambda a, b: a == b),                                
+      47 +        (f"lost: baseline {baseline} + orders created (201) vs 
+         +rows in orders", baseline + created, one("orders_total"), lambd
+         +a a, b: a == b),                                               
+      48          ("lost: orders still PENDING after the drain (expected 
+          0)", 0, one("orders_still_pending"), lambda a, b: a == b),
+      49          ("lost: unpublished outbox rows, order-service (expecte
+          d 0)", 0, one("orders_outbox_unpublished"), lambda a, b: a == b
+          ),
+      50          ("lost: unpublished outbox rows, inventory-service (exp
+          ected 0)", 0, one("inventory_outbox_unpublished"), lambda a, b:
+           a == b),
+
+● Update(scripts\drill_check.py)
+  ⎿  Added 10 lines
+      66      return 1 if failed else 0
+      67  
+      68  
+      69 +def main():                                                    
+      70 +    ap = argparse.ArgumentParser()                             
+      71 +    ap.add_argument("--created", type=int, required=True, help=
+         +"orders the load generator got a 201 for")                     
+      72 +    ap.add_argument("--baseline", type=int, default=0, help="or
+         +ders already in the database before the load started")         
+      73 +    args = ap.parse_args()                                     
+      74 +                                                               
+      75 +    r = {name: run(db, sql) for db, name, sql in parse(Path(__f
+         +ile__).with_name("drill-check.sql"))}                          
+      76 +    return report(r, args.created, args.baseline)              
+      77 +                                                               
+      78 +                                                               
+      79  if __name__ == "__main__":
+      80      sys.exit(main())
+
+● Write(scripts\aws_drill_check.py)
+  ⎿  Wrote 122 lines to scripts\aws_drill_check.py
+      1 #!/usr/bin/env python3
+        flow-drill-check` ECS task (the SELECTs of scripts/drill-check.sq
+      3 inside the VPC, because RDS is private), reads its output back fr
+        om CloudWatch Logs and applies the same PASS/FAIL definitions.
+      5   python scripts/aws_drill_check.py --baseline-only
+        d)
+        -wait-drained   # after the load; --created = orders that got a 2
+        01
+      8 --wait-drained repeats the check until no order is PENDING and no
+      9 Needs t
+     … +151 lines (ctrl+o to expand)
+
+  Searched for 1 pattern, ran 2 shell commands (ctrl+o to expand)
+
+● Tokens last 30 minutes and the CLI client allows password login, so the load
+  generator works against the ALB. Now the disruption script.
+
+● Write(scripts\aws_drill.sh)
+  ⎿  Wrote 93 lines to scripts\aws_drill.sh
+      1 #!/usr/bin/env bash
+        le a steady load runs, wait for the pipeline to drain, then run t
+        he checks.
+      4 # kafka      freeze the broker process (SIGSTOP through ECS Exec)
+         for $OUTAGE seconds, then SIGCONT. The task and its data stay, l
+      5 #            Needs the stack applied with -var enable_drills=true
+         and the Session Manager plugin for the AWS CLI. Stopping or repl
+      6 #            Kafka task is NOT used: it has no volume, so the top
+        ics would be gone and published-but-unconsumed orders would stay
+      7 # inventory  scale inventory-service to
+     … +142 lines (ctrl+o to expand)
+  Read 2 files, ran 1 shell command (ctrl+o to expand)
+
+● Write(notes\implmentations\aws_manually\step_7_2_resilience_drills_on_aws.txt)
+  ⎿  Wrote 112 lines to notes\implmentations\aws_manually\step_7_2_resilien
+     ce_drills_on_aws.txt
+       1 Step 7.2: resilience drills on AWS (written 2026-11-11, NOT yet
+       2
+       4   The resume bullet "0 orders lost or double-processed across fo
+         rced Kafka/service outages, with
+         cked so far only by local drills
+         d mvn, never AWS). These scripts
+         be shown on AWS.
+       8   Check the numbers in the bullet against what is recorded befor
+       9   about 25,000 orders and 7 disruptions in total, not 50,000 ord
+      10   AWS runs actually show (put them in ph
+     … +186 lines (ctrl+o to expand)
+
+● Update(phase2\infra\terraform\ecs_drill.tf)
+  ⎿  Added 1 line, removed 1 line
+      1 -# Resilience drills on AWS (PLAN step 26 repeated on the deploym
+        -ent; see notes/implmentations/aws_manually/step_7_resilience_dri
+        -lls_on_aws.txt).                                                
+      1 +# Resilience drills on AWS (PLAN step 26 repeated on the deploym
+        +ent; see notes/implmentations/aws_manually/step_7_2_resilience_d
+        +rills_on_aws.txt).                                              
+      2  # 1. A one-off task that runs scripts/drill-check.sql against bo
+         th databases (RDS is private, so the check has to run inside the
+          VPC).
+      3  #    scripts/aws_drill_check.py starts it and reads the result f
+         rom the log group.
+      4  # 2. With var.enable_drills, ECS Exec on the Kafka task, so scri
+         pts/aws_drill.sh can freeze and resume the broker.
+
+● Update(notes\implmentations\aws_manually\step1_2_logging_in_and_creating_budge
+        t.txt)
+  ⎿  Added 2 lines
+      54       ALB URL. While it runs, trigger a rolling deploy (a new im
+          age_tag and
+      55       terraform apply, or aws ecs update-service --force-new-dep
+          loyment). Save
+      56       the k6 output showing 0 failed requests.
+      57 +  7b. Resilience drills (optional, for the "0 lost" claim on AW
+         +S). Scripts written                                            
+      58 +     2026-11-11, not yet applied or run; see step_7_2_resilienc
+         +e_drills_on_aws.txt.                                           
+      59    8. Destroy. Run terraform destroy. Then check the console in 
+          every region you
+      60       used for load balancers, RDS instances and snapshots, ECR 
+          images, log
+      61       groups and Elastic IPs. Check Cost Explorer the next day.
+
+● Update(phase2\infra\terraform\README.md)
+  ⎿  Added 1 line
+      17     This needs the full state: the ECS cluster, the `db-init` ta
+          sk definition and `aws_iam_role_policy.execution_secrets`. If t
+          he output is `null` or the task stops with an `AccessDeniedExce
+          ption`, see "Troubleshooting".
+      18  6. `terraform apply -var image_tag=<commit sha>` brings up Kafk
+          a, Keycloak, the services and the ALB.
+      19  7. Open `terraform output app_url`, log in as `alice` (dev pass
+          word in `phase2/infra/keycloak/orderflow-realm.json`) and creat
+          e an order.
+      20 +   Optional, for the resilience drills: add `-var enable_drills
+         +=true` to this apply (before any orders: it replaces the Kafka 
+         +task), then `bash scripts/aws_drill.sh kafka|inventory|order <d
+         +ir>`. Written but not yet applied or run: see `notes/implmentat
+         +ions/aws_manually/step_7_2_resilience_drills_on_aws.txt`.      
+      21  8. `terraform destroy`, then check the console in every region 
+          you used: NAT gateways (there are none), load balancers, RDS in
+          stances
+      22     and snapshots, ECR images, CloudWatch log groups, Elastic IP
+          s, and Cost Explorer the next day.
+      23  
+
+● Update(phase2\infra\terraform\README.md)
+  ⎿  Added 2 lines, removed 1 line
+      40  ## Things to know
+      41  - HTTP only. There is no domain, so no ACM certificate; credent
+          ials cross the internet in clear text. Demo only.
+      42  - The realm's throwaway user passwords are in the repository an
+          d the ALB is public: anyone can log in as `alice`. Destroy when
+           done.
+      43 -- Kafka has no volume: topics are lost when its task restarts. 
+      43 +- Kafka has no volume: topics are lost when its task restarts. 
+         +That is why the Kafka drill freezes the broker process (ECS Exe
+         +c, `enable_drills`) instead of stopping the task.              
+      44 +- `drill-check` (`ecs_drill.tf`) is a one-off task that runs `s
+         +cripts/drill-check.sql` against RDS from inside the VPC; `scrip
+         +ts/aws_drill_check.py` starts it and reads the result.         
+      45  - During a rolling deploy two order-service tasks briefly overl
+          ap and publish the same outbox rows (harmless: idempotent consu
+          mer).
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I've written the drill script, the psql check task and the notes. Nothing has
+  been applied, deployed or run against AWS, and the changes are uncommitted.
+  terraform fmt and terraform validate pass, and the shell and Python scripts
+  compile.
+
+  What I checked locally
+  - Task script: I ran its SQL-splitting logic against drill-check.sql
+    (scripts/drill-check.sql), with cat standing in for psql. It produced the
+    right per-database blocks.
+  - Log parsing: I fed sample log output through the new parser and the existing
+    PASS/FAIL rules. A good run passed, and a deliberately wrong stock figure
+    produced a FAIL.
+
+  What I wrote
+  - Disruption script: aws_drill.sh (scripts/aws_drill.sh) takes kafka,
+    inventory or order plus an output directory. It runs preflight checks, takes
+    a baseline, starts the load against the ALB, applies the disruption 30
+    seconds in, waits for the drain and runs the checks. A trap undoes the
+    disruption if the script dies.
+    - inventory: sets the service to 0 for 60 seconds, then back to 1.
+    - order: stops the one order-service task and lets ECS replace it.
+    - kafka: freezes the broker process through ECS Exec (kill -STOP, then
+      -CONT).
+  - Check task: ecs_drill.tf (phase2/infra/terraform/ecs_drill.tf) defines a
+    one-off Fargate task that runs the SELECTs from drill-check.sql inside the
+    VPC and prints them to a new log group.
+    - aws_drill_check.py (scripts/aws_drill_check.py) starts it, reads the
+      output from CloudWatch and applies the same PASS/FAIL definitions as the
+      local drills.
+    - I split a report() function out of drill_check.py (scripts/drill_check.py)
+      for this. Local behaviour is unchanged.
+  - Terraform gating: a new enable_drills variable (default false) controls ECS
+    Exec on the Kafka service and a task-role policy. A normal apply does not
+    change Kafka.
+  - Notes: step_7_2_resilience_drills_on_aws.txt
+    (notes/implmentations/aws_manually/step_7_2_resilience_drills_on_aws.txt)
+    covers setup, how to run each drill, expected results, limits and what to
+    confirm on the first run. I also added pointers in the step list and in the
+    Terraform README.
+
+  Decisions to check
+  - Kafka outage method: I did not stop the Kafka task, because it has no volume
+    and its topics would be lost. Orders published but not yet consumed would
+    then stay PENDING forever.
+    - I also avoided revoking the security-group rule on port 9092. As far as I
+      know, security groups keep established connections open, so the outage
+      might never start. I haven't tested that.
+    - The freeze via ECS Exec is the closest equivalent to the docker pause your
+      outage test already uses.
+  - enable_drills replaces the Kafka task and empties its topics. Apply it
+    before any orders exist.
+
+  Not verified, and what happens on the first run
+  - I couldn't check whether the apache/kafka image has pidof, or how ECS Exec
+    handles the command quoting. The preflight runs the same command form and
+    stops before any load if it fails.
+  - The Session Manager plugin isn't installed on this machine. The Kafka drill
+    needs it.
+  - The stock check assumes 1,000,000 per SKU. That holds for the local seed but
+    is unconfirmed for the AWS database.
+  - The duplicate-ignored log count may legitimately be 0. Don't claim
+    redelivery unless it's above 0.
+
+  The numbers in your bullet (50,000 orders, 6 outages) don't match what the
+  repo records, which is roughly 25,000 orders and 7 disruptions, all local.
+  Quote the AWS run's actual figures, or reword the bullet.
+
+> Is it possible to implement the Kafka outage drill manually through the AWS
+  Dashboard console UI manually?
+
+  Searched for 2 patterns, ran 2 shell commands (ctrl+o to expand)
+
+● Yes, but it needs a different method from the script, and there are two things
+  to know first.
+
+  Your drill work isn't in the working tree. git status is clean, and the
+  enable_drills changes, ecs_drill.tf, aws_drill.sh and the step 7.2 notes are
+  gone. I see two stashes named "AWS-ready check task for repeatable evidence"
+  (stash@{0} and stash@{1}), so I assume you stashed them. I haven't touched
+  them. Tell me if you want them restored.
+
+  Console options for the Kafka outage
+
+  Option A: freeze the broker like the script does.
+  - The console has no button for it. In the ECS console you would:
+    - turn on ECS Exec through Update service
+    - add the ssmmessages:* permissions to the task role in the IAM console
+    - open CloudShell and run kill -STOP on the Kafka java process
+  - The flag turns on only when a new Kafka task starts. I haven't tested the
+    exec step on this image. It works, but it's mostly CLI work with extra
+    steps.
+
+  Option B: stop Kafka and start it again from the console. This is the
+  practical choice, with one condition. Stopping the Kafka task loses its
+  topics, so it's safe only if nothing is in flight.
+  - Your consumers use auto-offset-reset: earliest, and the broker should
+    recreate the topics when something produces to them. The topics are also
+    declared as NewTopic beans. I haven't verified the recreation on AWS.
+  - Steps:
+    a. Drain first. Create an order in the UI and wait for CONFIRMED. Don't
+       proceed while anything is PENDING.
+    b. Stop Kafka. Go to ECS → cluster orderflow → service kafka → Update
+       service → Desired tasks 0. Wait until running is 0.
+    c. Create orders during the outage. Create about 10 orders in the UI. Each
+       should return a 201 and show PENDING, and none should reach CONFIRMED.
+    d. Wait a minute, then restart. Set Desired tasks back to 1 and wait for the
+       task to be RUNNING (about 1–2 minutes).
+    e. Watch the recovery. The PENDING orders should move to CONFIRMED on their
+       own.
+
+  Verifying without psql
+
+  RDS has no query editor in the console. Use CloudWatch Logs Insights,
+  selecting both /orderflow/order-service and /orderflow/inventory-service. This
+  assumes the image with the INFO log lines is deployed:
+
+  filter @message like /created for customer|is now CONFIRMED|is now REJECTED/
+  | parse @message /(?<kind>created for customer|is now CONFIRMED|is now
+  REJECTED)/
+  | stats count(*) by kind
+
+  "created" should equal CONFIRMED plus REJECTED. I haven't run the query.
+
+  If you need the SQL checks, you can copy the orderflow-db-init task definition
+  in the console, change the command to your SELECTs, and run it. That is more
+  clicking, but it needs no Terraform.
+
+  What this does and doesn't prove
+
+  - It shows that orders are accepted (201) while Kafka is down, that they are
+    delivered afterwards, and that none are lost.
+  - It doesn't show redelivery or duplicates. With a drained system and an empty
+    restarted broker there is nothing to re-send, so the "idempotent consumers
+    absorbing redelivery" part isn't demonstrated.
+  - It doesn't support the "50,000 orders" scale. A manual run of about 10
+    orders is a demo, not a load test.
+  - For the bullet: quote a manual run as a demo, not as the drill numbers.
+
+  I can write these steps up as a notes file, or restore the stash.
+
+> How do you show redelivery or duplicates?
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● Redelivery isn't something you can wait for. A normal run, and even a short
+  outage, may produce no duplicates at all. So you either force it or show the
+  evidence that proves it happened. In rough order of reliability:
+
+  1. Replay the topic (most reliable)
+
+  Stop inventory-service and rewind its consumer group to the start of the
+  topic. Kafka then redelivers every OrderCreated event that inventory has
+  already processed.
+
+  1. Drain the system, and note the processed_messages count and the reserved
+     stock per SKU.
+  2. Scale inventory-service to 0, because the group must be inactive.
+  3. Run the rewind inside the Kafka container, which needs ECS Exec:
+  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+    --group inventory-service --topic orders.events --reset-offsets
+  --to-earliest --execute
+     The group id inventory-service is confirmed in OrderEventsListener.java:25
+     (services/inventory-service/src/main/java/com/orderflow/inventory/messaging
+     /OrderEventsListener.java#L25). The script path in the image is my
+     assumption.
+  4. Scale inventory-service back to 1.
+
+  What you should see:
+  - CloudWatch shows one Message … already processed; duplicate ignored line per
+    replayed event.
+  - processed_messages and the reserved stock are unchanged.
+  - No new StockReserved events are published.
+
+  This is a deliberate replay, so say so.
+
+  2. Two order-service tasks publishing the same rows
+
+  Your own comment in ecs_services.tf (phase2/infra/terraform/ecs_services.tf)
+  says a rolling deploy briefly runs two order-service tasks that publish the
+  same outbox rows.
+
+  - Start a load (or create orders), then run aws ecs update-service
+    --force-new-deployment on order-service.
+  - If the overlap happens, the duplicates appear on their own and show up as
+    duplicate ignored lines. It's probabilistic, so the count can be low.
+  - The Kafka freeze can also produce duplicates when a send times out after the
+    broker actually received it. You saw 3 copies in step 13f. It's not
+    guaranteed.
+
+  3. Forced redelivery on the consumer side
+
+  Hard-kill inventory-service after it commits to the database but before it
+  commits the offset. That window is tiny, and stop-task sends SIGTERM first,
+  which lets Spring commit offsets. Don't rely on this one.
+
+  4. The test that proves it deterministically
+
+  Your repo already has tests for this:
+  - OrderEventsListenerKafkaTest.java:84 (services/inventory-service/src/test/ja
+    va/com/orderflow/inventory/messaging/OrderEventsListenerKafkaTest.java#L84):
+    theSameRecordDeliveredTwiceReservesStockOnce
+  - InventoryServiceTest.java:85 (services/inventory-service/src/test/java/com/o
+    rderflow/inventory/service/InventoryServiceTest.java#L85):
+    sameMessageIdTwiceReservesOnce
+
+  Running them with real Kafka and Postgres containers is the cleanest evidence.
+  It's local, not AWS.
+
+  What proves it
+
+  Show all three together:
+  - the count of duplicate ignored log lines
+  - processed_messages equal to the order count, not order count plus duplicates
+  - reserved stock equal to the CONFIRMED quantity per SKU
+
+  A duplicate count above zero with unchanged state is "redelivery absorbed". A
+  count of zero proves nothing either way, so don't claim redelivery then.
+
+  I'd use option 1 on AWS for the demo and the tests for the rigorous proof. I
+  can write option 1 into a script, or add it to the step 7.2 notes, though
+  those files are still in your stash.
+
+> <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_6_2_4_dem
+  o\demo_key_order_features.txt in the IDE. This may or may not be related to
+  the current task.</ide_opened_file>
+
+> Is the inventory-service down drill meant to demonstrate idempotent consumers
+  absorbing redelivery?
+
+● No. That drill shows the events survive a consumer outage. It doesn't show
+  idempotent consumers absorbing redelivery.
+
+  What the inventory-service down drill shows
+  - Orders keep returning 201 while inventory-service is down. They stay
+    PENDING, and the events wait in the orders.events topic.
+  - After inventory-service restarts, it reads the backlog and every order
+    reaches CONFIRMED.
+  - The outbox lag stays near zero, because order-service and Kafka are healthy.
+  - The checks then show no lost orders and no stock below zero. They also show
+    reserved stock equal to the CONFIRMED quantity per SKU.
+
+  resilience.md (phase2/docs/resilience.md) describes drill 2 the same way. It
+  only says no stock was reserved twice.
+
+  Why it doesn't demonstrate redelivery
+  - Redelivery means the same message arrives more than once.
+  - Scaling to 0 (or stop-task) sends SIGTERM, and Spring commits its offsets on
+    a graceful shutdown. When the service restarts, it resumes after the last
+    processed message, so nothing is re-read.
+  - Redelivery would need a hard kill between the database commit and the offset
+    commit. That window is tiny, so you can't rely on it.
+
+  What the drill does give you for idempotency
+  - The reserved-vs-CONFIRMED check would catch a double reservation if one
+    happened. A pass is consistent with idempotency but doesn't prove it was
+    exercised.
+  - For the claim "idempotent consumers absorbing at-least-once redelivery", use
+    the offset-replay method or the two existing tests from my last answer. A
+    duplicate ignored count above 0 with unchanged state is the evidence.
+
+  For your bullet, the inventory drill supports "0 lost across service outages".
+  Redelivery needs its own evidence.
+
+> <ide_selection>The user selected the lines 7 to 11 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes\implmentations\aw
+  s_manually\step_6_2_4_demo\resume_point_2\kafka_outage_test.txt:
+  Option A: freeze the broker like the script does.
+  - The console has no button for it. In the ECS console you would:
+    - turn on ECS Exec through Update service
+    - add the ssmmessages:* permissions to the task role in the IAM console
+    - open CloudShell and run kill -STOP on the Kafka java process
+
+  This may or may not be related to the current task.</ide_selection>
+
+> For each step in the following, elaborate more on what sub-steps I need to
+  do:
+
+  "
+  Option A: freeze the broker like the script does.
+
+  The console has no button for it. In the ECS console you would:
+  turn on ECS Exec through Update service
+  add the ssmmessages:* permissions to the task role in the IAM console
+  open CloudShell and run kill -STOP on the Kafka java process
+  "
+
+● One thing affects the steps, so it comes first. The Kafka container's main
+  process may be PID 1. Linux ignores kill -STOP sent to PID 1 from inside its
+  own container, so the freeze would silently do nothing. The apache/kafka
+  entrypoint ends with exec, so I expect java to be PID 1, but I haven't
+  confirmed it. The fix is to enable the init process on the task definition,
+  which I've folded into step 1 below. Also do the IAM step before turning ECS
+  Exec on, so the new task starts with the permission already in place.
+
+  Step 2 first: add the permissions to the task role (IAM console)
+
+  1. Open the IAM console, go to Roles and search for orderflow-ecs-task. Don't
+     pick orderflow-ecs-execution; that one is the wrong role.
+  2. Open the role, then Add permissions → Create inline policy.
+  3. Choose the JSON tab and paste:
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": [
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel"
+      ],
+      "Resource": "*"
+    }]
+  }
+  4. Click Next, name it ecs-exec, then Create policy.
+  5. Your own login also needs ecs:ExecuteCommand and ssm:StartSession. Your
+     README says you use AdministratorAccess, so you should already have them.
+
+  Step 1: turn on ECS Exec (ECS console)
+
+  1a. Enable the init process (to avoid the PID 1 problem)
+  1. Go to Task definitions → orderflow-kafka → Create new revision → Create new
+     revision with JSON.
+  2. In the kafka container definition, add "linuxParameters": {
+     "initProcessEnabled": true }.
+  3. Click Create. Java then runs as a child of a small init process, so kill
+     -STOP can reach it.
+
+  1b. Update the service
+  1. Go to Clusters → orderflow → Services → kafka → Update.
+  2. Set Revision to the new one.
+  3. Expand Troubleshooting configuration and tick Turn on ECS Exec.
+  4. Tick Force new deployment if it's offered.
+  5. Click Update.
+  6. Do this on a drained system. The Kafka task is replaced and its topics are
+     lost.
+
+  1c. Verify
+  1. Wait for the new task to show RUNNING.
+  2. In CloudShell, run:
+  aws ecs describe-tasks --cluster orderflow --tasks <TASK_ID> --query
+  "tasks[0].containers[0].managedAgents"
+  3. The ExecuteCommandAgent should show lastStatus: RUNNING. If it doesn't, the
+     IAM step is missing or hasn't taken effect yet. Wait a minute, or restart
+     the task.
+  4. The task, service and revision are managed by Terraform, so the next
+     terraform apply will revert these changes. That's fine for a one-off.
+
+  Step 3: freeze the broker (CloudShell)
+
+  3a. Open a shell in the Kafka task
+  1. Click the CloudShell icon in the top bar. Make sure the region is
+     us-east-1.
+  2. Run session-manager-plugin --version. If it's missing, install it from the
+     AWS-documented Linux rpm. I haven't confirmed that CloudShell ships with
+     it.
+  3. Get the task ID:
+  aws ecs list-tasks --cluster orderflow --service-name kafka --query
+  'taskArns[0]' --output text
+     Use the part after the last /.
+  4. Start the session:
+  aws ecs execute-command --cluster orderflow --task <TASK_ID> --container kafka
+  --interactive --command "/bin/sh"
+
+  3b. Find the process and freeze it
+  1. Inside the session, run pidof java. If that command isn't available, run ps
+     | grep java.
+  2. If the pid is 1, stop. The init process isn't enabled, so go back to 1a.
+  3. Check that the pid has a sensible number, then freeze it: kill -STOP <pid>.
+  4. Confirm with grep State /proc/<pid>/status. It should say T (stopped).
+  5. Keep this session open for the whole outage.
+
+  3c. Run the test while it's frozen
+  1. In the app, create about 10 orders.
+  2. Each should return a 201 and stay PENDING.
+  3. Wait about 60 seconds.
+
+  3d. Resume
+  1. In the same session, run kill -CONT <pid>.
+  2. grep State /proc/<pid>/status should go back to S.
+  3. The PENDING orders should move to CONFIRMED within a minute or so.
+  4. If the session drops, open a new one and run kill -CONT there. The process
+     stays frozen until you do.
+
+  A problem with the script I wrote earlier
+
+  The preflight in aws_drill.sh only checks that pidof java returns a number, so
+  it would pass even when the pid is 1. The drill would then run with no
+  outage. The Terraform for the Kafka task also doesn't set initProcessEnabled.
+  Both need fixing before that script is used, and both files are still in your
+  stash. I can restore the stash and fix them, or leave them alone if you're
+  sticking with the console route.
+
+> What is a drained system?
+  How do we use CloudShell?
+
+● A drained system is one where no work is still moving through the order
+  pipeline. The term comes from your own drill notes. Before you stop Kafka,
+  nothing may be in flight. That means:
+  - No order is PENDING. Every order is CONFIRMED or REJECTED.
+  - No outbox row is waiting to be published to Kafka, in either service.
+  - Nothing is being sent: stop your load generator and don't click "create
+    order".
+
+  It matters because the Kafka task has no volume. Replacing it empties the
+  topics. An event that was published but not yet consumed would be lost, and
+  its order would stay PENDING forever. If nothing is in flight, you lose
+  nothing but already-processed history.
+
+  How to check without psql:
+  1. Create one order in the UI and wait for CONFIRMED.
+  2. Open the orders list. Nothing should show PENDING.
+  3. Wait about 30 seconds for any trailing events.
+
+  For a stricter check, run this in CloudWatch Logs Insights on both log groups.
+  The counts of "created" and "CONFIRMED or REJECTED" lines should match. I
+  haven't run this query:
+  filter @message like /created for customer|is now CONFIRMED|is now REJECTED/
+  | parse @message /(?<kind>created for customer|is now CONFIRMED|is now
+  REJECTED)/
+  | stats count(*) by kind
+
+  CloudShell is a terminal that runs in your browser, already logged in as you.
+  You don't need to install or configure the AWS CLI.
+
+  1. Sign in to the AWS console and set the region to us-east-1, since
+     CloudShell uses the region currently selected. The Kafka drill resources
+     are there.
+  2. Click the CloudShell icon in the top bar. It looks like >_, next to the
+     search box. You can also search "CloudShell" in the search box.
+  3. Wait about 30 seconds the first time while the environment starts.
+  4. You get a Linux shell with the AWS CLI already set up. Test it with:
+  aws sts get-caller-identity
+     It should print your account and your user or role.
+  5. Paste commands with Ctrl+Shift+V, or use the right-click menu. Ordinary
+     Ctrl+V may not work.
+
+  Things to know:
+  - Idle timeout: the session ends after about 20 to 30 minutes of inactivity.
+    Your files in your home folder (about 1 GB) survive, but running processes
+    don't. Keep the Kafka freeze session active until you've run kill -CONT.
+  - Your permissions: CloudShell uses your console login. You need the ECS Exec
+    permissions from the earlier steps, which AdministratorAccess already
+    includes.
+  - Session Manager plugin: ECS Exec needs session-manager-plugin. I haven't
+    confirmed whether CloudShell ships with it. Run session-manager-plugin
+    --version to check.
+  - Installing the plugin if it's missing: use the AWS-documented Linux rpm
+    installer.
+  - Tabs: the Actions menu lets you open several tabs.
+
+> How to add a final check on the processed_messages count against the order
+  count, as in your local runs?
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Your local runs only printed that number. They never asserted it.
+  drill_check.py (scripts/drill_check.py) shows processed_messages: N in its
+  header line (line 64), and resilience.md (phase2/docs/resilience.md) says it
+  equals the order count, but nothing turns it into a PASS or FAIL. So I
+  overstated it when I said "as in your local runs". The current file also
+  doesn't have the report() refactor I made earlier, because that work is in
+  your stash.
+
+  Add it as a real check
+
+  In the checks = [ ... ] list, after the stock never negative line (line 57),
+  add:
+
+  ("duplicated: processed_messages (inventory) equals rows in orders",
+  one("orders_total"), one("processed_messages"), lambda a, b: a == b),
+
+  - What it compares: orders_total comes from the orders database and
+    processed_messages from the inventory database. Both queries are already in
+    drill-check.sql (scripts/drill-check.sql), so no SQL changes.
+  - What it means: every order should have been processed exactly once, and
+    rejected orders count too. A smaller number means events weren't processed
+    yet or were lost. A larger number means one order was processed under two
+    different message ids, which is a real double-processing.
+  - When it's valid: both databases must share the same history. It holds on a
+    fresh AWS database. It fails if rows were inserted straight into orders, as
+    seed-orders.sql (scripts/seed-orders.sql) does for the perf tests, because
+    those orders never went through inventory.
+
+  If you restore the stash, the AWS script uses the same report() function, so
+  the one line covers local and AWS runs.
+
+  Without the script (console only)
+
+  You can't query RDS from the console, so compare log lines in Logs Insights
+  instead. Select both log groups and run (untested):
+
+  filter @message like /created for customer|Stock reserved for order|Stock
+  rejected for order|duplicate ignored/
+  | parse @message /(?<kind>created for customer|Stock reserved for order|Stock
+  rejected for order|duplicate ignored)/
+  | stats count(*) by kind
+
+  "created for customer" should equal "Stock reserved" plus "Stock rejected".
+  The "duplicate ignored" count is shown separately and should not be added to
+  either side.
+
+  Set the query's time range to cover the whole run. This only works if the
+  image with the INFO log lines is deployed.
+
+  I can make the one-line edit now, or restore the stash and add it to the AWS
+  version too.
+
+> <ide_selection>The user selected the lines 47 to 47 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_6_2_4_dem
+  o\resume_point_2\demo_key_features_for_resume_point_2.txt:
+  inventory-service
+
+  This may or may not be related to the current task.</ide_selection>
+
+> What are the steps to implement this drill: inventory-service down
+
+● This drill needs no Terraform changes and no ECS Exec. Console steps first,
+  with the CLI equivalents after.
+
+  Before you start
+
+  1. Check the stack. In ECS → cluster orderflow, kafka, inventory-service and
+     order-service should each show 1/1 running.
+  2. Check it's drained. Create one order in the UI and wait for CONFIRMED.
+     Nothing should show PENDING.
+  3. Note the starting point. Count your orders in the UI, or run the Logs
+     Insights query from earlier. You'll compare against this at the end.
+  4. Deploy the INFO log lines. The image needs them for the log evidence. The
+     lines are in your commit "add the INFO log lines".
+
+  The drill (console)
+
+  1. Take inventory-service down
+  - Go to ECS → Clusters → orderflow → Services → inventory-service → Update.
+  - Set Desired tasks to 0 and click Update.
+  - Wait until the service shows 0 running. The task stops gracefully, which
+    takes about 30 seconds.
+  - Write down the time.
+
+  2. Create orders while it's down
+  - Create about 10 orders in the UI.
+  - Expect a 201 for each, with the status PENDING and no CONFIRMED.
+  - The stock lookup in the UI may show an error or "unknown". That is a
+    separate feature and is expected while inventory-service is down.
+  - Wait about 60 seconds in total.
+
+  3. Check the events are waiting (optional but useful)
+  - In Logs Insights on /orderflow/order-service, you should see Published
+    outbox event … to orders.events for your orders.
+  - In /orderflow/inventory-service there should be no new Stock reserved lines.
+
+  4. Bring it back
+  - Update the service and set Desired tasks to 1.
+  - The task needs about 1–2 minutes to start. Wait for RUNNING.
+  - It rejoins the consumer group on a clean shutdown, so there should be no
+    long wait.
+
+  5. Watch recovery
+  - The PENDING orders should move to CONFIRMED by themselves, within a minute
+    or so of the service being healthy.
+
+  Verify
+
+  - The UI shows 0 PENDING and the order count you expect.
+  - Run the Logs Insights count query over both log groups. "created for
+    customer" should equal "Stock reserved" plus "Stock rejected". Use a time
+    range covering the whole drill.
+  - Stock was plentiful, so REJECTED should be 0. If it isn't, something else is
+    wrong.
+
+  With a load instead of manual orders
+
+  Use this version if you want numbers:
+  1. From your machine, run:
+  python scripts/load_orders.py --rate 20 --duration 180 --base-url <ALB_URL>
+  --keycloak-url <ALB_URL>
+  2. At about 30 seconds, scale inventory-service to 0.
+  3. At about 90 seconds, scale it back to 1.
+  4. Keep the created_201 count from the script's output. After the drain,
+     compare it with the created count in the logs.
+  5. Because Fargate restarts slowly, the restart may land near the end of the
+     load, and the backlog drains afterwards. That is expected.
+
+  CLI equivalent (CloudShell or your terminal)
+
+  aws ecs update-service --cluster orderflow --service inventory-service
+  --desired-count 0
+  # wait 60 s
+  aws ecs update-service --cluster orderflow --service inventory-service
+  --desired-count 1
+  aws ecs wait services-stable --cluster orderflow --services inventory-service
+
+  What this shows, and what to remember
+
+  - It shows: orders are still accepted while inventory is down, nothing is
+    lost, and every order is processed after restart.
+  - It doesn't show: redelivery or duplicates, as we discussed.
+  - Screenshots:
+    - the ECS service at 0 running with PENDING orders in the UI
+    - the same orders showing CONFIRMED after the restart
+    - the Logs Insights counts
+  - Restore: the desired count must end at 1. Terraform defines it as 1, so a
+    later apply would restore it anyway.
+
+> <ide_selection>The user selected the lines 88 to 88 from
+  c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes\implmentations\aw
+  s_manually\step_1_2_logging_in_and_creating_budget.txt:
+  aws sso login --profile SystemAdministrator-702623019395
+
+  This may or may not be related to the current task.</ide_selection>
+
+> How and what to execute for this step: "Run the Logs Insights count query
+  over both log groups. "
+
+● The console is the easier way to do this. Here are the steps, with the CLI
+  version afterwards.
+
+  In the console
+
+  1. Log in and set the region. Open the AWS console and set the region to
+     us-east-1. If you work from the terminal instead, run aws sso login
+     --profile SystemAdministrator-702623019395 first.
+  2. Open Logs Insights. Go to CloudWatch → Logs → Logs Insights. In the left
+     menu it's under Logs.
+  3. Select the log groups. In the Select log group(s) box, pick both
+     /orderflow/order-service and /orderflow/inventory-service. Type orderflow
+     to filter the list.
+  4. Set the time range. Use the picker at the top right and choose Absolute.
+     Start a few minutes before you began the drill and end after the last order
+     reached CONFIRMED. The default is the last hour, which is fine if the
+     drill was recent.
+  5. Paste the query and run it. Click Run query. The query to paste is below.
+
+  Main query (order-service's view):
+  filter @message like /created for customer|is now CONFIRMED|is now REJECTED/
+  | parse @message /(?<kind>created for customer|is now CONFIRMED|is now
+  REJECTED)/
+  | stats count(*) by kind
+
+  Optional second query (inventory-service's view, including duplicates):
+  filter @message like /created for customer|Stock reserved for order|Stock
+  rejected for order|duplicate ignored/
+  | parse @message /(?<kind>created for customer|Stock reserved for order|Stock
+  rejected for order|duplicate ignored)/
+  | stats count(*) by kind
+
+  Reading the result
+
+  The result is a small table with one row per kind and its count.
+
+  - Main query: created for customer should equal is now CONFIRMED plus is now
+    REJECTED.
+  - Second query: created for customer should equal Stock reserved plus Stock
+    rejected. duplicate ignored is shown separately and should not be added to
+    either side. It can legitimately be 0.
+  - Expected REJECTED count: 0, because stock was plentiful.
+  - If created is higher: some orders haven't finished, or something was lost.
+    Wait a minute and run it again.
+  - If a row is missing: there were no such lines in that time range, or the
+    image without the INFO lines is still deployed.
+
+  Common problems
+
+  - No results at all: widen the time range first. Then check that you selected
+    both log groups and the right region.
+  - Counts look too high or low: the time range includes earlier orders, such as
+    your smoke-test orders. Narrow it to the drill, or subtract the baseline
+    you noted.
+  - Logs lag: lines can take up to about a minute to appear, so re-run if the
+    counts are still moving.
+  - Unverified query: I haven't run these queries. If the parse line errors,
+    send me the error.
+
+  From the terminal (optional)
+
+  Logs Insights from the CLI is two calls, and the quoting is awkward in
+  PowerShell, so I'd stay with the console:
+
+  aws logs start-query --profile SystemAdministrator-702623019395 --region
+  us-east-1 \
+    --log-group-names /orderflow/order-service /orderflow/inventory-service \
+    --start-time <epoch seconds> --end-time <epoch seconds> \
+    --query-string '<the query>'
+  aws logs get-query-results --profile SystemAdministrator-702623019395 --region
+  us-east-1 --query-id <id from the first call>
+
+  Run get-query-results again until its status is Complete. In Git Bash, date -d
+  "2026-11-11 19:00" +%s gives the epoch seconds.
+
+> <ide_selection>The user selected the lines 48 to 48 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_6_2_4_dem
+  o\resume_point_2\demo_key_features_for_resume_point_2.txt:
+  order-service killed
+
+  This may or may not be related to the current task.</ide_selection>
+
+> What are the steps to implement this drill: order-service killed
+
+● Like the inventory drill, this needs no Terraform changes. Console steps
+  first, then the load version and the CLI equivalent.
+
+  Before you start
+
+  1. Check the stack. In ECS → cluster orderflow, kafka, inventory-service and
+     order-service should each show 1/1 running.
+  2. Check it's drained. Create one order in the UI and wait for CONFIRMED.
+     Nothing should show PENDING.
+  3. Note the starting point. Run the Logs Insights count query and write down
+     the created for customer count, or subtract it later.
+  4. Have the INFO log lines deployed. The log evidence depends on them.
+
+  The drill (console)
+
+  1. Create orders just before the stop
+  - Create about 5 orders in the UI right before you stop the task. Some of them
+    will still be in flight when the task stops. Those are the ones that show
+    the outbox survives the stop.
+
+  2. Stop the order-service task
+  - Go to ECS → Clusters → orderflow → Services → order-service → Tasks tab.
+  - Select the running task and click Stop. Write down the time.
+  - The service notices 0 running against a desired count of 1 and starts a
+    replacement on its own.
+
+  3. Observe the outage
+  - The UI and API return errors, usually 503, because the ALB has no healthy
+    target.
+  - Any request that fails never got a 201, so that order isn't acknowledged and
+    doesn't count as lost.
+  - The live status stream in the UI drops.
+  - The replacement needs about 1–3 minutes: Spring Boot start, Flyway, and the
+    ALB health check (the service has a 120 s grace period).
+
+  4. Watch recovery
+  - Watch the service's Events tab for the new task starting and then
+    registering with the target group.
+  - Check EC2 → Target Groups for the order-service target going healthy.
+  - Wait until the service shows 1/1 running.
+
+  5. Verify
+  - The orders you created before the stop should end up CONFIRMED. Refresh the
+    UI.
+  - Run the Logs Insights count query over both log groups. created for customer
+    should equal CONFIRMED plus REJECTED.
+  - Expected REJECTED count: 0.
+
+  With a load (for numbers)
+
+  1. From your machine, run:
+  python scripts/load_orders.py --rate 20 --duration 300 --base-url <ALB_URL>
+  --keycloak-url <ALB_URL>
+  2. Stop the order-service task at about 30 seconds.
+  3. Keep the script's created_201 count and its failure count. The failures are
+     expected: roughly the downtime in seconds times 20.
+  4. After the drain, compare the created for customer log count with
+     created_201.
+  5. The log count should be equal to or slightly higher than created_201. The
+     difference is orders that were saved but whose 201 never reached the
+     client. resilience.md (phase2/docs/resilience.md) names this gap, and the
+     local runs saw none.
+  6. A hard kill can lose the last buffered log lines, so a small gap in the
+     other direction is possible too. Don't claim an exact match.
+
+  CLI equivalent
+
+  aws ecs list-tasks --cluster orderflow --service-name order-service --query
+  'taskArns[0]' --output text
+  aws ecs stop-task --cluster orderflow --task <TASK_ID> --reason drill
+  aws ecs wait services-stable --cluster orderflow --services order-service
+
+  What this shows, and its limits
+
+  - It shows: an order-service outage doesn't lose any order that got a 201.
+    Rows committed before the stop get published after the restart, and results
+    that inventory-service produced meanwhile wait in Kafka.
+  - A stop isn't a crash. ECS sends SIGTERM and only force-kills after 30
+    seconds. The local drill used taskkill /F, which is harsher. There is no
+    clean console way to hard-kill a Fargate task.
+  - What to claim: say "stopped", not "crashed". The outage is also longer than
+    the local 26 seconds, because of Fargate startup.
+  - Screenshots:
+    - the ECS service at 0/1 and then 1/1
+    - the browser error during the outage
+    - the orders CONFIRMED afterwards
+    - the Logs Insights counts
+  - Restore: nothing to do, because the service replaces the task itself. If it
+    doesn't come back, check the Events tab first. The deployment circuit
+    breaker or a failing health check is the likely cause.
+
+> <ide_selection>The user selected the lines 49 to 49 from
+  c:\Users\WJ\Desktop\Work
+  2023-05-12\Project\orderflow\notes\implmentations\aws_manually\step_6_2_4_dem
+  o\resume_point_2\demo_key_features_for_resume_point_2.txt:
+  Redelivery (the idempotent-consumer proof)
+
+  This may or may not be related to the current task.</ide_selection>
+> Why perform this test "python scripts/load_orders.py --rate 20 --duration 300
+  --base-url <ALB_URL> --keycloak-url <ALB_URL>" when we will be performing
+  "Deploy under load (24c)" test later?
+
+● You don't have to run it. The two tests answer different questions, and the
+  load in the order-service drill is optional.
+
+  ┌────────────┬───────────────────────────┬───────────────────────────────┐
+  │            │   Order-service killed    │    Deploy under load (24c)    │
+  │            │           drill           │                               │
+  ├────────────┼───────────────────────────┼───────────────────────────────┤
+  │            │ After a failure, is every │ Can a planned deploy happen   │
+  │ Question   │  acknowledged order kept  │ with no failed requests?      │
+  │            │ and processed once?       │                               │
+  ├────────────┼───────────────────────────┼───────────────────────────────┤
+  │            │                           │ Bullet 4: ECS deploys. The    │
+  │ Resume     │ Bullet 2: 0 lost or       │ PLAN says not to call it      │
+  │ claim      │ double-processed          │ zero-downtime unless the      │
+  │            │                           │ evidence shows it.            │
+  ├────────────┼───────────────────────────┼───────────────────────────────┤
+  │ Errors     │ Expected, because the     │ A pass means 0 failed         │
+  │ during the │ task is stopped           │ requests                      │
+  │  test      │                           │                               │
+  ├────────────┼───────────────────────────┼───────────────────────────────┤
+  │ What you   │ created_201 compared with │ The k6 output with            │
+  │ keep       │  the log counts           │ http_req_failed               │
+  ├────────────┼───────────────────────────┼───────────────────────────────┤
+  │ Tool       │ load_orders.py, labelled  │ k6 (the PLAN says step 25a    │
+  │            │ "not k6"                  │ comes first)                  │
+  └────────────┴───────────────────────────┴───────────────────────────────┘
+
+  Why the drill uses a load at all
+  - To make the claim "N orders, 0 lost" you need a count of acknowledged orders
+    to compare against. created_201 from the load script gives you that.
+  - The load also guarantees orders are in flight when the task stops. With 5
+    manual orders you might get none in flight.
+  - It keeps the AWS result comparable with your local drills, which used the
+    same script at the same rate.
+
+  When to skip it
+  - If you only want to demonstrate the behaviour, create about 10 orders by
+    hand and stop the task. That is enough for a demo, but it supports no
+    numbers in the bullet.
+  - If you use the load, keep the 20 orders/s rate so it matches the local runs.
+
+  How the two can share work
+  - A rolling deploy briefly runs two order-service tasks that publish the same
+    outbox rows. ecs_services.tf (phase2/infra/terraform/ecs_services.tf) says
+    so.
+  - After 24c, run the Logs Insights count query. If the duplicate ignored count
+    is above 0, that run also gives you redelivery evidence at no extra cost.
+  - You can still run the kill drill separately. Do it first, on a drained
+    system, so the two runs don't mix in the logs.
+
+  Do the drills before 24c. The drills need a clean baseline, and a deploy under
+  load leaves lots of orders and logs behind. If you want the kill drill's
+  counts to be easy to read, run it first, note the baseline, and then run 24c.
+
+> What are the steps to implement this test: Redelivery (the
+  idempotent-consumer proof)
+
+● This test replays the orders.events topic to inventory-service, so every event
+  it already processed arrives a second time. If the consumer is idempotent,
+  each one is ignored and nothing changes. It is a deliberate replay, not a
+  natural outage, so describe it that way.
+
+  Prerequisites
+
+  - ECS Exec must be on for the Kafka task, because the rewind command runs
+    inside the Kafka container. Do the IAM policy and ECS Exec update from the
+    earlier Option A answer. You don't need the init-process change here, since
+    only kill -STOP has the PID 1 problem.
+  - Enabling ECS Exec replaces the Kafka task and empties the topics. Do it
+    first, before creating the orders you want to replay.
+  - The INFO log lines must be deployed.
+
+  Steps
+
+  1. Create the data to replay
+  - After the new Kafka task is running, create about 20 orders (by hand, or
+    load_orders.py --rate 20 --duration 30).
+  - Wait until all are CONFIRMED and none are PENDING.
+
+  2. Record the baseline
+  - Note the time.
+  - Run the Logs Insights count query and write down Stock reserved and Stock
+    rejected.
+  - If you have the SQL check task, also record the processed_messages count and
+    the reserved stock per SKU.
+
+  3. Stop the consumer
+  - ECS → inventory-service → Update → Desired tasks 0.
+  - Wait for 0 running. The consumer group must be empty, or Kafka refuses the
+    reset.
+
+  4. Rewind the consumer group (CloudShell)
+  - Get the task ID and open a shell as in the earlier answer:
+  aws ecs list-tasks --cluster orderflow --service-name kafka --query
+  'taskArns[0]' --output text
+  aws ecs execute-command --cluster orderflow --task <TASK_ID> --container kafka
+  --interactive --command "/bin/sh"
+  - Inside the shell, the script path is my assumption for this image:
+  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092
+  --group inventory-service --describe
+    Note LOG-END-OFFSET for orders.events. That is the number of records that
+    will be replayed.
+  - Preview the reset:
+  /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092
+  --group inventory-service --topic orders.events --reset-offsets --to-earliest
+  --dry-run
+  - Apply it by repeating the command with --execute instead of --dry-run.
+  - Run --describe again. The lag should now equal the log-end offset.
+  - The group id inventory-service is confirmed in the code.
+
+  5. Restart the consumer
+  - Set inventory-service Desired tasks back to 1 and wait for RUNNING.
+  - It reads the whole topic again.
+
+  6. Verify
+  - In Logs Insights, set the time range to start when you restarted
+    inventory-service, then run:
+  filter @message like /duplicate ignored|Stock reserved for order|Stock
+  rejected for order/
+  | parse @message /(?<kind>duplicate ignored|Stock reserved for order|Stock
+  rejected for order)/
+  | stats count(*) by kind
+  - Expected result:
+    - duplicate ignored equals the log-end offset from step 4
+    - Stock reserved and Stock rejected are 0 in this window
+  - The UI should still show the same CONFIRMED orders.
+  - If you have the SQL check, processed_messages and the reserved stock should
+    be unchanged.
+
+  What this proves
+
+  - The consumer absorbed a full redelivery with no new reservations and no new
+    result events. That is the "idempotent consumers absorbing at-least-once
+    redelivery" part of the bullet.
+  - It shows the consumer side only. It doesn't show the producer creating
+    duplicates on its own.
+  - The count of duplicate ignored lines is the evidence.
+  - A replay of 20 orders is a demo. It doesn't support the 50,000-order figure.
+
+  An alternative without touching the Kafka task
+
+  You can run the same kafka-consumer-groups.sh command from a one-off ECS task
+  using the apache/kafka image. It would need the inventory-service security
+  group to reach port 9092. That is more console clicking and I haven't verified
+  it, so ECS Exec is the simpler route if you're already enabling it.
