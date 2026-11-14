@@ -5,6 +5,9 @@ An order-management system built to show event-driven design done carefully: a *
 **PostgreSQL** with Flyway, **OAuth2/JWT** login through Keycloak, **Redis** cache with **Resilience4j**, and metrics, tracing and alerts
 (Prometheus, Grafana, Jaeger).
 
+> [!IMPORTANT]
+> For high-level instructions, see Implementation_steps.md
+
 ## Recorded Demo on AWS 
  
 ### The manual demo on AWS is shown on the Orderflow-demo video below: <br/>

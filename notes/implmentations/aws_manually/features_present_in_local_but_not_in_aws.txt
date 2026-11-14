@@ -1,0 +1,28 @@
+The AWS deployment runs the same application code as local, so every business feature works (login, create order, order reaching CONFIRMED via outbox → Kafka → inventory). What's missing is the supporting infrastructure around it. This comes from comparing [docker-compose.full.yml](phase2/infra/docker-compose.full.yml) with the Terraform in [phase2/infra/terraform/](phase2/infra/terraform/) and [ADR 0006](phase2/docs/adr/0006-aws-choices.md); I didn't check the live AWS stack.
+
+## Not available on AWS
+
+| Feature | Local (compose) | AWS | Effect |
+|---|---|---|---|
+| **Redis stock cache** | `redis:7` | None; `SPRING_DATA_REDIS_HOST` points at `localhost` with nothing listening | Stock lookups still answer because the cache fails open, but every one goes to inventory-service and logs two `WARN` lines from `CacheConfig`. |
+| **Distributed tracing** | Jaeger UI on `:16686` | None; `MANAGEMENT_TRACING_SAMPLING_PROBABILITY=0` on both services | No traces are recorded at all. |
+| **Metrics and alerts** | Prometheus on `:9090` with `alerts.yml` | None | Nothing is scraped and no alert rules run. |
+| **Dashboards** | Grafana on `:3000` with provisioned dashboards | None | CloudWatch log groups are the only visibility. |
+| **Direct access to inventory-service** | `localhost:8081` | Internal only, reachable from order-service | The ALB routes only `/api/*`, `/realms/*`, `/resources/*` and the frontend. |
+| **Actuator endpoints from outside** | `localhost:8080/actuator/...` | Not routed through the ALB | Only the ALB health check uses `/actuator/health/readiness`. |
+| **Direct database and Kafka access** | `localhost:5432`, `localhost:9092` | RDS in private subnets, Kafka only inside the VPC | You need a one-off ECS task, as in your [psql task note](notes/implmentations/aws_manually/step_6_2_3_one_off_psql_task_to_view_demo_results_visibility.md). |
+| **Keycloak admin console** | `localhost:8180` | Probably not reachable; the ALB forwards only `/realms/*` and `/resources/*`, not `/admin/*` | Login works; realm administration through the browser likely doesn't. |
+
+## Present on AWS but weaker
+
+- **Kafka durability:** the broker has no volume, so topics and already-published events are lost whenever the task restarts. The outbox republishes only unpublished rows.
+- **HTTPS:** the ALB is HTTP only, so tokens and passwords travel in clear text.
+
+## What AWS has that local doesn't
+
+- **Rolling deploys:** ALB health checks and circuit-breaker rollback.
+- **Secrets Manager:** holds the database and Keycloak passwords.
+- **CloudWatch:** collects the container logs.
+- **Budget alert:** set up through Terraform.
+
+ADR 0006 still says "draft … has NOT been planned or applied" in its status and "State of this work" sections, which your step notes show is out of date.
