@@ -24,11 +24,113 @@ Status 2026-11-13: preparation done (baseline restored, second image `dc1acc0` p
 2. Start k6 against the ALB URL at a steady arrival rate for about 5 minutes. Use the k6 script from your load-test step. Write its output to a file, for example `--out json=` plus the console summary.
 3. At about the 2-minute mark, run the apply with the new tag.
 4. Record the arrival rate, duration, image sizes and the `http_req_failed` count. Only claim "0 failed requests" if the output shows it. Don't call it zero-downtime unless the evidence supports that.
+5. Before destroying, check the ALB metrics in CloudWatch as a second source of evidence: `RequestCount`, `HTTPCode_Target_2XX_Count`, `HTTPCode_Target_5XX_Count`, `HTTPCode_ELB_5XX_Count` (all Sum) and `TargetResponseTime` (p95), at a 1-minute period over the noted k6 window. Use 1 minute, not 1 second: ALB metrics are one datapoint per minute. A missing 5xx metric means no 5xx events occurred. Details in [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md), section E.
 
 ## Destroy and verify
 1. Run `terraform destroy`.
 2. In the console, in your one region, check for leftovers: load balancers, RDS instances and snapshots, ECR images, CloudWatch log groups, Elastic IPs, and NAT gateways (there should be none).
 3. Check Cost Explorer the next day.
+
+## Detailed steps for - Deploy under load (24c)
+Secrets injection (the first part of 24c) is already in the Terraform: the DB and Keycloak secrets use `valueFrom`, and the execution role has `GetSecretValue`. Here are the extra substeps, in order.
+
+## A. Prerequisites (do before anything else)
+
+1. **Tools.** k6, aws, terraform and docker are all installed on this machine.
+2. **AWS login.** Run `aws sts get-caller-identity`. If it fails, run `aws sso login`.
+3. **Clean git tree.** Run `git status`. The image tag is a commit SHA, so a dirty tree gives an image that doesn't match its tag.
+4. **Note the baseline tag.** Look at `terraform.tfvars` and the live task definitions to find the tag that is currently deployed. Your notes say `9ff11d1`. `terraform.tfvars` is git-ignored, so the `-var` flag is the only record of the tag.
+5. **Verify the secrets injection.** It is already coded. Confirm it works live:
+   - In the console, open an order-service task definition and check that the `secrets` entries point at Secrets Manager.
+   - Run `aws secretsmanager list-secrets --region us-east-1` and check that the db and keycloak secrets exist.
+   - Check that no plaintext password appears in the task definition's environment.
+   - A running task that connects to RDS proves the injection works.
+
+## B. Restore the baseline
+
+6. Run `terraform plan -var "image_tag=<baseline>"` and read it. Then apply it.
+7. Wait for all services to reach 1/1. Check the target groups for healthy targets: `aws elbv2 describe-target-health --target-group-arn <arn>`.
+8. Kafka restarted with no volume, so check that order-service reconnects. If Kafka came up after order-service, look at the order-service logs for Kafka connection warnings. If it stays unhealthy, force a new deployment of order-service.
+9. Log in at `$url` as alice and create an order. Confirm it reaches CONFIRMED. This confirms the whole chain (Keycloak, order-service, Kafka, inventory-service, RDS) works.
+10. **Check the databases exist.** The one-off `db_init` task only needs to run again if RDS was recreated. If it was, run the `db_init_command` output.
+
+## C. Prepare the second image
+
+11. Make a small real change, for example a log line, and commit it.
+12. `$tag = git rev-parse --short HEAD`.
+13. Log in to ECR using the throwaway `DOCKER_CONFIG` approach from your redeploy notes.
+14. Build all three images with `--platform linux/amd64`. Push all three.
+15. Verify the tag exists in all three repos.
+16. Record the image sizes, both ECR compressed and local, for the baseline tag and the new tag.
+17. **Check the plan only touches the app services.** Run `terraform plan -var "image_tag=$tag"`. It should change only order, inventory and frontend. If Kafka or Keycloak appear, stop and find out why. Otherwise a restart of either would fail requests during the test.
+
+## D. Prepare the load test
+
+18. **Get the ALB URL.** `$url = terraform "-chdir=$tf" output -raw app_url`.
+19. **Smoke-test k6.** Run it for 30 s at 10/s. The ALB routes `/realms/*` to Keycloak, so `KEYCLOAK_URL=$url` works. The token issuer must match `KC_HOSTNAME`, which is the ALB URL.
+20. **Find a clean rate.**
+    - Run 1 minute at 25/s.
+    - Require 0 failed requests, 0 dropped iterations and a p95 under 500 ms.
+    - If it fails, lower the rate.
+    - Stop and look at why before testing the deploy, because a failing baseline makes the deploy result meaningless.
+21. **Check the k6 token lifetime.** The tokens last 30 minutes. Keep smoke tests and the real run within one `setup()` each, since `setup()` fetches fresh tokens every run.
+22. **Create the output folder.** `phase2/docs/k6-runs/aws-deploy`. Choose a duration of 8 minutes if the rollout needs it (see section F).
+
+## E. Watch tools for the run
+
+23. **Open the ECS console** on the order-service Deployments tab.
+24. **Open CloudWatch Logs** for order-service, to see the new task start up.
+25. **Check ALB metrics.** The CloudWatch ALB metrics `HTTPCode_Target_5XX_Count`, `HTTPCode_ELB_5XX_Count` and `TargetResponseTime` give a second source of evidence besides k6. Note the time window.
+26. **Prepare a status loop** in a third window, so you have timestamps of when each service finished rolling out:
+
+```powershell
+while ($true) { Get-Date -Format T; aws ecs describe-services --cluster orderflow --services order-service inventory-service frontend --region us-east-1 --query "services[].[serviceName,deployments[].[status,rolloutState,runningCount]]" --output text; Start-Sleep 15 }
+```
+
+## F. Run and time it
+
+27. Start k6 in terminal 1, with the console, JSON and summary outputs.
+28. **Watch k6's progress clock.** At about 2:00, switch to terminal 2 and run the apply. Note the time before and after.
+29. **Keep k6 running until the rollout is complete.** Don't stop it early. Wait for k6 to finish.
+30. **Confirm the rollout finished.** All three services must show one PRIMARY deployment with `COMPLETED`. If a rollback happened, the circuit breaker kicked in: record that, and don't claim a successful deploy.
+31. **After k6 ends**, create an order in the browser and confirm it works on the new version. Check the new log line appears in the new task's logs.
+
+## G. Evidence and record
+
+32. **Save the files.** Keep `raw.json`, `summary.json` and `console.txt`. Check the sizes: the JSON can be large (8 min at 25/s is roughly 12,000 requests with several metrics each). If it is too big to commit, keep it locally and commit `summary.json` and `console.txt`.
+33. **Extract the failed-request count.** Look at `http_req_failed` in `summary.json`. A pass is a failed request.
+34. **Look for non-201s.** Check the `created` check line.
+35. **Check dropped iterations.**
+36. **Cross-check with ALB metrics.** Use the CloudWatch 5xx counts for the window. They should agree with k6.
+37. **Look at the timeline.**
+    - Bucket `raw.json` by 10-second windows (a small PowerShell or Python script is enough).
+    - Look for failures or latency spikes between apply start and rollout complete.
+38. **Write the results into docs.** For example `phase2/docs/aws-deploy-under-load.md` or a section of `perf.md`. Include date, rate, duration, image sizes, tags (old and new), apply time, rollout completion time, total requests, failed requests, dropped iterations, p95, and what you did not test.
+39. **Write the claim carefully.** See the zero-downtime rules in my previous answer.
+40. **Update ADR 0006** if anything surprised you, such as the rollout taking longer than expected.
+41. **Commit the evidence.** Do this before destroying anything.
+
+## H. Destroy and console check
+
+42. Run `terraform destroy -var "image_tag=$tag"` and wait for it to finish.
+43. **Check for leftovers in the console.** Check each region you used, `us-east-1` at least.
+    - NAT gateways (the design may not use any, but check)
+    - Load balancers and target groups
+    - RDS instances and snapshots
+    - ECR repositories and images
+    - CloudWatch log groups
+    - Elastic IPs
+    - ECS clusters
+    - Secrets Manager secrets. Secrets get a recovery window after deletion and may still show as scheduled for deletion.
+    - Cloud Map namespaces
+    - VPCs, subnets and security groups
+44. **Check the budget alert.** Billing alerts and the Budget created in 24a are separate from Terraform and should still exist. Leave them in place.
+45. **Check Cost Explorer the next day.** Look for any ongoing charges.
+46. **Clean up Docker and local files.** Remove the `DOCKER_CONFIG` temp folder and unset `$env:DOCKER_CONFIG`.
+47. **Mark the step done.** In your plan or notes, add the "Done when" evidence: the deploy happened under k6 traffic, the output file shows 0 failed requests (if true), and the destroy console check is clean.
+
+I haven't run any of this, and I didn't open the Kafka-outage file you just opened, since it is a separate drill.
+
 
 ## Afterwards
 Update the README, the status log, and the "Did you deploy to AWS?" answer in [errors-by-resume-bullet.md](notes/implmentations/errors-by-resume-bullet.md#L66). The notes say to change that answer only after a real apply, a deploy under load and a destroy have all happened.
