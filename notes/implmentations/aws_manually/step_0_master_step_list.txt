@@ -5,7 +5,7 @@ Step 13 in your table is plan step 24 (24a to 24c), and the Terraform for it alr
 2. Run `aws configure sso`, then `aws sts get-caller-identity` to confirm you're on the right account.
 3. Pick one region and use it for everything, so the cleanup check covers a single region.
 
-## Apply in stages
+## Apply in stages (refer to notes\implmentations\aws_manually for detailed steps)
 Run each command from `phase2/infra/terraform`. Run `terraform plan` before each apply and read it.
 
 1. **Budget first.** Run `terraform init`, then `terraform apply -var budget_email=you@example.com -target=aws_budgets_budget.monthly`.
@@ -14,6 +14,7 @@ Run each command from `phase2/infra/terraform`. Run `terraform plan` before each
 4. **Create the databases.** Run `terraform output -raw db_init_command | sh`, then check the `/orderflow/db-init` log group. This also proves RDS is reachable from inside the VPC.
 5. **Everything else.** Run `terraform apply -var image_tag=<sha>` to bring up Kafka, Keycloak, the services and the ALB.
 6. **Smoke test.** Open `terraform output app_url`, log in as `alice`, and create an order. It should reach CONFIRMED.
+7. **## Deploy under load (24c) (see below)**
 
 Expect failures on the first real `plan` or `apply`. The README says `validate` doesn't prove the resources will create. Likely trouble spots are Keycloak's issuer and `KC_HOSTNAME` (the plan allows `jwk-set-uri` as a fallback), the health-check paths, and IAM permissions. Record each fix in [ADR 0006](phase2/docs/adr/0006-aws-choices.md), because your notes track errors for interviews.
 
