@@ -6,3 +6,4 @@ When login window is prompted, login using the new AWS IAM user and its password
 notepad $PROFILE and register these two variables so that they don't have to be set everytime a new terminal is used:
 $env:AWS_PROFILE = "SystemAdministrator-...."
 $env:AWS_REGION  = "us-east-1"
+(Update 2026-11-15: on this machine [default] in ~/.aws/config now points at the same SSO login and ~/.aws/credentials, which held a rejected old key, was deleted. So after "aws sso login" plain aws and terraform commands work even without AWS_PROFILE; setting it as above still works too.)

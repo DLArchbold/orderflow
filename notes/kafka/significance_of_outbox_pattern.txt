@@ -38,11 +38,11 @@ Kafka only guarantees ordering within a partition. Keying by order ID sends ever
 
 ## The trade-offs
 
-**At-least-once delivery.** There's a window where the publisher sends to Kafka, the send succeeds, and it crashes before setting `published_at`. On restart it re-sends, so duplicates are expected, not a bug. That is why inventory-service has `processed_messages`: it records each message ID and skips repeats. The outbox gives at-least-once delivery, and the idempotent consumer turns that into effectively-once processing. The two parts only work together.
+**At-least-once delivery.** There's a window where the publisher sends to Kafka, the send succeeds, and it crashes before setting `published_at`. On restart it re-sends, so duplicates are expected, not a bug. That is why inventory-service has `processed_messages`: it records each message ID and skips repeats. The outbox gives at-least-once delivery, and the idempotent consumer turns that into effectively-once processing. The two parts only work together. (How the idempotent consumer works, as built: phase2\docs\architecture.md, section "Idempotent consumer: how inventory-service ignores duplicates".)
 
 **Latency and DB load.** Events go out after the poll interval (up to about 500 ms) rather than instantly, and polling puts steady read load on Postgres. For an order flow, that's an acceptable cost.
 
-**Ordering within the table.** Polling by `created_at` keeps events roughly in order. If you ever run multiple publisher instances, you'd need `SELECT ... FOR UPDATE SKIP LOCKED` or a single-leader approach to avoid double-sending the same rows.
+**Ordering within the table.** Polling by `created_at` keeps events roughly in order. If you ever run multiple publisher instances, you'd need `SELECT ... FOR UPDATE SKIP LOCKED` or a single-leader approach to avoid double-sending the same rows. This happened on AWS (2026-11-14): a rolling deploy briefly runs the old and new task together, and both sent the same rows (541 from order-service, 112 from inventory-service); the consumers' checks kept it harmless. See phase2\docs\architecture.md, section "Duplicate publishes during a rolling deploy".
 
 **Cleanup.** Published rows pile up, so eventually you'll want a retention job to delete or archive them.
 

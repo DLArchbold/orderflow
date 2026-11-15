@@ -2,6 +2,7 @@
 
 Date: 2026-11-13. Region `us-east-1`, profile `SystemAdministrator-702623019395`, account `702623019395`.
 Sections E onwards (run the deploy under load, record evidence, destroy) are **not done yet**.
+Update: since done. The deploy under load ran on 2026-11-14 (results in `phase2/docs/aws-deploy-under-load.md`), the evidence was committed on 2026-11-15, and then `terraform destroy` ran on 2026-11-15 with a clean console check.
 
 ## A. Prerequisites: done
 - Tools present: k6, aws, terraform, docker. AWS login works (`aws sso login --profile SystemAdministrator-702623019395`).
@@ -19,7 +20,7 @@ Sections E onwards (run the deploy under load, record evidence, destroy) are **n
 ## C. Prepare the second image: done
 - New commit: **`dc1acc0`**: a small real change to the log line in `InventoryResultHandler.java` ("... ignored (order is no longer PENDING)"). No test depends on that text.
 - Built with `--platform linux/amd64` and pushed all three images under `dc1acc0`. Both `9ff11d1` and `dc1acc0` are present in each ECR repository.
-- Login detail: `docker login ... --password-stdin` failed with `400 Bad Request` from PowerShell; `--password $pw` (as in the redeploy notes) worked. A throwaway `DOCKER_CONFIG` at `%TEMP%\docker-ecr` was used and is still in place (remove it in the cleanup step).
+- Login detail: `docker login ... --password-stdin` failed with `400 Bad Request` from PowerShell; `--password $pw` (as in the redeploy notes) worked. A throwaway `DOCKER_CONFIG` at `%TEMP%\docker-ecr` was used and is still in place (remove it in the cleanup step). Update: deleted on 2026-11-15 (master step list, step 46).
 
 Image sizes (record these in the 24c write-up):
 
@@ -42,7 +43,7 @@ ALB URL: `http://orderflow-1966634175.us-east-1.elb.amazonaws.com`, used for bot
 
 - Both thresholds passed in both runs; every order request returned 201. Request counts include the 2 token requests from `setup()` (1,501 orders + 2 = 1,503).
 - Reading the JSON: in `trial-25-summary.json`, `http_req_failed` shows `"passes": 0, "fails": 1503`. That is k6's inverted labelling (a "pass" is a failed request), so it means 0 failed and 1,503 not failed. Thresholds shown as `false` mean not breached. See `perf.md`, "Reading the k6 numbers".
-- **Chosen for the deploy run: 25 orders/s for 8 minutes** (about 12,000 orders). Stock is 1,000,000 per SKU, so it will not run out.
+- **Chosen for the deploy run: 25 orders/s for 8 minutes** (about 12,000 orders). Stock is 1,000,000 per SKU, so it will not run out. Why this rate: see "Why 25 orders/s" in the Setup section of `phase2/docs/aws-deploy-under-load.md`.
 - The latency includes the network path from this machine to `us-east-1`, so it is not comparable with the local numbers in `perf.md`.
 - These runs are against the old image (`9ff11d1`) with no deploy; they are the baseline, not the 24c evidence.
 

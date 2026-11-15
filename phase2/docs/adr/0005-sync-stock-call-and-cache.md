@@ -9,7 +9,8 @@ order-service to inventory-service, which is also what gives Resilience4j and Re
 ## Decisions
 1. **The call is not part of order creation.** Orders are accepted when inventory-service is down. Correctness comes
    from the asynchronous path (outbox, `orders.events`, idempotent consumer, `inventory.results`); this call is only
-   a convenience for the UI.
+   a convenience for the UI. How the idempotent consumer works:
+   [architecture.md](../architecture.md#idempotent-consumer-how-inventory-service-ignores-duplicates).
 2. **Timeouts first** (connect 500 ms, read 1 s), then a circuit breaker and a bulkhead (`inventory`) on
    `StockClient.get`. The fallback is `available = null` ("unknown"), never 0, because 0 would tell the user the
    item is sold out when we simply do not know. A 404 for an unknown SKU is ignored by the breaker.

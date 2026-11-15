@@ -2,7 +2,9 @@ Related files for Step 7/13"F. Run and time it":
     notes\implmentations\aws_manually\step_7_e_demo_instructions.txt
     phase2\docs\k6-runs\aws-deploy\aws-deploy-times.txt
     phase2\docs\k6-runs\aws-deploy\deploy-console.txt
-    phase2\docs\k6-runs\aws-deploy\deploy-run.json
+    phase2\docs\k6-runs\aws-deploy\deploy-run-part1.json
+    phase2\docs\k6-runs\aws-deploy\deploy-run-part2.json
+        (deploy-run.json, the raw k6 output, split in two at a line boundary)
     phase2\docs\k6-runs\aws-deploy\deploy-summary.json
 
     

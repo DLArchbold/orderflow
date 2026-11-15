@@ -1,3 +1,10 @@
+[Note added 2026-11-15: this chat export is kept as history and the text below
+is unchanged. Since then ~/.aws/credentials (a rejected old key under
+[default]) was deleted and [default] in ~/.aws/config points at the same SSO
+login as SystemAdministrator-702623019395, so setting AWS_PROFILE is now
+optional. The budget created here (orderflow-monthly) was kept when the stack
+was destroyed on 2026-11-15, by removing it from Terraform's state first; see
+notes\implmentations\aws_manually\step_0_master_step_list.txt, step 44.]
 
 > <ide_opened_file>The user opened the file c:\Users\WJ\Desktop\Work
   2023-05-12\Project\orderflow\aws.txt in the IDE. This may or may not be

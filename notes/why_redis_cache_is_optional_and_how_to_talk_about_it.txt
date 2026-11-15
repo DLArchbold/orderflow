@@ -40,6 +40,8 @@ GET /api/stock/{sku} is a UI convenience (StockController, ADR 0005 decision 1).
  - "so a slow inventory-service degrades gracefully INSTEAD OF FAILING ORDERS" overclaims: orders do not fail either way.
    Orders stay correct through the asynchronous path (outbox, idempotent consumers). Resilience4j and Redis protect only
    the optional stock lookup.
+   (How the idempotent consumer works: phase2\docs\architecture.md, section "Idempotent consumer: how
+   inventory-service ignores duplicates".)
 
 5. SHOULD THE STOCK CHECK MOVE INTO THE ORDER PATH?
 No. Fix the bullet instead.

@@ -37,7 +37,7 @@ If you need the SQL checks, you can copy the `orderflow-db-init` task definition
 ## What this does and doesn't prove
 
 - **It shows** that orders are accepted (201) while Kafka is down, that they are delivered afterwards, and that none are lost.
-- **It doesn't show** redelivery or duplicates. With a drained system and an empty restarted broker there is nothing to re-send, so the "idempotent consumers absorbing redelivery" part isn't demonstrated.
+- **It doesn't show** redelivery or duplicates. With a drained system and an empty restarted broker there is nothing to re-send, so the "idempotent consumers absorbing redelivery" part isn't demonstrated. (How the idempotent consumer works: phase2\docs\architecture.md, section "Idempotent consumer: how inventory-service ignores duplicates".)
 - **It doesn't support the "50,000 orders" scale.** A manual run of about 10 orders is a demo, not a load test.
 - **For the bullet:** quote a manual run as a demo, not as the drill numbers.
 

@@ -1,3 +1,12 @@
+[Note added 2026-11-15: this chat export is kept as history and the text below
+is unchanged. Since it was written, the AWS work (plan step 24) has been done:
+Terraform was installed and validated (2026-11-06), the stack was applied from
+2026-11-10, and a deploy under load ran on 2026-11-14 with 0 failed requests
+out of 12,003 (phase2\docs\aws-deploy-under-load.md), followed by terraform
+destroy and a clean console check. Statements below that there is no
+terraform binary or AWS credentials, that the Terraform is an unvalidated
+draft, or that no deploy happened are out of date.]
+
 > Implement steps 13f to 27 including all substeps. For each substep and step
   completed, perform a commit before starting the next step.
 

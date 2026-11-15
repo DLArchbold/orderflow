@@ -20,6 +20,8 @@ Remaining tests to record:
             Drill: inventory-service down
             Drill: order-service killed
             Drill: Redelivery (the idempotent-consumer proof)
+                (how the idempotent consumer works: phase2\docs\architecture.md,
+                section "Idempotent consumer: how inventory-service ignores duplicates")
         • To demo in a way for recording detailed proof, see (notes\implmentations\aws_manually\step_6_2_4_demo\key_drills_detailed_proof.txt)
             Search "Proof after each drill" in key_drills_detailed_proof.txt, that section defines the steps to obtain the necessary detailed evidence.
             There are actually 2 ways to simplify all steps needed to record detailed evidence, however, I've decided on this method

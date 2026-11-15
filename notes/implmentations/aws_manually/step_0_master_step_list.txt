@@ -1,4 +1,4 @@
-Step 13 in your table is plan step 24 (24a to 24c), and the Terraform for it already exists in [phase2/infra/terraform/](phase2/infra/terraform/). It passes `validate` but has never been planned or applied. The runbook is in [the Terraform README](phase2/infra/terraform/README.md#L10-L19). I haven't run anything. Every command below uses your credentials and costs money, so you run them.
+Step 13 in your table is plan step 24 (24a to 24c), and the Terraform for it already exists in [phase2/infra/terraform/](phase2/infra/terraform/). It passes `validate` but has never been planned or applied (status when this list was written; since then it was applied from 2026-11-10 and the deploy under load ran on 2026-11-14, see the status lines under "Deploy under load (24c)"). The runbook is in [the Terraform README](phase2/infra/terraform/README.md#L10-L19). I haven't run anything. Every command below uses your credentials and costs money, so you run them.
 
 ## Before you start (24a)
 1. Turn on billing alerts in your AWS account. Create an IAM Identity Center user, or an IAM user with MFA. Don't use root keys.
@@ -19,7 +19,8 @@ Run each command from `phase2/infra/terraform`. Run `terraform plan` before each
 Expect failures on the first real `plan` or `apply`. The README says `validate` doesn't prove the resources will create. Likely trouble spots are Keycloak's issuer and `KC_HOSTNAME` (the plan allows `jwk-set-uri` as a fallback), the health-check paths, and IAM permissions. Record each fix in [ADR 0006](phase2/docs/adr/0006-aws-choices.md), because your notes track errors for interviews.
 
 ## Deploy under load (24c)
-Status 2026-11-13: preparation done (baseline restored, second image `dc1acc0` pushed); the k6 run, deploy and destroy are not done yet. Details in [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md).
+Status 2026-11-13: preparation done (baseline restored, second image `dc1acc0` pushed); the k6 run, deploy and destroy are not done yet.
+Status 2026-11-15: the k6 run and deploy were done on 2026-11-14 (0 failed requests out of 12,003; sections F and G below, results in [phase2/docs/aws-deploy-under-load.md](../../../phase2/docs/aws-deploy-under-load.md)). The destroy and console check (section H, steps 42 and 43) were done on 2026-11-15. Details in [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md).
 1. Build and push a second image with a new SHA tag. Have the `terraform apply -var image_tag=<new sha>` command ready in a second terminal.
 2. Start k6 against the ALB URL at a steady arrival rate for about 5 minutes. Use the k6 script from your load-test step. Write its output to a file, for example `--out json=` plus the console summary.
 3. At about the 2-minute mark, run the apply with the new tag.
@@ -61,7 +62,7 @@ Secrets injection (the first part of 24c) is already in the Terraform: the DB an
 13. Log in to ECR using the throwaway `DOCKER_CONFIG` approach from your redeploy notes.
 14. Build all three images with `--platform linux/amd64`. Push all three.
 15. Verify the tag exists in all three repos.
-16. Record the image sizes, both ECR compressed and local, for the baseline tag and the new tag.
+16. Record the image sizes, both ECR compressed and local, for the baseline tag and the new tag. Both are in the table in [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md). The ECR compressed sizes are also in `phase2/docs/k6-runs/aws-deploy/ecr-images.json`; the local sizes come from `docker images` and are only in that table.
 17. **Check the plan only touches the app services.** Run `terraform plan -var "image_tag=$tag"`. It should change only order, inventory and frontend. If Kafka or Keycloak appear, stop and find out why. Otherwise a restart of either would fail requests during the test.
 
 ## D. Prepare the load test
@@ -92,27 +93,54 @@ while ($true) { Get-Date -Format T; aws ecs describe-services --cluster orderflo
 27. Start k6 in terminal 1, with the console, JSON and summary outputs (`deploy-console.txt`, `deploy-run.json` and `deploy-summary.json` in `phase2/docs/k6-runs/aws-deploy`).
 28. **Watch k6's progress clock.** At about 2:00, switch to terminal 2 and run the apply. Note the time before and after.
 29. **Keep k6 running until the rollout is complete.** Don't stop it early. Wait for k6 to finish.
-30. **Confirm the rollout finished.** All three services must show one PRIMARY deployment with `COMPLETED`. If a rollback happened, the circuit breaker kicked in: record that, and don't claim a successful deploy.
+30. **Confirm the rollout finished.** All three services must show one PRIMARY deployment with `COMPLETED`. If a rollback happened, the circuit breaker kicked in: record that, and don't claim a successful deploy. The saved proof is `rollout-history.json`, with `task-definitions.json` for the tags.
 
 ## G. Evidence and record
 
-32. **Save the files.** Keep `raw.json`, `summary.json` and `console.txt`. Check the sizes: the JSON can be large (8 min at 25/s is roughly 12,000 requests with several metrics each). If it is too big to commit, keep it locally and commit `summary.json` and `console.txt`.
-33. **Extract the failed-request count.** Look at `http_req_failed` in `summary.json`. A pass is a failed request.
-34. **Look for non-201s.** Check the `created` check line.
-35. **Check dropped iterations.**
-36. **Cross-check with ALB metrics.** Use the CloudWatch 5xx counts for the window. They should agree with k6.
+All files below are in `phase2/docs/k6-runs/aws-deploy`. The commands that produced the AWS-side files are in [step_7_e_demo_instructions.txt](step_7_e_demo_instructions.txt).
+
+32. **Save the files.** Keep `deploy-run.json` (the raw k6 output), `deploy-summary.json` and `deploy-console.txt`. Check the sizes: the JSON can be large (8 min at 25/s is roughly 12,000 requests with several metrics each). If it is too big to commit, keep it locally and commit `deploy-summary.json` and `deploy-console.txt`.
+    - `deploy-run.json` is 51.5 MB, so it is committed as two halves, `deploy-run-part1.json` and `deploy-run-part2.json`, split at a line boundary. Joining them in order gives the original file.
+    - Also saved: `aws-deploy-times.txt`, `rollout-history.json`, `task-definitions.json`, `alb-metrics.json`, `ecr-images.json`, `order-service-logs-deploy-window.txt` (19 MB, committed in full) and `inventory-service-logs-deploy-window.txt` (11 MB, committed in full; exported on 2026-11-15).
+33. **Extract the failed-request count.** Look at `http_req_failed` in `deploy-summary.json`. A pass is a failed request.
+    - Result on 2026-11-14: 0 failed requests out of 12,003. `deploy-summary.json` shows `passes: 0`, `fails: 12003` and `value: 0` (the failure rate). The `rate<0.01` threshold shows `false`, which means it was not breached.
+    - Cross-checks: `deploy-console.txt` shows `http_req_failed: 0.00%  0 out of 12003`, and all 12,003 `http_req_failed` data points in the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) have the value 0.
+34. **Look for non-201s.** Check the `created` check line in `deploy-console.txt`.
+    - Result on 2026-11-14: no order request returned anything other than 201. `deploy-console.txt` shows `✓ created` with `checks_succeeded: 100.00% 12001 out of 12001` and `checks_failed: 0.00% 0 out of 12001`. `deploy-summary.json` shows the `created` check with `passes: 12001` and `fails: 0`.
+    - Cross-check: the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) has 12,001 responses with status 201 and 2 with status 200. The two 200s are the token requests to Keycloak in `setup()`, one each for alice and bob, not order requests.
+35. **Check dropped iterations.** `deploy-console.txt` and `deploy-summary.json` only list `dropped_iterations` when some were dropped.
+    - Result on 2026-11-14: 0 dropped iterations. Neither `deploy-console.txt` nor `deploy-summary.json` has a `dropped_iterations` entry, and the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) has no `dropped_iterations` data points.
+    - Cross-check: k6 completed 12,001 iterations at 24.98 per second, against a target of 25 per second for 8 minutes (12,000). `deploy-console.txt` ends with `12001 complete and 0 interrupted iterations`. k6 used at most 11 of its 100 pre-allocated virtual users, so it never ran short of them, which is what causes dropped iterations.
+36. **Cross-check with ALB metrics.** Use the CloudWatch 5xx counts for the window, saved in `alb-metrics.json`. They should agree with k6.
+    - Result on 2026-11-14: the ALB agrees with k6, 0 errors. `alb-metrics.json` covers 18:31 to 18:41 UTC at a 1-minute period (its timestamps are in local time, UTC-5). `HTTPCode_Target_5XX_Count` and `HTTPCode_ELB_5XX_Count` both have no datapoints, which means no 5xx occurred: the ALB only reports these metrics when there is something to count.
+    - Request count: the ALB counted 14,033 requests against k6's 12,003. The 2,030 extra requests are not from k6. A browser tab was open on the frontend, signed in as alice, and it sent a stock request (`GET /api/stock/SKU-1`) each time its order list changed; the order-service logs show 2,025 of these during the run. They also returned without a 5xx.
+    - Response time: `TargetResponseTime` p95 stayed between 15 ms and 71 ms per minute. The highest minute is 18:36, when order-service switched to the new task. This is time spent in the targets only, so it is lower than k6's p95 of 131 ms, which is measured from the PC and includes the network.
 37. **Look at the timeline.**
-    - Bucket `raw.json` by 10-second windows (a small PowerShell or Python script is enough).
+    - Bucket `deploy-run.json` (committed as `deploy-run-part1.json` and `deploy-run-part2.json`; read both in order) by 10-second windows (a small PowerShell or Python script is enough).
     - Look for failures or latency spikes between apply start and rollout complete.
+    - Result on 2026-11-14: the table is in `deploy-timeline.txt`. No 10-second window has a failed request or a response other than 201, before, during or after the rollout.
+    - One latency spike, inside the rollout: in the 18:35:50 UTC window, 17 requests took longer than 500 ms, all within about 3 seconds (18:35:56 to 18:35:59), and the slowest took 1,760 ms. This is when the new order-service task began serving requests. Every other window has a p95 under 330 ms and a maximum under 430 ms.
 38. **Write the results into docs.** For example `phase2/docs/aws-deploy-under-load.md` or a section of `perf.md`. Include date, rate, duration, image sizes, tags (old and new), apply time, rollout completion time, total requests, failed requests, dropped iterations, p95, and what you did not test.
-39. **Write the claim carefully.** See the zero-downtime rules in my previous answer.
+    - Done on 2026-11-14: the results are in [phase2/docs/aws-deploy-under-load.md](../../../phase2/docs/aws-deploy-under-load.md), with the setup, results, timeline, what happened during the rollout, what the run does not show, and the list of evidence files.
+39. **Write the claim carefully.** The rules: only claim "0 failed requests" if the output shows it, state it as a claim about this run (with the rate, duration and failed-request count), and don't call it zero-downtime unless the evidence supports that.
+    - Done on 2026-11-14: the wording is in the "How to state this result" section of [phase2/docs/aws-deploy-under-load.md](../../../phase2/docs/aws-deploy-under-load.md), with a short form, a full form, and the wording the evidence does not support.
+    - The claim: "Deployed a new version to ECS Fargate under a load of 25 orders/s with 0 failed requests out of 12,003, in one 8-minute run." It is not called zero-downtime, because the evidence is one run, at one rate, of a trivial change.
 40. **Update ADR 0006** if anything surprised you, such as the rollout taking longer than expected.
+    - Done on 2026-11-14: [ADR 0006](../../../phase2/docs/adr/0006-aws-choices.md) has a new section, "What the deploy under load showed", and its status and "State of this work" now say the stack has been applied and the deploy under load run, with the destroy still to do. After the destroy, both were updated to say it ran and the console check was clean.
+    - The surprises recorded: duplicate inventory results reaching order-service (112 ignored), the latency spike when the new task takes over, an open frontend tab multiplying requests, and stock lookups without Redis not taking the expected 1 s. The rollout itself was not slow: about 2 minutes.
 41. **Commit the evidence.** Do this before destroying anything.
+    - Done on 2026-11-15: everything in `phase2/docs/k6-runs/aws-deploy/` is committed except `deploy-run.json`, which is not needed because its two halves are committed (joining `deploy-run-part1.json` and `deploy-run-part2.json` in order gives it back). As of 2026-11-15 the original is no longer in the folder. The results doc, ADR 0006 and these notes are committed too.
+    - Added on 2026-11-15, before the destroy: `inventory-service-logs-deploy-window.txt`. It confirms the cause of the 112 duplicate inventory results: the old and new inventory-service tasks both published the same 112 `StockReserved` events between 18:35:50 and 18:36:03 UTC.
+    - The commits are local only. The branch has no upstream, so push it if the evidence should survive this machine.
 
 ## H. Destroy and console check
 
 42. Run `terraform destroy -var "image_tag=$tag"` and wait for it to finish.
+    - Done on 2026-11-15 (20:21 to 20:23 local time, UTC-5), after the evidence was committed (step 41), with the SSO profile (`$env:AWS_PROFILE = "SystemAdministrator-702623019395"`; the default profile's old access keys are rejected with `InvalidClientTokenId`). Later the same day the rejected keys were deleted (`~/.aws/credentials` removed) and `[default]` in `~/.aws/config` was pointed at the same SSO login, so plain `aws` and `terraform` commands now work after `aws sso login` without setting `AWS_PROFILE`.
+    - First `terraform plan -destroy -var "image_tag=dc1acc0"`: 62 to destroy, 0 to add or change, all from this stack, including `aws_budgets_budget.monthly`. To keep the budget (step 44), it was taken out of Terraform's state first with `terraform state rm aws_budgets_budget.monthly`; the budget itself was not touched.
+    - Then `terraform destroy -auto-approve -var "image_tag=dc1acc0"`: "Destroy complete! Resources: 61 destroyed." `terraform state list` is now empty.
 43. **Check for leftovers in the console.** Check each region you used, `us-east-1` at least.
+    - Done on 2026-11-15 from the CLI in `us-east-1` (the only region used): none of the following were left: load balancers, target groups, RDS instances, RDS manual or automated snapshots and retained backups, ECR repositories, CloudWatch log groups containing "orderflow", Elastic IPs, NAT gateways, ECS clusters, `orderflow` task definitions (active or inactive), Secrets Manager secrets (including ones scheduled for deletion), Cloud Map namespaces, non-default VPCs, `orderflow` security groups and `orderflow` IAM roles.
     - NAT gateways (the design may not use any, but check)
     - Load balancers and target groups
     - RDS instances and snapshots
@@ -124,15 +152,22 @@ while ($true) { Get-Date -Format T; aws ecs describe-services --cluster orderflo
     - Cloud Map namespaces
     - VPCs, subnets and security groups
 44. **Check the budget alert.** Billing alerts and the Budget created in 24a are separate from Terraform and should still exist. Leave them in place.
+    - Correction: the budget was created by Terraform (`aws_budgets_budget.monthly`), so a plain destroy would have deleted it. It was kept by removing it from the state before the destroy (step 42).
+    - Checked on 2026-11-15: `orderflow-monthly` ($20) still exists, as does the separate `My Monthly Cost Budget` ($30). A later `terraform apply` will try to create `orderflow-monthly` again and fail because the name exists; import it first with `terraform import aws_budgets_budget.monthly 702623019395:orderflow-monthly`.
 45. **Check Cost Explorer the next day.** Look for any ongoing charges.
+    - Not done yet: check on or after 2026-11-16.
 46. **Clean up Docker and local files.** Remove the `DOCKER_CONFIG` temp folder and unset `$env:DOCKER_CONFIG`.
+    - Done on 2026-11-15: `%TEMP%\docker-ecr` (an expired ECR login for the deleted registry and buildx metadata) was deleted. `DOCKER_CONFIG` was not set as a user or machine variable, so there was nothing to unset beyond the old terminal sessions.
 47. **Mark the step done.** In your plan or notes, add the "Done when" evidence: the deploy happened under k6 traffic, the output file shows 0 failed requests (if true), and the destroy console check is clean.
+    - Done: the step 24 status-log entry in `PLAN_with_two_phases.md` records all three, and the README, ADR 0006, both infra READMEs and the "Did you deploy to AWS?" answer were updated to match.
 
 I haven't run any of this, and I didn't open the Kafka-outage file you just opened, since it is a separate drill.
+(Update 2026-11-15: that sentence dates from when this list was written. Every step above has since been run, except step 45, the next-day Cost Explorer check.)
 
 
 ## Afterwards
 Update the README, the status log, and the "Did you deploy to AWS?" answer in [errors-by-resume-bullet.md](notes/implmentations/errors-by-resume-bullet.md#L66). The notes say to change that answer only after a real apply, a deploy under load and a destroy have all happened.
+- Done on 2026-11-15: all three have happened, and the README, the status log and that answer are updated.
 
 Two things to know first. The ALB is public and HTTP only, and `alice`'s password is in the repo, so keep the stack up only for the test. Kafka has no volume, so its data is lost if the task restarts.
 

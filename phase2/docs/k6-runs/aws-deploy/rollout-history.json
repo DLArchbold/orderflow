@@ -1,0 +1,181 @@
+﻿[
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T13:45:04.250000-05:00",
+        "finished": "2026-11-14T13:47:18.080000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/7054885845091270936",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T13:34:16.231000-05:00",
+        "finished": "2026-11-14T13:36:13.642000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/8897892494393681796",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T12:51:24.519000-05:00",
+        "finished": "2026-11-14T12:53:37.994000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/4095856547486802382",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T12:47:52.076000-05:00",
+        "finished": "2026-11-14T12:50:03.473000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/4461215318199826557",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-11T16:41:09.559000-05:00",
+        "finished": "2026-11-11T16:44:04.686000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/4810510933506603141",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "ROLLBACK_SUCCESSFUL",
+        "reason": "Service deployment rolled back because the circuit breaker threshold was exceeded.",
+        "started": "2026-11-11T14:01:09.749000-05:00",
+        "finished": "2026-11-11T14:13:48.296000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/1129048933240128008",
+        "rollback": {
+            "reason": "Service deployment rolled back because the circuit breaker threshold was exceeded.",
+            "startedAt": "2026-11-11T14:13:32.006000-05:00",
+            "serviceRevisionArn": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/4788206343480096188"
+        }
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/order-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-10T14:05:46.693000-05:00",
+        "finished": "2026-11-10T14:09:07.291000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/order-service/4788206343480096188",
+        "rollback": null
+    }
+]
+[
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/inventory-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T13:45:02.026000-05:00",
+        "finished": "2026-11-14T13:46:40.414000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/inventory-service/6506794502585421583",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/inventory-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T13:34:17.286000-05:00",
+        "finished": "2026-11-14T13:35:52.602000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/inventory-service/3948033047149888904",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/inventory-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T12:51:28.477000-05:00",
+        "finished": "2026-11-14T12:53:04.428000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/inventory-service/2340296489485600330",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/inventory-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T12:47:57.890000-05:00",
+        "finished": "2026-11-14T12:49:39.710000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/inventory-service/2328296476038754944",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/inventory-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-11T14:01:07.184000-05:00",
+        "finished": "2026-11-11T14:03:09.463000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/inventory-service/6008157542436925533",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/inventory-service",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-10T14:04:13.505000-05:00",
+        "finished": "2026-11-10T14:05:07.611000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/inventory-service/8344888084123982721",
+        "rollback": null
+    }
+]
+[
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/frontend",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T13:45:04.117000-05:00",
+        "finished": "2026-11-14T13:46:38.051000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/frontend/1949824997712821832",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/frontend",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T13:34:11.173000-05:00",
+        "finished": "2026-11-14T13:35:49.954000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/frontend/6869947769440196231",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/frontend",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T12:51:24.594000-05:00",
+        "finished": "2026-11-14T12:53:15.981000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/frontend/3778956346184068525",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/frontend",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-14T12:47:51.984000-05:00",
+        "finished": "2026-11-14T12:49:33.851000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/frontend/9121791918489707456",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/frontend",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-11T14:01:09.632000-05:00",
+        "finished": "2026-11-11T14:03:07.847000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/frontend/0801718795704810080",
+        "rollback": null
+    },
+    {
+        "service": "arn:aws:ecs:us-east-1:702623019395:service/orderflow/frontend",
+        "status": "SUCCESSFUL",
+        "reason": null,
+        "started": "2026-11-10T14:05:41.198000-05:00",
+        "finished": "2026-11-10T14:06:27.241000-05:00",
+        "target": "arn:aws:ecs:us-east-1:702623019395:service-revision/orderflow/frontend/9232802420212458740",
+        "rollback": null
+    }
+]

@@ -1,0 +1,138 @@
+﻿{
+    "Label": "HTTPCode_Target_5XX_Count",
+    "Datapoints": []
+}
+{
+    "Label": "HTTPCode_ELB_5XX_Count",
+    "Datapoints": []
+}
+{
+    "Label": "RequestCount",
+    "Datapoints": [
+        {
+            "Timestamp": "2026-11-14T13:38:00-05:00",
+            "Sum": 1737.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:34:00-05:00",
+            "Sum": 1761.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:39:00-05:00",
+            "Sum": 1684.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:35:00-05:00",
+            "Sum": 1749.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:31:00-05:00",
+            "Sum": 67.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:40:00-05:00",
+            "Sum": 1.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:36:00-05:00",
+            "Sum": 1753.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:32:00-05:00",
+            "Sum": 1763.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:37:00-05:00",
+            "Sum": 1752.0,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2026-11-14T13:33:00-05:00",
+            "Sum": 1766.0,
+            "Unit": "Count"
+        }
+    ]
+}
+{
+    "Label": "TargetResponseTime",
+    "Datapoints": [
+        {
+            "Timestamp": "2026-11-14T13:34:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.020902169679263633
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:39:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.02030628611565575
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:35:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.021529036047826407
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:31:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.05542835699540492
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:40:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.02689
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:36:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.07077222510403797
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:32:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.031109450023525827
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:37:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.02973718096503045
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:33:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.02479032504257439
+            }
+        },
+        {
+            "Timestamp": "2026-11-14T13:38:00-05:00",
+            "Unit": "Seconds",
+            "ExtendedStatistics": {
+                "p95": 0.015188746942366105
+            }
+        }
+    ]
+}

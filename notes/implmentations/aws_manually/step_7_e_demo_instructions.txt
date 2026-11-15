@@ -8,8 +8,18 @@ RELATED FILES
     notes\implmentations\aws_manually\step_7_e_demo_instructions.txt
     phase2\docs\k6-runs\aws-deploy\aws-deploy-times.txt
     phase2\docs\k6-runs\aws-deploy\deploy-console.txt
-    phase2\docs\k6-runs\aws-deploy\deploy-run.json
+    phase2\docs\k6-runs\aws-deploy\deploy-run-part1.json
+    phase2\docs\k6-runs\aws-deploy\deploy-run-part2.json
+        (deploy-run.json, the raw k6 output, split in two at a line boundary)
     phase2\docs\k6-runs\aws-deploy\deploy-summary.json
+    phase2\docs\k6-runs\aws-deploy\rollout-history.json
+    phase2\docs\k6-runs\aws-deploy\task-definitions.json
+    phase2\docs\k6-runs\aws-deploy\alb-metrics.json
+    phase2\docs\k6-runs\aws-deploy\ecr-images.json
+    phase2\docs\k6-runs\aws-deploy\order-service-logs-deploy-window.txt
+        (19 MB, committed in full)
+    phase2\docs\k6-runs\aws-deploy\inventory-service-logs-deploy-window.txt
+        (11 MB, committed in full)
 
 
 WHERE THIS FITS
@@ -65,6 +75,62 @@ DEMO STEPS
      - Refresh logs in both order and inventory-service CloudWatch
 
 
+4. Save the AWS-side evidence (any time before terraform destroy)
+
+    $out = "phase2/docs/k6-runs/aws-deploy"
+    $r   = "us-east-1"
+
+   Rollout history (status, start and finish time, rollback) per service:
+
+    & { foreach ($s in "order-service","inventory-service","frontend") {
+      $arns = (aws ecs list-service-deployments --cluster orderflow --service $s --region $r --query "serviceDeployments[].serviceDeploymentArn" --output text) -split "\s+"
+      aws ecs describe-service-deployments --service-deployment-arns $arns --region $r `
+        --query "serviceDeployments[].{service:serviceArn,status:status,reason:statusReason,started:startedAt,finished:finishedAt,target:targetServiceRevision.arn,rollback:rollback}" --output json
+    } } | Out-File -Encoding utf8 "$out/rollout-history.json"
+
+   Task definitions (last three revisions, shows the old and new tags):
+
+    & { foreach ($s in "order-service","inventory-service","frontend") {
+      $rev = [int](aws ecs describe-task-definition --task-definition "orderflow-$s" --region $r --query "taskDefinition.revision" --output text)
+      foreach ($n in ($rev-2), ($rev-1), $rev) {
+        aws ecs describe-task-definition --task-definition "orderflow-${s}:$n" --region $r `
+          --query "taskDefinition.{family:family,revision:revision,image:containerDefinitions[0].image,registered:registeredAt}" --output json
+      }
+    } } | Out-File -Encoding utf8 "$out/task-definitions.json"
+
+   ALB metrics for the run window (times in UTC; no datapoints for a 5xx
+   metric means zero):
+
+    $lb = (aws elbv2 describe-load-balancers --names orderflow --region $r --query "LoadBalancers[0].LoadBalancerArn" --output text) -replace '^.*:loadbalancer/',''
+    & { foreach ($m in "HTTPCode_Target_5XX_Count","HTTPCode_ELB_5XX_Count","RequestCount","TargetResponseTime") {
+      $stat = if ($m -eq "TargetResponseTime") { "--extended-statistics","p95" } else { "--statistics","Sum" }
+      aws cloudwatch get-metric-statistics --namespace AWS/ApplicationELB --metric-name $m `
+        --dimensions Name=LoadBalancer,Value=$lb --region $r `
+        --start-time 2026-11-14T18:31:00Z --end-time 2026-11-14T18:41:00Z --period 60 @stat --output json
+    } } | Out-File -Encoding utf8 "$out/alb-metrics.json"
+
+   ECR images (compressed sizes, in bytes):
+
+    & { foreach ($s in "order-service","inventory-service","frontend") {
+      aws ecr describe-images --repository-name "orderflow-$s" --region $r `
+        --query "imageDetails[].{repo:repositoryName,tags:imageTags,sizeBytes:imageSizeInBytes,pushed:imagePushedAt}" --output json
+    } } | Out-File -Encoding utf8 "$out/ecr-images.json"
+
+   order-service logs for the run window:
+
+    $start = [DateTimeOffset]::Parse("2026-11-14T18:30:00Z").ToUnixTimeMilliseconds()
+    $end   = [DateTimeOffset]::Parse("2026-11-14T18:41:00Z").ToUnixTimeMilliseconds()
+    aws logs filter-log-events --log-group-name /orderflow/order-service --region $r `
+      --start-time $start --end-time $end --query "events[].[logStreamName,timestamp,message]" --output text |
+      Out-File -Encoding utf8 "$out/order-service-logs-deploy-window.txt"
+
+   inventory-service logs for the run window (same $start and $end):
+
+    aws logs filter-log-events --log-group-name /orderflow/inventory-service --region $r `
+      --start-time $start --end-time $end --query "events[].[logStreamName,timestamp,message]" --output text |
+      Out-File -Encoding utf8 "$out/inventory-service-logs-deploy-window.txt"
+
+
 OTHER COMMANDS
 --------------------------------------------------------------------------------
     aws sts get-caller-identity
@@ -75,6 +141,7 @@ OTHER COMMANDS
 Save:
     - the console output of k6 into deploy-console.txt
     - all 3 times noted above
+    - the step 4 evidence files, before terraform destroy
 
 
 RECORDED TIMES
@@ -86,9 +153,85 @@ RECORDED TIMES
     all-services-with-primary-completed-time:   18:36:14
 
 All times are UTC (local time is UTC-5).
-    - k6-start-time is the first timestamp in deploy-run.json (PC clock).
+    - k6-start-time is the first timestamp in deploy-run-part1.json (PC clock).
     - tf-apply-time is the k6 start plus 2 minutes (PC clock). It was not
       recorded directly. ECS shows the first deployment starting at 18:34:11.
     - The completed time is the order-service "finished" value in
       rollout-history.json (AWS clock), the last of the three services.
     - The PC clock runs about 4 seconds behind the AWS clock.
+
+
+RESULT OF THE 2026-11-14 RUN (old tag 9ff11d1, new tag dc1acc0)
+--------------------------------------------------------------------------------
+Verified:
+    - k6: 12,003 requests, 0 failed, 0 dropped iterations, p95 131 ms.
+    - All three deployments SUCCESSFUL with no rollback (rollout-history.json).
+    - Task definition revision 7 of order-service points at dc1acc0
+      (task-definitions.json).
+    - A new order-service task started at 18:34:49 and logged 5,866 orders
+      created with no ERROR lines until the run ended. The old task logged 6,135.
+      Together that is 12,001, the same as the orders k6 created.
+    - The new task also completed the order flow: it logged 4,827 orders
+      reaching CONFIRMED, from 18:36:48 to 18:39:58. The old task logged 7,174.
+      Together that is 12,001, the same as the orders k6 created.
+    - The new task was running dc1acc0. No saved record states this directly
+      (describe-tasks expired about an hour after the task stopped), but it
+      follows by elimination:
+        - ECS marked the deployment to revision 7 as SUCCESSFUL. It only does
+          that once a task from that revision is running and healthy and the
+          old task is stopped.
+        - Revision 7 points at dc1acc0.
+        - order-service runs one task, and the logs show exactly two streams
+          in the window: the old one, which stops at 18:36:46, and the new
+          one, which starts at 18:34:49 (41 seconds after revision 7 was
+          registered).
+    - inventory-service (inventory-service-logs-deploy-window.txt, exported
+      2026-11-15): two tasks in the window, the old one until 18:36:03 and
+      the new one from 18:34:54. Stock was reserved once for each of the
+      12,001 orders (old task 5,778, new task 6,223), with no WARN or ERROR
+      lines.
+        - It ignored 541 duplicate OrderCreated messages, the same number
+          order-service published twice. (How: phase2\docs\architecture.md,
+          section "Idempotent consumer: how inventory-service ignores
+          duplicates".)
+        - Its two tasks both published the same 112 StockReserved events
+          between 18:35:50 and 18:36:03 (12,113 publishes for 12,001 events).
+          That is the cause of the 112 duplicate inventory results that
+          order-service ignored.
+          Why both tasks sent the same rows: the outbox publisher reads
+          unpublished rows without a row lock and commits published_at
+          only at the end of each batch, so while the old and new tasks
+          overlap, each can send rows the other has not yet marked.
+          order-service ignored the copies because each order was already
+          CONFIRMED (ADR 0003, "apply only if PENDING"). Full explanation:
+          phase2\docs\architecture.md, section "Duplicate publishes during
+          a rolling deploy".
+    - ALB: no 5xx datapoints for the window (alb-metrics.json).
+    - Image sizes: step 16 of the master step list asks for local sizes as
+      well as ECR compressed ones. ecr-images.json holds only the ECR
+      compressed sizes. The local "docker images" sizes (order-service 643 MB,
+      inventory-service 606 MB, frontend 94 MB) are in the table in
+      notes\implmentations\aws_manually\step_7_1_deploy_under_load_prep.md.
+
+Open points:
+    - The ALB counted 14,033 requests in the window against k6's 12,003. The
+      2,030 extra requests came from a browser tab that was open on the
+      frontend, signed in as alice, during the run:
+        - The order-service logs show 2,025 stock lookups for SKU-1 during
+          the run. k6 never calls the stock endpoint; the frontend does
+          (GET /api/stock/SKU-1, the default SKU in the order form).
+        - The frontend repeats the stock lookup every time its order list
+          changes (frontend\src\App.tsx), and it receives live status updates
+          for the signed-in user's orders.
+        - k6 creates half its orders with alice's token, so the tab got a
+          stream of updates and sent a stock request for each change.
+        - The lookups start and stop with k6, about 250 per minute. The
+          remaining 5 requests fit the page's own loads and stream connection.
+      There are no ALB access logs, so this is inferred from the logs and the
+      frontend code. All of these requests also returned without a 5xx.
+    - About 3,800 "Unable to connect to Redis" cache warnings appear on both
+      the old and the new task, so they are not caused by the deploy. They
+      come from the same browser tab's stock lookups: each lookup tries the
+      stock cache first (2,025 "Cache get failed") and then tries to store
+      the result (1,796 "Cache put failed"), and there is no Redis on AWS.
+      Creating orders does not use the cache, so k6's requests are unaffected.

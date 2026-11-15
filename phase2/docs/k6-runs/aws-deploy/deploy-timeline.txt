@@ -1,0 +1,73 @@
+Timeline of the deploy-under-load run on 2026-11-14 (step 37, "Look at the timeline")
+
+Source: deploy-run-part1.json and deploy-run-part2.json (the raw k6 output), read in order.
+Each row is a 10-second window of order requests (POST /api/orders). The two token
+requests in setup() are left out. Latency is http_req_duration in milliseconds.
+Times are UTC on the PC clock, which runs about 4 seconds behind the AWS clock.
+
+Events:
+    18:31:53  k6 started
+    18:33:53  terraform apply started (dc1acc0)
+    18:36:14  all three services completed the rollout (AWS clock)
+    18:39:54  k6 finished
+
+window(UTC)  requests  failed  non-201  median_ms  p95_ms   max_ms  over_500ms
+18:31:50          148       0        0      114.4   168.8    264.2           0
+18:32:00          250       0        0       95.1   120.6    284.0           0
+18:32:10          249       0        0      102.9   161.7    405.9           0
+18:32:20          251       0        0       95.8   120.7    174.8           0
+18:32:30          250       0        0       94.1   112.7    182.7           0
+18:32:40          250       0        0       94.5   115.3    349.5           0
+18:32:50          250       0        0       96.5   139.0    158.9           0
+18:33:00          250       0        0       93.3   112.3    234.3           0
+18:33:10          250       0        0       93.8   114.8    213.4           0
+18:33:20          250       0        0       93.3   112.2    150.5           0
+18:33:30          250       0        0       92.2   110.9    121.6           0
+18:33:40          250       0        0       93.5   112.0    389.4           0
+18:33:50          250       0        0       96.0   118.1    162.9           0
+18:34:00          251       0        0       94.9   198.5    425.6           0
+18:34:10          249       0        0       92.8   121.6    390.1           0
+18:34:20          251       0        0       92.6   113.1    312.4           0
+18:34:30          249       0        0       92.1   111.5    390.8           0
+18:34:40          250       0        0       94.1   110.4    130.8           0
+18:34:50          249       0        0       95.5   134.1    227.9           0
+18:35:00          251       0        0       92.1   107.8    120.4           0
+18:35:10          249       0        0       92.4   109.7    154.1           0
+18:35:20          250       0        0       93.0   109.3    148.6           0
+18:35:30          250       0        0       91.6   109.7    144.9           0
+18:35:40          251       0        0       91.6   109.3    228.0           0
+18:35:50          247       0        0       98.7   663.9   1759.8          17
+18:36:00          253       0        0      108.9   166.7    296.0           0
+18:36:10          251       0        0      103.8   171.5    204.8           0
+18:36:20          249       0        0       97.7   131.6    241.1           0
+18:36:30          249       0        0       95.6   115.1    223.6           0
+18:36:40          251       0        0       95.4   125.7    198.8           0
+18:36:50          250       0        0       96.7   123.0    187.1           0
+18:37:00          249       0        0       95.0   127.2    191.8           0
+18:37:10          251       0        0       93.8   116.3    148.6           0
+18:37:20          250       0        0       93.7   111.7    393.7           0
+18:37:30          250       0        0       92.7   111.1    349.5           0
+18:37:40          250       0        0       91.9   112.0    159.5           0
+18:37:50          250       0        0       93.7   113.7    151.1           0
+18:38:00          250       0        0       92.1   118.5    357.7           0
+18:38:10          249       0        0       91.8   109.0    139.6           0
+18:38:20          251       0        0       93.8   204.1    371.4           0
+18:38:30          249       0        0       91.3   112.0    160.6           0
+18:38:40          251       0        0       91.3   118.1    290.0           0
+18:38:50          250       0        0       91.8   121.3    225.1           0
+18:39:00          250       0        0       92.8   110.6    161.6           0
+18:39:10          251       0        0       91.4   109.8    215.1           0
+18:39:20          249       0        0       91.7   128.4    320.5           0
+18:39:30          250       0        0       95.0   326.7    418.8           0
+18:39:40          249       0        0       91.4   109.4    178.3           0
+18:39:50          104       0        0       93.1   112.3    195.3           0
+total requests: 12001, failed: 0, non-201: 0
+
+Reading:
+    - No window has a failed request or a response other than 201.
+    - One window stands out: 18:35:50, inside the apply-to-rollout-complete period.
+      17 requests took longer than 500 ms, all between 18:35:56 and 18:35:59, and the
+      slowest took 1,760 ms. This is when the new order-service task began serving
+      requests: its first order is logged at 18:35:59 on the AWS clock, which is
+      about 18:35:55 on the PC clock.
+    - Every other window has a p95 under 330 ms and a maximum under 430 ms.

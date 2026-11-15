@@ -1,3 +1,11 @@
+[Note added 2026-11-15: this chat export is kept as history and the text below
+is unchanged. Step 13 in its table (AWS apply, deploy under load, destroy) has
+since been done: the stack was applied from 2026-11-10, a deploy under load ran
+on 2026-11-14 with 0 failed requests out of 12,003
+(phase2\docs\aws-deploy-under-load.md; steps in
+notes\implmentations\aws_manually\step_0_master_step_list.txt), and then
+terraform destroy ran with a clean console check. Statements below that AWS and
+Terraform are untouched or still to do are out of date.]
 
 > <ide_selection>The user selected the lines 1 to 2 from
   c:\Users\WJ\Desktop\Work 2023-05-12\Project\orderflow\notes\implmentations\initial_run\ch
