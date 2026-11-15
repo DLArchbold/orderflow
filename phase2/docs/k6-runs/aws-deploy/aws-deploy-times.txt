@@ -1,0 +1,19 @@
+Related files for Step 7/13"F. Run and time it:
+    notes\implmentations\aws_manually\step_7_e_demo_instructions.txt
+    phase2\docs\k6-runs\aws-deploy\aws-deploy-times.txt
+    phase2\docs\k6-runs\aws-deploy\deploy-console.txt
+    phase2\docs\k6-runs\aws-deploy\deploy-run.json
+    phase2\docs\k6-runs\aws-deploy\deploy-summary.json
+
+
+k6-start-time: 18:31:53
+tf-apply-time: 18:33:53
+all-services-with-primary-completed-time: 18:36:14
+
+All times are UTC on 2026-11-14 (local time is UTC-5).
+    - k6-start-time is the first timestamp in deploy-run.json (PC clock).
+    - tf-apply-time is the k6 start plus 2 minutes (PC clock). It was not
+      recorded directly. ECS shows the first deployment starting at 18:34:11.
+    - The completed time is the order-service "finished" value in
+      rollout-history.json (AWS clock), the last of the three services.
+    - The PC clock runs about 4 seconds behind the AWS clock.

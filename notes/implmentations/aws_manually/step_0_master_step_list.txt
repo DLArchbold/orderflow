@@ -89,11 +89,10 @@ while ($true) { Get-Date -Format T; aws ecs describe-services --cluster orderflo
 
 ## F. Run and time it
 
-27. Start k6 in terminal 1, with the console, JSON and summary outputs.
+27. Start k6 in terminal 1, with the console, JSON and summary outputs (`deploy-console.txt`, `deploy-run.json` and `deploy-summary.json` in `phase2/docs/k6-runs/aws-deploy`).
 28. **Watch k6's progress clock.** At about 2:00, switch to terminal 2 and run the apply. Note the time before and after.
 29. **Keep k6 running until the rollout is complete.** Don't stop it early. Wait for k6 to finish.
 30. **Confirm the rollout finished.** All three services must show one PRIMARY deployment with `COMPLETED`. If a rollback happened, the circuit breaker kicked in: record that, and don't claim a successful deploy.
-31. **After k6 ends**, create an order in the browser and confirm it works on the new version. Check the new log line appears in the new task's logs.
 
 ## G. Evidence and record
 

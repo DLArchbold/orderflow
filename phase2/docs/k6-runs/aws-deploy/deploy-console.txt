@@ -1,0 +1,65 @@
+Related files for Step 7/13"F. Run and time it":
+    notes\implmentations\aws_manually\step_7_e_demo_instructions.txt
+    phase2\docs\k6-runs\aws-deploy\aws-deploy-times.txt
+    phase2\docs\k6-runs\aws-deploy\deploy-console.txt
+    phase2\docs\k6-runs\aws-deploy\deploy-run.json
+    phase2\docs\k6-runs\aws-deploy\deploy-summary.json
+
+    
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: phase2/load-tests/k6/create-orders.js
+        output: json (phase2/docs/k6-runs/aws-deploy/deploy-run.json)
+
+     scenarios: (100.00%) 1 scenario, 300 max VUs, 8m30s max duration (incl. graceful stop):
+              * orders: 25.00 iterations/s for 8m0s (maxVUs: 100-300, gracefulStop: 30s)
+
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(95)<500' p(95)=131.03ms
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 12001   24.976973/s
+    checks_succeeded...: 100.00% 12001 out of 12001
+    checks_failed......: 0.00%   0 out of 12001
+
+    ✓ created
+
+    CUSTOM
+    orders_created.................: 12001  24.976973/s
+
+    HTTP
+    http_req_duration..............: avg=95.98ms min=31.02ms med=94.13ms max=1.75s p(90)=113.12ms p(95)=131.03ms
+      { expected_response:true }...: avg=95.98ms min=31.02ms med=94.13ms max=1.75s p(90)=113.12ms p(95)=131.03ms
+    http_req_failed................: 0.00%  0 out of 12003
+    http_reqs......................: 12003  24.981135/s
+
+    EXECUTION
+    iteration_duration.............: avg=96.11ms min=31.02ms med=94.21ms max=1.75s p(90)=113.55ms p(95)=131.36ms
+    iterations.....................: 12001  24.976973/s
+    vus............................: 3      min=1          max=11 
+    vus_max........................: 100    min=100        max=100
+
+    NETWORK
+    data_received..................: 8.2 MB 17 kB/s
+    data_sent......................: 16 MB  34 kB/s
+
+
+
+
+running (8m00.5s), 000/100 VUs, 12001 complete and 0 interrupted iterations
+orders ✓ [======================================] 000/100 VUs  8m0s  25.00 iters/s
