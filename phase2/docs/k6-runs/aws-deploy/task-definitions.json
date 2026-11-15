@@ -1,0 +1,54 @@
+﻿{
+    "family": "orderflow-order-service",
+    "revision": 6,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-order-service:9ff11d1",
+    "registered": "2026-11-14T12:51:21.644000-05:00"
+}
+{
+    "family": "orderflow-order-service",
+    "revision": 7,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-order-service:dc1acc0",
+    "registered": "2026-11-14T13:34:08.656000-05:00"
+}
+{
+    "family": "orderflow-order-service",
+    "revision": 8,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-order-service:9ff11d1",
+    "registered": "2026-11-14T13:44:57.336000-05:00"
+}
+{
+    "family": "orderflow-inventory-service",
+    "revision": 5,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-inventory-service:9ff11d1",
+    "registered": "2026-11-14T12:51:21.661000-05:00"
+}
+{
+    "family": "orderflow-inventory-service",
+    "revision": 6,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-inventory-service:dc1acc0",
+    "registered": "2026-11-14T13:34:08.576000-05:00"
+}
+{
+    "family": "orderflow-inventory-service",
+    "revision": 7,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-inventory-service:9ff11d1",
+    "registered": "2026-11-14T13:44:57.338000-05:00"
+}
+{
+    "family": "orderflow-frontend",
+    "revision": 5,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-frontend:9ff11d1",
+    "registered": "2026-11-14T12:51:21.636000-05:00"
+}
+{
+    "family": "orderflow-frontend",
+    "revision": 6,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-frontend:dc1acc0",
+    "registered": "2026-11-14T13:34:08.645000-05:00"
+}
+{
+    "family": "orderflow-frontend",
+    "revision": 7,
+    "image": "702623019395.dkr.ecr.us-east-1.amazonaws.com/orderflow-frontend:9ff11d1",
+    "registered": "2026-11-14T13:44:57.226000-05:00"
+}

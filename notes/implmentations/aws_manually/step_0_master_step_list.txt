@@ -61,7 +61,7 @@ Secrets injection (the first part of 24c) is already in the Terraform: the DB an
 13. Log in to ECR using the throwaway `DOCKER_CONFIG` approach from your redeploy notes.
 14. Build all three images with `--platform linux/amd64`. Push all three.
 15. Verify the tag exists in all three repos.
-16. Record the image sizes, both ECR compressed and local, for the baseline tag and the new tag.
+16. Record the image sizes, both ECR compressed and local, for the baseline tag and the new tag. Both are in the table in [step_7_1_deploy_under_load_prep.md](step_7_1_deploy_under_load_prep.md). The ECR compressed sizes are also in `phase2/docs/k6-runs/aws-deploy/ecr-images.json`; the local sizes come from `docker images` and are only in that table.
 17. **Check the plan only touches the app services.** Run `terraform plan -var "image_tag=$tag"`. It should change only order, inventory and frontend. If Kafka or Keycloak appear, stop and find out why. Otherwise a restart of either would fail requests during the test.
 
 ## D. Prepare the load test
@@ -92,21 +92,41 @@ while ($true) { Get-Date -Format T; aws ecs describe-services --cluster orderflo
 27. Start k6 in terminal 1, with the console, JSON and summary outputs (`deploy-console.txt`, `deploy-run.json` and `deploy-summary.json` in `phase2/docs/k6-runs/aws-deploy`).
 28. **Watch k6's progress clock.** At about 2:00, switch to terminal 2 and run the apply. Note the time before and after.
 29. **Keep k6 running until the rollout is complete.** Don't stop it early. Wait for k6 to finish.
-30. **Confirm the rollout finished.** All three services must show one PRIMARY deployment with `COMPLETED`. If a rollback happened, the circuit breaker kicked in: record that, and don't claim a successful deploy.
+30. **Confirm the rollout finished.** All three services must show one PRIMARY deployment with `COMPLETED`. If a rollback happened, the circuit breaker kicked in: record that, and don't claim a successful deploy. The saved proof is `rollout-history.json`, with `task-definitions.json` for the tags.
 
 ## G. Evidence and record
 
-32. **Save the files.** Keep `raw.json`, `summary.json` and `console.txt`. Check the sizes: the JSON can be large (8 min at 25/s is roughly 12,000 requests with several metrics each). If it is too big to commit, keep it locally and commit `summary.json` and `console.txt`.
-33. **Extract the failed-request count.** Look at `http_req_failed` in `summary.json`. A pass is a failed request.
-34. **Look for non-201s.** Check the `created` check line.
-35. **Check dropped iterations.**
-36. **Cross-check with ALB metrics.** Use the CloudWatch 5xx counts for the window. They should agree with k6.
+All files below are in `phase2/docs/k6-runs/aws-deploy`. The commands that produced the AWS-side files are in [step_7_e_demo_instructions.txt](step_7_e_demo_instructions.txt).
+
+32. **Save the files.** Keep `deploy-run.json` (the raw k6 output), `deploy-summary.json` and `deploy-console.txt`. Check the sizes: the JSON can be large (8 min at 25/s is roughly 12,000 requests with several metrics each). If it is too big to commit, keep it locally and commit `deploy-summary.json` and `deploy-console.txt`.
+    - `deploy-run.json` is 51.5 MB, so it is committed as two halves, `deploy-run-part1.json` and `deploy-run-part2.json`, split at a line boundary. Joining them in order gives the original file.
+    - Also saved: `aws-deploy-times.txt`, `rollout-history.json`, `task-definitions.json`, `alb-metrics.json`, `ecr-images.json` and `order-service-logs-deploy-window.txt` (19 MB, committed in full).
+33. **Extract the failed-request count.** Look at `http_req_failed` in `deploy-summary.json`. A pass is a failed request.
+    - Result on 2026-11-14: 0 failed requests out of 12,003. `deploy-summary.json` shows `passes: 0`, `fails: 12003` and `value: 0` (the failure rate). The `rate<0.01` threshold shows `false`, which means it was not breached.
+    - Cross-checks: `deploy-console.txt` shows `http_req_failed: 0.00%  0 out of 12003`, and all 12,003 `http_req_failed` data points in the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) have the value 0.
+34. **Look for non-201s.** Check the `created` check line in `deploy-console.txt`.
+    - Result on 2026-11-14: no order request returned anything other than 201. `deploy-console.txt` shows `✓ created` with `checks_succeeded: 100.00% 12001 out of 12001` and `checks_failed: 0.00% 0 out of 12001`. `deploy-summary.json` shows the `created` check with `passes: 12001` and `fails: 0`.
+    - Cross-check: the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) has 12,001 responses with status 201 and 2 with status 200. The two 200s are the token requests to Keycloak in `setup()`, one each for alice and bob, not order requests.
+35. **Check dropped iterations.** `deploy-console.txt` and `deploy-summary.json` only list `dropped_iterations` when some were dropped.
+    - Result on 2026-11-14: 0 dropped iterations. Neither `deploy-console.txt` nor `deploy-summary.json` has a `dropped_iterations` entry, and the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) has no `dropped_iterations` data points.
+    - Cross-check: k6 completed 12,001 iterations at 24.98 per second, against a target of 25 per second for 8 minutes (12,000). `deploy-console.txt` ends with `12001 complete and 0 interrupted iterations`. k6 used at most 11 of its 100 pre-allocated virtual users, so it never ran short of them, which is what causes dropped iterations.
+36. **Cross-check with ALB metrics.** Use the CloudWatch 5xx counts for the window, saved in `alb-metrics.json`. They should agree with k6.
+    - Result on 2026-11-14: the ALB agrees with k6, 0 errors. `alb-metrics.json` covers 18:31 to 18:41 UTC at a 1-minute period (its timestamps are in local time, UTC-5). `HTTPCode_Target_5XX_Count` and `HTTPCode_ELB_5XX_Count` both have no datapoints, which means no 5xx occurred: the ALB only reports these metrics when there is something to count.
+    - Request count: the ALB counted 14,033 requests against k6's 12,003. The 2,030 extra requests are not from k6. A browser tab was open on the frontend, signed in as alice, and it sent a stock request (`GET /api/stock/SKU-1`) each time its order list changed; the order-service logs show 2,025 of these during the run. They also returned without a 5xx.
+    - Response time: `TargetResponseTime` p95 stayed between 15 ms and 71 ms per minute. The highest minute is 18:36, when order-service switched to the new task. This is time spent in the targets only, so it is lower than k6's p95 of 131 ms, which is measured from the PC and includes the network.
 37. **Look at the timeline.**
-    - Bucket `raw.json` by 10-second windows (a small PowerShell or Python script is enough).
+    - Bucket `deploy-run.json` (committed as `deploy-run-part1.json` and `deploy-run-part2.json`; read both in order) by 10-second windows (a small PowerShell or Python script is enough).
     - Look for failures or latency spikes between apply start and rollout complete.
+    - Result on 2026-11-14: the table is in `deploy-timeline.txt`. No 10-second window has a failed request or a response other than 201, before, during or after the rollout.
+    - One latency spike, inside the rollout: in the 18:35:50 UTC window, 17 requests took longer than 500 ms, all within about 3 seconds (18:35:56 to 18:35:59), and the slowest took 1,760 ms. This is when the new order-service task began serving requests. Every other window has a p95 under 330 ms and a maximum under 430 ms.
 38. **Write the results into docs.** For example `phase2/docs/aws-deploy-under-load.md` or a section of `perf.md`. Include date, rate, duration, image sizes, tags (old and new), apply time, rollout completion time, total requests, failed requests, dropped iterations, p95, and what you did not test.
-39. **Write the claim carefully.** See the zero-downtime rules in my previous answer.
+    - Done on 2026-11-14: the results are in [phase2/docs/aws-deploy-under-load.md](../../../phase2/docs/aws-deploy-under-load.md), with the setup, results, timeline, what happened during the rollout, what the run does not show, and the list of evidence files.
+39. **Write the claim carefully.** The rules: only claim "0 failed requests" if the output shows it, state it as a claim about this run (with the rate, duration and failed-request count), and don't call it zero-downtime unless the evidence supports that.
+    - Done on 2026-11-14: the wording is in the "How to state this result" section of [phase2/docs/aws-deploy-under-load.md](../../../phase2/docs/aws-deploy-under-load.md), with a short form, a full form, and the wording the evidence does not support.
+    - The claim: "Deployed a new version to ECS Fargate under a load of 25 orders/s with 0 failed requests out of 12,003, in one 8-minute run." It is not called zero-downtime, because the evidence is one run, at one rate, of a trivial change.
 40. **Update ADR 0006** if anything surprised you, such as the rollout taking longer than expected.
+    - Done on 2026-11-14: [ADR 0006](../../../phase2/docs/adr/0006-aws-choices.md) has a new section, "What the deploy under load showed", and its status and "State of this work" now say the stack has been applied and the deploy under load run, with the destroy still to do.
+    - The surprises recorded: duplicate inventory results reaching order-service (112 ignored), the latency spike when the new task takes over, an open frontend tab multiplying requests, and stock lookups without Redis not taking the expected 1 s. The rollout itself was not slow: about 2 minutes.
 41. **Commit the evidence.** Do this before destroying anything.
 
 ## H. Destroy and console check
