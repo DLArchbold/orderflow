@@ -12,6 +12,18 @@ DONE and video-recorded:
                 • Running Log Insights count over both logs groups (search "Duplicate-ignored query" in CloudWatch's Log Analytics side tab or in 
                     notes\implmentations\aws_manually\step_6_2_4_demo\key_drills_detailed_proof.txt for implementation)
                 • Front-end UI showing that orders wait in PENDING when services are down, and then moved to CONFIRMED once re-started
+        Where it is published: root README.md, "Recorded Demo on AWS" (video Orderflow-demo.mp4, 8:09 long, sped up; recorded 2026-11-12).
+            Video positions: step 0 pre-demo check 0:00 -> 2:32, step 1 order with everything running 2:32 -> 4:10,
+            step 2 Kafka stopped and order created 4:10 -> 6:15, step 3 Kafka restarted and order CONFIRMED 6:15 -> 8:09.
+            The same checks are in the README under "Repeated checks after each step"; a short write-up is at the end of phase2\docs\resilience.md.
+        What the recording actually contains (read from the video on 2026-11-16):
+            • 2 orders, not about 10: 16 x SKU-1 before the outage, 17 x SKU-1 during it.
+            • Kafka was at 0 tasks for about 9 minutes. The second order was created 19:05:59 UTC and CONFIRMED 19:14:53 UTC, so it waited 8 min 54 s.
+            • Logs Insights after recovery: created for customer 2, Stock reserved for order 2, is now CONFIRMED 2, duplicate ignored 9.
+              So the recording DOES show duplicates being ignored (the outbox publisher re-sent the event during the long outage),
+              which the earlier notes said this demo would not show.
+            • Log group names have a leading slash: /orderflow/db-init, /orderflow/order-service, /orderflow/inventory-service.
+        The AWS stack was destroyed on 2026-11-15, so the demo cannot be repeated without a new terraform apply.
 
 Remaining tests to record:
     on AWS:
@@ -38,5 +50,7 @@ Long-term todo:
     Points on resume are backed up by local tests already, pending "Terraform-provisioned AWS ECS rolling deploys with 0 failed requests under load"
         Rest of tests that were run locally do not necessarily have to have a demo on AWS, so for AWS the only test I will demo
         for now is the 0 orders lost or double-processed across 6 Kafka service outages (see "DONE and video-recorded" above).
+        Note (2026-11-16): the recorded AWS demo is 1 Kafka outage with 2 orders. It illustrates that resume point; the numbers
+        in the point itself (orders, outages) come from the local drills in phase2\docs\resilience.md, not from the video.
     
 

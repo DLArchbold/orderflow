@@ -1,3 +1,18 @@
+AS RECORDED (2026-11-12, video Orderflow-demo.mp4, published in the root README.md under "Recorded Demo on AWS"):
+    The plan below was followed, with these differences and results (read from the video on 2026-11-16):
+    - Video positions (the video is sped up, 8:09 long):
+        0:00 -> 2:32  pre-demo check (tabs, login, queries, logs, Logs Insights)
+        2:32 -> 4:10  drain order (16 x SKU-1) created and CONFIRMED, then the repeated steps
+        4:10 -> 6:15  Kafka set to 0 tasks, order created during the outage (17 x SKU-1, 201, PENDING), then the repeated steps
+        6:15 -> 8:09  Kafka set back to 1 task, the order becomes CONFIRMED by itself, then the repeated steps
+    - 1 order was created during the outage, not about 10.
+    - Kafka was down for about 9 minutes, not 1 minute (taskbar clock in the video). The order was created 19:05:59 UTC and CONFIRMED 19:14:53 UTC, so it waited 8 min 54 s.
+    - Topic recreation on AWS is now verified: the order was CONFIRMED after the restart with no manual step.
+    - Logs Insights after recovery: created for customer 2, Stock reserved for order 2, is now CONFIRMED 2, duplicate ignored 9.
+      The 9 duplicates were ignored by inventory-service (stock reserved once per order), so this run also shows redelivery being absorbed.
+    - The log groups are named with a leading slash (/orderflow/db-init, /orderflow/order-service, /orderflow/inventory-service).
+    - The stack was destroyed on 2026-11-15; a repeat needs a new terraform apply.
+
 Option B: stop Kafka and start it again from the console. This is the practical choice, with one condition. Stopping the Kafka task loses its topics, so it's safe only if nothing is in flight.
 
 Your consumers use auto-offset-reset: earliest, and the broker should recreate the topics when something produces to them. The topics are also declared as NewTopic beans.

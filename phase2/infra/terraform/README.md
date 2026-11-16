@@ -20,6 +20,13 @@ This is the only step that costs money: set the budget first, and run `terraform
 8. `terraform destroy`, then check the console in every region you used: NAT gateways (there are none), load balancers, RDS instances
    and snapshots, ECR images, CloudWatch log groups, Elastic IPs, and Cost Explorer the next day.
 
+## Reading the databases (`query-orders.ps1`, `query-inventory.ps1`)
+RDS is private, so `psql` from a laptop cannot reach it. These two PowerShell scripts in this folder run a one-off Fargate task from the `db-init` task definition with a `psql` command override, wait for it to stop, and print its output from the `/orderflow/db-init` log group (stream `ecs/db-init/<taskId>`). Both are read-only and need the applied stack (they read `db_init_command` and `rds_endpoint` from `terraform output`).
+- `.\query-orders.ps1` (optionally `-Limit 200`; default 50): the newest orders joined with their lines: `id`, `customer_id`, `status`, `sku`, `quantity`, `created_at`.
+- `.\query-inventory.ps1`: the `stock` table, one row per SKU, with `available`, `reserved`, their total and the number of rows in `reservations`.
+
+They were used as the database check in the Kafka-outage demo recorded on 2026-11-12; how to read the two outputs against each other is in the root [README](../../../README.md), "Repeated checks after each step".
+
 ## Running these on Windows PowerShell
 The commands above are written for bash. In PowerShell 5.1:
 - There is no `sh`: `terraform output -raw db_init_command | sh` fails with "'sh' is not recognized". Use `Invoke-Expression (terraform output -raw db_init_command)`, or run it in Git Bash.
@@ -39,5 +46,5 @@ Every problem met so far while creating the databases came from a half-built sta
 ## Things to know
 - HTTP only. There is no domain, so no ACM certificate; credentials cross the internet in clear text. Demo only.
 - The realm's throwaway user passwords are in the repository and the ALB is public: anyone can log in as `alice`. Destroy when done.
-- Kafka has no volume: topics are lost when its task restarts.
+- Kafka has no volume: topics are lost when its task restarts. Seen in the recorded demo (2026-11-12): Kafka was set to 0 tasks for about 9 minutes with one order waiting in the outbox, then back to 1; the topics existed again without any manual step and the order was CONFIRMED, with 9 duplicate copies of an event ignored by inventory-service. Only stop Kafka when nothing is in flight: events already on a topic but not yet consumed would be lost with it.
 - During a rolling deploy two order-service tasks briefly overlap and publish the same outbox rows (harmless: idempotent consumer, see [architecture.md](../../docs/architecture.md#idempotent-consumer-how-inventory-service-ignores-duplicates)).

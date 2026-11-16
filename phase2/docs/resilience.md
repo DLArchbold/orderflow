@@ -120,3 +120,17 @@ the alert state as an error for the 36 samples while the alert was active. The P
 (`query_range` on `ALERTS{alertname="OutboxLagHigh"}` and `orderflow_outbox_lag_seconds`, step 5 s), not from the script's samples. (The script's own samples stopped recording
 the lag when the error began, so their maximum of 132 s was wrong and is not the peak.) The bug is fixed in the script but the drill was not re-run with the fix.
 The raw run directory was not committed. The alert was seen in Prometheus only; no notification receiver (Alertmanager) is configured.
+
+### Kafka outage on AWS, shown by hand (2026-11-12, recorded)
+This is a demo, not a drill: two orders, typed into the UI, with no load generator and no `drill_check.py`. The video and the checks used are in the root [README](../../README.md), "Recorded Demo on AWS".
+Setup: the ECS Fargate stack from `phase2/infra/terraform` (one task per service, Kafka as one container without a volume, RDS, no Redis, no Prometheus).
+
+| Step | What was done | What was seen |
+|---|---|---|
+| Before | one order (16 x `SKU-1`) with everything running | `201`, then CONFIRMED; one `Stock reserved` and one `is now CONFIRMED` log line |
+| Outage | Kafka service set to 0 tasks in the ECS console; one order (17 x `SKU-1`) created at 19:05:59 UTC | `201`, the order stayed PENDING in the UI and in the `orders` table; no new reservation, `reserved` unchanged |
+| Recovery | Kafka set back to 1 task after about 9 minutes | the order was CONFIRMED at 19:14:53 UTC with no refresh, after waiting 8 min 54 s; `reserved` rose by 17; Logs Insights counted 2 created, 2 reserved, 2 confirmed and **9 `duplicate ignored`** |
+
+What it adds to the local drills: the same behaviour on the deployed stack, a broker that came back **empty** (its topics were lost with the task and existed again afterwards), and duplicate copies of an event absorbed by the idempotent consumer after a long outage (the "not counted as duplicated" case in the definitions above).
+What it does not show: any rate or scale, the outbox lag (no Prometheus on AWS), or the full check set; "0 lost / 0 duplicated" here rests on two orders read from the tables and logs by eye.
+The database checks were the read-only `query-orders.ps1` and `query-inventory.ps1` in `phase2/infra/terraform`. The stack was removed with `terraform destroy` on 2026-11-15.

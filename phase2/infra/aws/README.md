@@ -10,6 +10,7 @@ Checklist (fill in as you do it, keep only what you actually deployed). Updated 
 - [x] ALB target groups; deployment config minimumHealthyPercent=100, maximumPercent=200 (application services; Kafka and Keycloak use 0 / 100)
 - [x] Secrets in Secrets Manager / SSM (never in the repo) (DB and Keycloak secrets injected with `valueFrom`)
 - [x] Proof of a rolling deploy with no failed requests (k6 running during deploy): 2026-11-14, 0 failed of 12,003 at 25 orders/s for 8 minutes, `phase2/docs/aws-deploy-under-load.md`
+- [x] Kafka-outage demo recorded on the deployed stack (2026-11-12): Kafka at 0 tasks for about 9 minutes, the order created meanwhile got a `201`, stayed PENDING and was CONFIRMED after the restart (two orders by hand, a demo and not a drill; video and checks in the root `README.md`, write-up at the end of `phase2/docs/resilience.md`)
 - [x] Tear down afterwards to stop cost; keep screenshots/logs as evidence (evidence committed in `phase2/docs/k6-runs/aws-deploy/`; `terraform destroy` run on 2026-11-15 and the console checked for leftovers; the budget alert was kept)
 
 Do not describe this as "zero-downtime" until the deploy-under-load proof exists. Update 2026-11-14: the proof now exists for one run at one rate of a trivial change, which still does not support "zero-downtime"; use the wording in `phase2/docs/aws-deploy-under-load.md`, "How to state this result".
