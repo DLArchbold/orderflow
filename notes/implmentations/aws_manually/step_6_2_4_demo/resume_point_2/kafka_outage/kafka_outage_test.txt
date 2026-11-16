@@ -41,4 +41,9 @@ If you need the SQL checks, you can copy the `orderflow-db-init` task definition
 - **It doesn't support the "50,000 orders" scale.** A manual run of about 10 orders is a demo, not a load test.
 - **For the bullet:** quote a manual run as a demo, not as the drill numbers.
 
+Update after the recording (2026-11-12 run, read from the video on 2026-11-16; details at the top of chosen_option_b_stop_and_start_kafka_from_console.txt):
+- Option B was used. Topic recreation on AWS, which was unverified above, worked: the order created during the outage was CONFIRMED after the restart.
+- The run had 1 order before and 1 order during the outage (not about 10), and Kafka was down for about 9 minutes.
+- "It doesn't show redelivery or duplicates" turned out wrong for this run: Logs Insights counted 9 `duplicate ignored` lines after recovery, with stock reserved once per order. The broker came back empty, but the outbox publisher had re-sent the event during the outage. It is still two orders, so it stays a demo and not a measurement.
+
 I can write these steps up as a notes file, or restore the stash.

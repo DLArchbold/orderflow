@@ -16,10 +16,13 @@ An order-management system built to show event-driven design done carefully: a *
 
 https://github.com/user-attachments/assets/081cf8f2-8ee8-4c42-a805-86b483f54bf5
 
-- Step (0): Pre-demo check Overview of UI, database and CloudWatch logs, and Logs Insights (0:00 -> 2:32) <br/> 
-- Step (1): Create an order with all services running ensure that the order moves from PENDING -> CONFIRMED to ensure order flow is working without issues. (2:32 -> 4:10) <br/> 
-- Step (2): Stop Kafka service, create another order during the Kafka outage (still accepted with a 201 response and which stays PENDING). (4:10 -> 6:15) <br/>
-- Step (3): Restart the Kafka service, and the order is CONFIRMED automatically with nothing lost and with no refresh needed. (6:15 -> END) <br/>
+- Step (0): Pre-demo check: overview of the UI, the database and CloudWatch logs, and Logs Insights. (0:00 -> 2:32) <br/> 
+- Step (1): Create an order (16 x `SKU-1`) with all services running and check that it moves from PENDING -> CONFIRMED, so the order flow is known to work before the outage. (2:32 -> 4:10) <br/> 
+- Step (2): Stop the Kafka service (ECS console, desired tasks set to 0), then create another order (17 x `SKU-1`) during the Kafka outage. It is still accepted with a 201 response and stays PENDING. (4:10 -> 6:15) <br/>
+- Step (3): Restart the Kafka service (desired tasks back to 1). The order is CONFIRMED automatically, with nothing lost and no refresh needed. (6:15 -> 8:09, the end) <br/>
+
+The times are positions in the video, which is sped up. The recording was made on 2026-11-12 and Kafka was down for about 9 minutes of real time (2:05 PM to 2:14 PM on the taskbar clock). The step 2 order was created at 19:05:59 UTC and confirmed at 19:14:53 UTC, so it waited 8 min 54 s.
+This is a manual demo with one order before the outage and one during it. It is not a load test; the measured drills are in [resilience.md](phase2/docs/resilience.md).
 
 
 ### Repeated checks after each step
@@ -30,7 +33,7 @@ Run these at every checkpoint: **during** the pre-demo check (step 0), **before*
 
 Use `query-orders.ps1` and `query-inventory.ps1`.
 
-Run both from `phase2/infra/terraform`. The RDS instance is private, so you can't connect from your laptop. Each script instead runs a one-off ECS Fargate task from the `db-init` task definition, which has `psql` and VPC access. Each script does the following:
+Run both from `phase2/infra/terraform` (PowerShell). They need the deployed stack, which was removed on 2026-11-15, so run `terraform apply` again first. The RDS instance is private, so you can't connect from your laptop. Each script instead runs a one-off ECS Fargate task from the `db-init` task definition, which has `psql` and VPC access. Each script does the following:
 
 1. Reads `db_init_command` and `rds_endpoint` from Terraform output.
 2. Starts the task with a `psql` command override.
@@ -48,24 +51,25 @@ Run both from `phase2/infra/terraform`. The RDS instance is private, so you can'
 - `available + reserved` stays constant for each SKU.
 - A `PENDING` order has no reservation yet.
 
-The output is also in the CloudWatch log group `orderflow/db-init`, one stream per task (`ecs/db-init/<taskId>`). That is why the db-init CloudWatch tab is open.
+The output is also in the CloudWatch log group `/orderflow/db-init`, one stream per task (`ecs/db-init/<taskId>`). That is why the db-init CloudWatch tab is open.
 
 #### 2. Check the service logs in CloudWatch
 
-Open `orderflow/order-service` and `orderflow/inventory-service`.
+Open the log groups `/orderflow/order-service` and `/orderflow/inventory-service`.
 
 - In **order-service**, search `CONFIRMED`. It shows the confirmation events consumed from Kafka.
 - In **inventory-service**, search `reserved`. It shows reservations made for incoming orders.
 
 | Checkpoint | Expected |
 |------------|----------|
-| **Before** | One confirmation and one reservation, for the drain order. |
-| **During** | No new `CONFIRMED` or `reserved` lines, because Kafka is down and the order events can't flow. Producer or connection warnings may appear instead. |
-| **After** | The backlog appears as a burst of `reserved` and `CONFIRMED` lines. The consumers use `auto-offset-reset: earliest`, so they pick up what was produced. |
+| **Pre-demo** (step 0) | Nothing new. In the video the search finds no events in the selected time range, because the earlier orders are older than that. This is the baseline. |
+| **Before** (step 1) | One new confirmation and one new reservation, for the step 1 order. That order is the "drain" order: once it is CONFIRMED nothing is in flight, so it is safe to stop Kafka. |
+| **During** (step 2) | No new `CONFIRMED` or `reserved` lines, because Kafka is down and the order events can't flow. Producer or connection warnings may appear instead. |
+| **After** (step 3) | The backlog appears as new `reserved` and `CONFIRMED` lines (one of each in the video, a burst if several orders were waiting). The order event waited in the outbox table during the outage and is published once Kafka is back. The consumers use `auto-offset-reset: earliest`, so they read the recreated topic from its start. |
 
 #### 3. Run Logs Insights counts over both log groups
 
-A count over both groups gives one number per phase, which is easier to compare than scrolling a search. Select both log groups, set the time range to cover the demo, then run one of the queries below.
+A count over both groups gives one number per phase, which is easier to compare than scrolling a search. Select both log groups, set the time range to cover the demo, then run one of the queries below. Each query counts lines from both services: `created for customer` is logged by order-service, and it is in both queries so the number of orders created sits next to the other counts.
 
 **Order-service events:**
 
@@ -89,7 +93,18 @@ fields @timestamp, @message
 | stats count(*) by kind
 ```
 
-**Expected:** the count is flat during the outage, then spikes at recovery. The total equals the number of orders created.
+**Expected:** `created for customer` rises with each order, also during the outage. The `is now CONFIRMED` and `Stock reserved for order` counts stay flat during the outage, then catch up at recovery. At the end each of them equals the number of orders created.
+
+Counts in the video (time range: the last hour, which holds only the two demo orders):
+
+| Checkpoint | `created for customer` | `is now CONFIRMED` | `Stock reserved for order` | `duplicate ignored` |
+|------------|------------------------|--------------------|----------------------------|---------------------|
+| Pre-demo (step 0) | no results | no results | no results | no results |
+| Before (step 1) | 1 | 1 | 1 | not listed |
+| During (step 2) | 2 | 1 | 1 | not listed |
+| After (step 3) | 2 | 2 | 2 | 9 |
+
+The 9 `duplicate ignored` lines appear only after recovery. The outbox publisher is at-least-once, so an outage leaves several copies of one event on the topic; inventory-service recognises them by message id and reserves stock once (2 reservations for 2 orders). See [architecture.md](phase2/docs/architecture.md#idempotent-consumer-how-inventory-service-ignores-duplicates) and the definitions in [resilience.md](phase2/docs/resilience.md).
 
 #### 4. Check the UI
 
@@ -99,7 +114,7 @@ Show the orders list with the Network/developer tab open next to it.
 - **After restart:** the same orders flip to `CONFIRMED` without any action.
 - **Final check:** once all services are up, nothing remains `PENDING`. An order still `PENDING` means recovery failed, so the demo has not passed.
 > [!NOTE]
-> This is also the proof that topics are recreated on AWS after the Kafka task restarts.
+> This is also the proof that topics are recreated on AWS after the Kafka task restarts. Kafka on AWS has no volume, so its topics are lost when the task stops ([Terraform README](phase2/infra/terraform/README.md), "Things to know"); an order reaching `CONFIRMED` after the restart shows that both topics exist again.
 
 
 
