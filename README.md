@@ -3,7 +3,10 @@
 An order-management system built to show event-driven design done carefully: a **React + TypeScript** UI, two **Java 21 / Spring Boot** services
 (`order-service`, `inventory-service`) that talk through **Kafka** with the **transactional outbox** pattern and **idempotent consumers**,
 **PostgreSQL** with Flyway, **OAuth2/JWT** login through Keycloak, **Redis** cache with **Resilience4j**, and metrics, tracing and alerts
-(Prometheus, Grafana, Jaeger).
+(Prometheus, Grafana, Jaeger). How the idempotent consumer works: [architecture.md](phase2/docs/architecture.md#idempotent-consumer-how-inventory-service-ignores-duplicates).
+
+> [!IMPORTANT]
+> For high-level instructions, see Implementation_steps.md
 
 ## Recorded Demo on AWS 
  
@@ -127,7 +130,7 @@ the order to `CONFIRMED` or `REJECTED` and pushes the change to the browser. Det
 | p95 create-order latency | about 30 ms at 50 orders/s; 28 to 42 ms from 100 to 400 orders/s | same runs |
 | Outbox lag at the top rate | 19 s to drain after the 300/s step, 36 s after 400/s; peak 124 s at 1,000/s (the generator reached only 663/s there); near zero at 150/s or less | same runs |
 | Query time before/after index | **about 60 ms to 0.2 ms** (19,000 to 53 buffers) for "my newest 50 orders" at **3,000,000 orders** (a customer with about 30,000 orders); measured twice with the same result | [perf.md](phase2/docs/perf.md), `scripts/seed-orders.sql` |
-| Failed requests during rolling deploy | **not measured** | the AWS deploy was never run (no AWS account used); [Terraform](phase2/infra/terraform/README.md) passes `terraform validate` but was never planned or applied |
+| Failed requests during rolling deploy | **0 of 12,003** (0 dropped iterations, p95 131 ms; one latency spike of about 3 s at the cutover, slowest request 1,760 ms) | One run on AWS (2026-11-14): ECS Fargate, one task per service, k6 at 25 orders/s for 8 minutes from one machine over the internet, `terraform apply` of a new image tag at the 2-minute mark. One run at one rate of a trivial change, so not called zero-downtime. [aws-deploy-under-load.md](phase2/docs/aws-deploy-under-load.md) |
 | Orders lost / duplicated after failure drills | **0 / 0** in four drills (Kafka stopped 60 s, inventory-service killed 60 s, order-service killed, at 20 orders/s; Kafka stopped 244 s at 10 orders/s, where the lag alert fired); the first three were run twice | [resilience.md](phase2/docs/resilience.md), `scripts/drill.sh`, `scripts/drill_lag_alert.py`, `scripts/drill_check.py` |
 | Security scan findings fixed | 3 advisory groups from `npm audit` (all in dev tooling), now 0 vulnerabilities. CodeQL ran on PR #1: 0 results (default suites, not proof of safety). Dependabot: the 8 vite/esbuild alerts closed after PR #1 was merged; **14 are still open** (13 on Maven dependencies of `e2e/pom.xml`: jackson-databind and assertj, several high; 1 medium on a vite 6.4.3 entry in `frontend/package-lock.json`), not yet triaged | [security.md](phase2/docs/security.md) |
 
@@ -138,7 +141,12 @@ Verified on GitHub (public repo, hosted runners): the first full CI run on the p
 CodeQL passed on PR #1 for Java/Kotlin and JavaScript/TypeScript with 0 results (default suites, not proof of safety); PR #1 was merged into `main` on 2026-11-06, and after the merge the
 full CI run on `main` (run `42338278394`) passed every job: `frontend`, both `backend` jobs, `e2e`, `kind` and the three `images` builds (the images job includes the push to GHCR; I did not open the packages page to confirm the images are there), and the CodeQL push run passed too. Branch protection is on for `main` (pull request and 7 required checks; the owner can bypass it). See [docs/ci.md](docs/ci.md).
 
-What is not done, so nobody has to guess: `terraform plan`/`apply` and everything on AWS (`terraform validate` passes); a clean k6 limit (k6 ran, but runs at 300/s and 600/s were intermittently slow,
+Done on AWS (`us-east-1`, from [phase2/infra/terraform](phase2/infra/terraform/README.md), decisions in [ADR 0006](phase2/docs/adr/0006-aws-choices.md)): the stack was applied from 2026-11-10,
+the Kafka-outage demo above was recorded on it, and a deploy under load was run on 2026-11-14 ([aws-deploy-under-load.md](phase2/docs/aws-deploy-under-load.md)).
+The stack was then removed with `terraform destroy` on 2026-11-15 and the console checked for leftovers, so it is no longer running: the ALB URL, `query-orders.ps1` and
+`query-inventory.ps1` need a new `terraform apply` before they work again.
+
+What is not done, so nobody has to guess: a clean k6 limit (k6 ran, but runs at 300/s and 600/s were intermittently slow,
 with the leading explanation being the local Docker disk; see [perf.md](phase2/docs/perf.md)); triage of the 14 open Dependabot alerts and of the 17 Dependabot pull requests opened against `main`
 (for example the vite 8 bumps fail because `@vitejs/plugin-react` 4.7.0 does not support vite 8). The files for the unfinished parts are in the repository and are marked as untested where they are.
 

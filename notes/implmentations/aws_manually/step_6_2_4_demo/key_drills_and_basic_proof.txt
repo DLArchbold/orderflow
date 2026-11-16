@@ -112,6 +112,9 @@
   50,000 orders and 6 forced Kafka/service outages, with idempotent consumers
   absorbing at-least-once redelivery."
 
+  (How the idempotent consumer works: phase2\docs\architecture.md, section
+  "Idempotent consumer: how inventory-service ignores duplicates".)
+
 ● I'll check what the repo already has for the resilience drills and the
   correctness checks.
 

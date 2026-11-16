@@ -2,6 +2,7 @@
 
 The resume claims are the ones listed in PLAN step 28 (the plan holds no bullet text beyond that list). Each story is true to what happened;
 where a result is a stand-in or unverified, the story says so. Use the "Say it like this" column, not a bigger claim.
+How the idempotent consumer works: [architecture.md](../../phase2/docs/architecture.md#idempotent-consumer-how-inventory-service-ignores-duplicates).
 
 | # | Error or failure | Cause and fix | Plan step | Resume claim (step 28 list) | Say it like this in an interview |
 |---|---|---|---|---|---|
@@ -40,8 +41,9 @@ where a result is a stand-in or unverified, the story says so. Use the "Say it l
 | 33 | Demo GIF caption claimed a state the viewer could not see | The first order confirmed faster than the screenshot interval. Fixed the caption. | 8 (27) | none | Skip, or: "I checked the finished GIF frame by frame." |
 | 34 | `drill.sh` only knew `mvn spring-boot:run` | Added container detection (`docker compose kill` and `start`). | 6b (26) | Kafka, outbox, idempotent consumers (12 to 16) | "My drill script only knew one way to run the services; I made it detect containers." |
 
-## Not errors, but unfinished (never claim these)
-`terraform plan`/`apply` and all AWS work (24, including deploy-under-load and "failed requests during rolling deploy") (CI on GitHub, `terraform validate` and the k6 runs were done on 2026-11-06; see the status log in `PLAN_with_two_phases.md`). A resume claim for the AWS work needs the work done first.
+## Formerly unfinished, now done
+Nothing is left unfinished here. The last item, `terraform plan`/`apply` and all AWS work (24, including deploy-under-load and "failed requests during rolling deploy"), was listed as unfinished until 2026-11-15 (CI on GitHub, `terraform validate` and the k6 runs were done on 2026-11-06; see the status log in `PLAN_with_two_phases.md`).
+AWS, done: the apply (from 2026-11-10), the deploy under load (2026-11-14, 0 failed of 12,003; `phase2/docs/aws-deploy-under-load.md`), `terraform destroy` and the console check. The claim may be used (wording in the claims table below).
 Done since the first pass (2026-11-05, Windows 10 and Docker Desktop only, not a GitHub runner): the Docker image builds, the compose `apps` profile, the kind cluster,
 the fresh-clone walkthrough, the demo GIF, the 3,000,000-row index test, the long-outage lag-alert drill and Grafana screenshots.
 
@@ -65,7 +67,7 @@ I'd make two changes. The table would link each error to one of your four bullet
 | "Sustained **200 orders/s at p95 300 ms (k6)**" | At least 300 orders/s with 0 failures, p95 about 31 ms, measured with a Python script, not k6 | "Sustained 300 orders/s with 0 failures at p95 about 31 ms on one machine (custom load generator)". Drop "k6" unless the k6 run happens. |
 | "from **400 ms to 30 ms on 3M rows**" | 1.19 ms to 0.12 ms on 300,000 rows | State the measured numbers and the row count, or finish the 3M-row run first |
 | "**CodeQL** CI/CD" | CodeQL ran on PR #1 with 0 results; the other workflows ran green on GitHub (run `42291870099`) | OK to include as "CodeQL-scanned CI/CD"; do not claim "no vulnerabilities" (default suites only). Merge PR #1 before claiming the `images` job or the Dependabot alerts closing. |
-| "**Terraform-provisioned AWS ECS rolling deploys with 0 failed requests under load**" | An unvalidated draft; no deploy happened | Remove it. There is no deploy-under-load result. |
+| "**Terraform-provisioned AWS ECS rolling deploys with 0 failed requests under load**" | An unvalidated draft; no deploy happened. Update 2026-11-15: applied from 2026-11-10, one deploy under load on 2026-11-14 with 0 failed of 12,003 at 25 orders/s for 8 minutes, then `terraform destroy` with a clean console check | "Terraform-provisioned ECS Fargate deploys on AWS; a rolling deploy under k6 load (25 orders/s for 8 minutes) completed with 0 failed requests out of 12,003." Keep the rate, duration and count and avoid "zero-downtime" (see "How to state this result" in `phase2/docs/aws-deploy-under-load.md`). |
 | "so a slow or unavailable inventory-service degrades gracefully **instead of failing orders**" | Order creation never calls inventory-service; the outbox keeps orders working. Resilience4j and Redis only protect the stock lookup. | "…keep the stock lookup from failing the page when inventory-service is slow or down" |
 
 Smaller items to fix:

@@ -1,6 +1,6 @@
 # Terraform (AWS, ECS Fargate)
 
-**Status: passes `terraform fmt` and `terraform validate` (Terraform 1.16.6, 2026-11-06, `init -backend=false`). Applied in part by hand (2026-11-09/10): the budget, network, ECR, RDS and the one-off `db-init` task (exit code 0, both databases created). The full apply, the services behind the ALB, the deploy under load and a clean `destroy` check are not recorded here.**
+**Status: passes `terraform fmt` and `terraform validate` (Terraform 1.16.6, 2026-11-06, `init -backend=false`). Applied in part by hand (2026-11-09/10): the budget, network, ECR, RDS and the one-off `db-init` task (exit code 0, both databases created). Then the full apply with Kafka, Keycloak, the services and the ALB (first deployment 2026-11-10), and a deploy under load on 2026-11-14 (0 failed requests out of 12,003; see `phase2/docs/aws-deploy-under-load.md`). After that the stack was removed with `terraform destroy` on 2026-11-15 (61 resources) and the console checked for leftovers; nothing is running now, so a new deployment starts again from "Order of work" below. The budget was kept: it was removed from the state before the destroy, so before the next apply run `terraform import aws_budgets_budget.monthly <account id>:orderflow-monthly` instead of step 2.**
 `validate` checks syntax and argument names, not whether the resources will create; expect to fix errors on the first `plan`.
 Decisions and their costs: `phase2/docs/adr/0006-aws-choices.md`.
 
@@ -40,4 +40,4 @@ Every problem met so far while creating the databases came from a half-built sta
 - HTTP only. There is no domain, so no ACM certificate; credentials cross the internet in clear text. Demo only.
 - The realm's throwaway user passwords are in the repository and the ALB is public: anyone can log in as `alice`. Destroy when done.
 - Kafka has no volume: topics are lost when its task restarts.
-- During a rolling deploy two order-service tasks briefly overlap and publish the same outbox rows (harmless: idempotent consumer).
+- During a rolling deploy two order-service tasks briefly overlap and publish the same outbox rows (harmless: idempotent consumer, see [architecture.md](../../docs/architecture.md#idempotent-consumer-how-inventory-service-ignores-duplicates)).
