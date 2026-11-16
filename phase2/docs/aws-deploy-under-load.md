@@ -37,6 +37,7 @@ Wording the evidence does not support:
 - **Load:** k6 2.3.0 with `phase2/load-tests/k6/create-orders.js`, constant arrival rate of 25 orders/s for 8 minutes (`POST /api/orders`, SKU-1 and SKU-2
   mixed, tokens for alice and bob). Run from one Windows machine over the internet to the public ALB, HTTP only. Thresholds: failures under 1%, p95 under 500 ms.
 - **Baseline:** the same script at 25/s for 1 minute against `9ff11d1` with no deploy gave 0 failed of 1,503, p95 128 ms, max 451 ms.
+<<<<<<< HEAD
 - **Why 25 orders/s:** it was the starting rate in the run plan (step 20 of `notes/implmentations/aws_manually/step_0_master_step_list.txt`:
   run 1 minute at 25/s, require 0 failed requests, 0 dropped iterations and p95 under 500 ms, lower the rate if it fails). The baseline passed
   first time, so it was kept; why 25 was proposed rather than another number was not recorded, and no higher rate was tried on AWS.
@@ -50,6 +51,8 @@ Wording the evidence does not support:
   - 8 minutes at 25/s gives about 12,000 orders and room before and after a rollout of about 2 minutes, with a raw output (51.5 MB) that could
     still be committed once split in two.
   - It is in the same range as the local runs: the failure drills ran at 20/s and k6 was clean at 50/s.
+=======
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 
 Image sizes:
 
@@ -102,12 +105,17 @@ The rollout took about 2 minutes from the first deployment starting to the last 
 - **Both tasks served orders during the overlap.** The old task logged 6,135 orders created and the new task 5,866, which is 12,001 in total.
 - **Events were published twice during the overlap, as ADR 0006 predicts, and it was harmless.** The two tasks published the same outbox rows for a
   short time: the logs show 12,542 publishes for 12,001 orders, so the `OrderCreated` event of 541 orders was sent twice, all between 18:35:37 and 18:36:45.
+<<<<<<< HEAD
   inventory-service ignored all 541 duplicates ("already processed; duplicate ignored") and reserved stock once for each of the 12,001 orders.
 - **inventory-service published twice during its own overlap too.** Its old and new tasks both published the same 112 `StockReserved` events
   between 18:35:50 and 18:36:03: 12,113 publishes for 12,001 events. order-service received those 12,113 inventory results and ignored the 112
   that arrived for an order that was already `CONFIRMED`. The outcome is 12,001 orders confirmed, each exactly once (7,174 by the old
   order-service task, 4,827 by the new one). Why both tasks sent the same rows (the publisher's select takes no row lock) is explained in
   [architecture.md](architecture.md#duplicate-publishes-during-a-rolling-deploy-why-order-service-received-12113-results-for-12001-orders).
+=======
+  order-service received 12,113 inventory results and ignored the 112 that arrived for an order that was already `CONFIRMED`. The outcome is
+  12,001 orders confirmed, each exactly once (7,174 by the old task, 4,827 by the new one).
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 
 ## Things in the evidence that look odd but are explained
 - **The ALB counted 14,033 requests, 2,030 more than k6 sent.** A browser tab was open on the frontend, signed in as alice. The frontend repeats its
@@ -127,7 +135,11 @@ The rollout took about 2 minutes from the first deployment starting to the last 
 - **Only order creation was under load.** Reads, cancellations and the live order stream were not part of the k6 script.
 - **Kafka, Keycloak and RDS were not redeployed.** Kafka and Keycloak use stop-then-start (0 / 100), so deploying either would interrupt requests.
 - **No rollback under load.** The circuit breaker did not trigger in this run, so its behaviour under traffic is untested here.
+<<<<<<< HEAD
 - **Order outcomes were read from the order-service and inventory-service logs,** not queried from the database.
+=======
+- **Order outcomes were read from the order-service logs,** not queried from the database.
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 - **One load machine, over the internet, HTTP only.**
 
 ## Evidence
@@ -144,5 +156,8 @@ All in [k6-runs/aws-deploy/](k6-runs/aws-deploy/):
 | `alb-metrics.json` | ALB 5xx counts, request count and response time, per minute |
 | `ecr-images.json` | ECR compressed image sizes |
 | `order-service-logs-deploy-window.txt` | order-service logs for 18:30 to 18:41 UTC |
+<<<<<<< HEAD
 | `inventory-service-logs-deploy-window.txt` | inventory-service logs for the same window |
+=======
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 | `smoke-*`, `trial-25-*` | the baseline runs against `9ff11d1` |

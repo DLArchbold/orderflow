@@ -1,6 +1,10 @@
 # ADR 0006: AWS deployment choices (Terraform, ECS Fargate)
 
+<<<<<<< HEAD
 Status: applied and exercised. The Terraform in `phase2/infra/terraform` has been applied to AWS (from 2026-11-10) and a deploy under load was run on 2026-11-14 (see "What the deploy under load showed"). The stack was then removed with `terraform destroy` on 2026-11-15 and the console checked for leftovers (see "State of this work").
+=======
+Status: applied and exercised. The Terraform in `phase2/infra/terraform` has been applied to AWS (from 2026-11-10) and a deploy under load was run on 2026-11-14 (see "What the deploy under load showed"). The destroy and the leftover check have not happened yet (see "State of this work").
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 
 ## Decisions
 | Topic | Choice | Why, and what it costs |
@@ -49,10 +53,40 @@ What it adds to the decisions above:
   were not timed individually.
 - **Not exercised:** the circuit breaker did not trigger, and Kafka and Keycloak (0 / 100, stop then start) were not redeployed.
 
+## What the deploy under load showed (2026-11-14)
+Full results are in [aws-deploy-under-load.md](../aws-deploy-under-load.md): 25 orders/s for 8 minutes, tag `9ff11d1` to `dc1acc0`, 0 failed requests out of 12,003.
+What it adds to the decisions above:
+
+- **Deployments: the rolling settings held under load.** All three deployments were `SUCCESSFUL` with no rollback, and no request failed in any
+  10-second window. The order-service deployment took 1 minute 57 seconds; all three were done about 2 minutes after the first one started.
+- **Compute: 1 vCPU is enough for order-service to start well inside the grace period.** The new task logged "Started OrderServiceApplication in 47.8 s"
+  (116 seconds on 0.5 vCPU, seen 2026-11-11), against a 300 s grace period.
+- **The duplicate-publish consequence was measured.** The old and new order-service tasks overlapped for about a minute and published 12,542 events
+  for 12,001 orders, so the `OrderCreated` event of 541 orders was sent twice. Every order was still confirmed exactly once.
+- **Surprise: duplicates also arrived in the other direction.** order-service received 12,113 inventory results for 12,001 orders and ignored the 112
+  that arrived for an order already `CONFIRMED` (the status check from [ADR 0003](0003-order-status-from-inventory.md)). So the consequence above is
+  not only kept harmless by inventory-service's idempotent consumer; order-service's own check is needed too. The likely cause is inventory-service's
+  own two tasks overlapping and publishing the same outbox rows, but its logs were not saved, so that is not confirmed.
+- **Surprise: a latency spike when the new task takes over.** 17 requests took longer than 500 ms within about 3 seconds, the slowest 1,760 ms,
+  as the new order-service task served its first requests. Nothing failed. With one task per service there is no warm instance to share the load,
+  and nothing warms the new task up before the ALB sends it traffic.
+- **Surprise: an open frontend tab multiplies requests.** The frontend repeats its stock lookup whenever its order list changes, and it receives live
+  updates for the signed-in user's orders. A tab left open as alice during the run sent 2,025 stock lookups (the ALB counted 14,033 requests against k6's 12,003).
+  With no Redis, each one logged the two `WARN` lines described in the Redis row, about 3,800 in total.
+- **Redis: the lookups were not slow in this run.** The Redis row says about 1 s per call without the cache. Here the stock lookups were about 14% of
+  all requests and the ALB's `TargetResponseTime` p95 stayed between 15 and 71 ms per minute, so they cannot have taken around 1 s each. The lookups
+  were not timed individually.
+- **Not exercised:** the circuit breaker did not trigger, and Kafka and Keycloak (0 / 100, stop then start) were not redeployed.
+
 ## State of this work
 `terraform fmt -recursive` changed four files (formatting only), and after that `terraform init -backend=false` and `terraform validate` (Terraform 1.16.6, AWS provider 5.x) reported "The configuration is valid" on 2026-11-06. That checks syntax, references and argument names against the provider schema; it needs no AWS account and proves nothing about whether the resources will create. `plan` and `apply` were never run (no AWS credentials in use), so expect to fix errors on the first plan. No deploy, load test during a deploy, or destroy check has happened.
 
 Update 2026-11-14: the paragraph above describes the state on 2026-11-06. Since then the stack has been planned and applied (first deployment 2026-11-10;
+<<<<<<< HEAD
 the fixes found along the way are in the Decisions table), and a deploy under load was run on 2026-11-14. After that, on 2026-11-15, `terraform destroy` removed 61
 resources and the check for leftovers in `us-east-1` was clean, so nothing from this stack is running. The budget was kept on purpose: it was
 removed from Terraform's state before the destroy, so a later apply must `terraform import` it first (see the Terraform README).
+=======
+the fixes found along the way are in the Decisions table), and a deploy under load was run on 2026-11-14. Still not done: `terraform destroy` and the
+check for leftovers in the console.
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69

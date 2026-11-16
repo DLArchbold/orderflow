@@ -18,8 +18,11 @@ RELATED FILES
     phase2\docs\k6-runs\aws-deploy\ecr-images.json
     phase2\docs\k6-runs\aws-deploy\order-service-logs-deploy-window.txt
         (19 MB, committed in full)
+<<<<<<< HEAD
     phase2\docs\k6-runs\aws-deploy\inventory-service-logs-deploy-window.txt
         (11 MB, committed in full)
+=======
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 
 
 WHERE THIS FITS
@@ -124,12 +127,15 @@ DEMO STEPS
       --start-time $start --end-time $end --query "events[].[logStreamName,timestamp,message]" --output text |
       Out-File -Encoding utf8 "$out/order-service-logs-deploy-window.txt"
 
+<<<<<<< HEAD
    inventory-service logs for the run window (same $start and $end):
 
     aws logs filter-log-events --log-group-name /orderflow/inventory-service --region $r `
       --start-time $start --end-time $end --query "events[].[logStreamName,timestamp,message]" --output text |
       Out-File -Encoding utf8 "$out/inventory-service-logs-deploy-window.txt"
 
+=======
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 
 OTHER COMMANDS
 --------------------------------------------------------------------------------
@@ -185,6 +191,7 @@ Verified:
           in the window: the old one, which stops at 18:36:46, and the new
           one, which starts at 18:34:49 (41 seconds after revision 7 was
           registered).
+<<<<<<< HEAD
     - inventory-service (inventory-service-logs-deploy-window.txt, exported
       2026-11-15): two tasks in the window, the old one until 18:36:03 and
       the new one from 18:34:54. Stock was reserved once for each of the
@@ -206,6 +213,8 @@ Verified:
           CONFIRMED (ADR 0003, "apply only if PENDING"). Full explanation:
           phase2\docs\architecture.md, section "Duplicate publishes during
           a rolling deploy".
+=======
+>>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
     - ALB: no 5xx datapoints for the window (alb-metrics.json).
     - Image sizes: step 16 of the master step list asks for local sizes as
       well as ECR compressed ones. ecr-images.json holds only the ECR
