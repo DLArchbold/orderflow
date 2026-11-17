@@ -1,10 +1,6 @@
 # ADR 0006: AWS deployment choices (Terraform, ECS Fargate)
 
-<<<<<<< HEAD
 Status: applied and exercised. The Terraform in `phase2/infra/terraform` has been applied to AWS (from 2026-11-10) and a deploy under load was run on 2026-11-14 (see "What the deploy under load showed"). The stack was then removed with `terraform destroy` on 2026-11-15 and the console checked for leftovers (see "State of this work").
-=======
-Status: applied and exercised. The Terraform in `phase2/infra/terraform` has been applied to AWS (from 2026-11-10) and a deploy under load was run on 2026-11-14 (see "What the deploy under load showed"). The destroy and the leftover check have not happened yet (see "State of this work").
->>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 
 ## Decisions
 | Topic | Choice | Why, and what it costs |
@@ -82,11 +78,6 @@ What it adds to the decisions above:
 `terraform fmt -recursive` changed four files (formatting only), and after that `terraform init -backend=false` and `terraform validate` (Terraform 1.16.6, AWS provider 5.x) reported "The configuration is valid" on 2026-11-06. That checks syntax, references and argument names against the provider schema; it needs no AWS account and proves nothing about whether the resources will create. `plan` and `apply` were never run (no AWS credentials in use), so expect to fix errors on the first plan. No deploy, load test during a deploy, or destroy check has happened.
 
 Update 2026-11-14: the paragraph above describes the state on 2026-11-06. Since then the stack has been planned and applied (first deployment 2026-11-10;
-<<<<<<< HEAD
 the fixes found along the way are in the Decisions table), and a deploy under load was run on 2026-11-14. After that, on 2026-11-15, `terraform destroy` removed 61
 resources and the check for leftovers in `us-east-1` was clean, so nothing from this stack is running. The budget was kept on purpose: it was
 removed from Terraform's state before the destroy, so a later apply must `terraform import` it first (see the Terraform README).
-=======
-the fixes found along the way are in the Decisions table), and a deploy under load was run on 2026-11-14. Still not done: `terraform destroy` and the
-check for leftovers in the console.
->>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
