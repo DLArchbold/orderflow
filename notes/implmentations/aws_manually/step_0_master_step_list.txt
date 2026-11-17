@@ -101,11 +101,7 @@ All files below are in `phase2/docs/k6-runs/aws-deploy`. The commands that produ
 
 32. **Save the files.** Keep `deploy-run.json` (the raw k6 output), `deploy-summary.json` and `deploy-console.txt`. Check the sizes: the JSON can be large (8 min at 25/s is roughly 12,000 requests with several metrics each). If it is too big to commit, keep it locally and commit `deploy-summary.json` and `deploy-console.txt`.
     - `deploy-run.json` is 51.5 MB, so it is committed as two halves, `deploy-run-part1.json` and `deploy-run-part2.json`, split at a line boundary. Joining them in order gives the original file.
-<<<<<<< HEAD
     - Also saved: `aws-deploy-times.txt`, `rollout-history.json`, `task-definitions.json`, `alb-metrics.json`, `ecr-images.json`, `order-service-logs-deploy-window.txt` (19 MB, committed in full) and `inventory-service-logs-deploy-window.txt` (11 MB, committed in full; exported on 2026-11-15).
-=======
-    - Also saved: `aws-deploy-times.txt`, `rollout-history.json`, `task-definitions.json`, `alb-metrics.json`, `ecr-images.json` and `order-service-logs-deploy-window.txt` (19 MB, committed in full).
->>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
 33. **Extract the failed-request count.** Look at `http_req_failed` in `deploy-summary.json`. A pass is a failed request.
     - Result on 2026-11-14: 0 failed requests out of 12,003. `deploy-summary.json` shows `passes: 0`, `fails: 12003` and `value: 0` (the failure rate). The `rate<0.01` threshold shows `false`, which means it was not breached.
     - Cross-checks: `deploy-console.txt` shows `http_req_failed: 0.00%  0 out of 12003`, and all 12,003 `http_req_failed` data points in the raw output (`deploy-run-part1.json` and `deploy-run-part2.json`) have the value 0.
@@ -130,11 +126,7 @@ All files below are in `phase2/docs/k6-runs/aws-deploy`. The commands that produ
     - Done on 2026-11-14: the wording is in the "How to state this result" section of [phase2/docs/aws-deploy-under-load.md](../../../phase2/docs/aws-deploy-under-load.md), with a short form, a full form, and the wording the evidence does not support.
     - The claim: "Deployed a new version to ECS Fargate under a load of 25 orders/s with 0 failed requests out of 12,003, in one 8-minute run." It is not called zero-downtime, because the evidence is one run, at one rate, of a trivial change.
 40. **Update ADR 0006** if anything surprised you, such as the rollout taking longer than expected.
-<<<<<<< HEAD
     - Done on 2026-11-14: [ADR 0006](../../../phase2/docs/adr/0006-aws-choices.md) has a new section, "What the deploy under load showed", and its status and "State of this work" now say the stack has been applied and the deploy under load run, with the destroy still to do. After the destroy, both were updated to say it ran and the console check was clean.
-=======
-    - Done on 2026-11-14: [ADR 0006](../../../phase2/docs/adr/0006-aws-choices.md) has a new section, "What the deploy under load showed", and its status and "State of this work" now say the stack has been applied and the deploy under load run, with the destroy still to do.
->>>>>>> ec7ee81a0d4f1bb784c463cc9118d6fe9cd28d69
     - The surprises recorded: duplicate inventory results reaching order-service (112 ignored), the latency spike when the new task takes over, an open frontend tab multiplying requests, and stock lookups without Redis not taking the expected 1 s. The rollout itself was not slow: about 2 minutes.
 41. **Commit the evidence.** Do this before destroying anything.
     - Done on 2026-11-15: everything in `phase2/docs/k6-runs/aws-deploy/` is committed except `deploy-run.json`, which is not needed because its two halves are committed (joining `deploy-run-part1.json` and `deploy-run-part2.json` in order gives it back). As of 2026-11-15 the original is no longer in the folder. The results doc, ADR 0006 and these notes are committed too.
